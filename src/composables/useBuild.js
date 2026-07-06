@@ -4,6 +4,7 @@ import { loadLibrary } from "../lib.js"
 import { usePacks } from "./usePacks.js"
 import { useScene } from "./useScene.js"
 import { useLock } from "./useLock.js"
+import { optimise } from "../optimise.js"
 
 const packs = usePacks()
 const sceneApi = useScene()
@@ -47,6 +48,7 @@ let root = null
 let animator = null
 let templates = null
 let nonSolid = new Set()
+let atlasTextures = [] // the displayed atlases; swapped + disposed on rebuild
 
 function disposeGroup(g) {
   if (!g) return
@@ -113,9 +115,8 @@ async function build(structure = current.value, refit = true) {
       return tmpl
     }
 
-    // raw build: one positioned template clone per block. the optimiser pass
-    // replaces this with merged meshes in a later step
-    const next = new THREE.Group()
+    // build every template up front (the optimiser reads them all) and sum
+    // per-placement stats for the raw -> optimised readout
     const tstat = new Map()
     let placedCount = 0, rawDc = 0, rawTris = 0
     for (let i = 0; i < structure.blocks.length; i++) {
@@ -126,10 +127,6 @@ async function build(structure = current.value, refit = true) {
         let s = tstat.get(b.state)
         if (s === undefined) tstat.set(b.state, s = stat(tmpl))
         rawDc += s.dc; rawTris += s.tris
-        const c = tmpl.clone()
-        c.position.set(b.pos[0] * 16, b.pos[1] * 16, b.pos[2] * 16)
-        c.traverse(o => { if (o.isMesh) o.userData.shared = true })
-        next.add(c)
       }
       if (i % 400 === 399) {
         state.status = `building… ${i + 1}/${structure.blocks.length}`
@@ -140,11 +137,17 @@ async function build(structure = current.value, refit = true) {
     // centre, snapped so every block fills a whole grid cell: templates are
     // block-centred, so a centre ≡ 8 (mod 16) keeps blocks on the lattice
     const gridCentre = v => Math.round((v - 8) / 16) * 16 + 8
-    next.position.set(gridCentre(-(sx - 1) * 8), gridCentre(-(sy - 1) * 8), gridCentre(-(sz - 1) * 8))
+    const position = new THREE.Vector3(gridCentre(-(sx - 1) * 8), gridCentre(-(sy - 1) * 8), gridCentre(-(sz - 1) * 8))
 
-    // atomic swap: show the new group first, then drop the old one
-    const old = root
+    const { group: next, atlasTextures: pending, drawCalls: optDc, tris: optTris } = await optimise(structure, templates, position, {
+      getCullFaces: opts => lib.getCullFaces({ ...opts, assets }),
+      setStatus: s => { state.status = s }
+    })
+
+    // atomic swap: show the new group first, then drop the old one + its atlases
+    const old = root, oldTex = atlasTextures
     root = next
+    atlasTextures = pending
     sceneApi.scene.add(root)
     sceneApi.contentRoots.add(root)
     if (old) sceneApi.contentRoots.delete(old)
@@ -157,10 +160,11 @@ async function build(structure = current.value, refit = true) {
       size: `${sx}×${sy}×${sz}`,
       blocks: placedCount,
       palette: templates.size,
-      rawDc, rawTris
+      rawDc, rawTris, optDc, optTris
     }
     state.status = ""
     disposeGroup(old)
+    for (const t of oldTex) t.dispose()
   } finally {
     state.building = false
     lock(false)

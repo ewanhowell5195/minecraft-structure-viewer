@@ -71,14 +71,26 @@ and correct .js/.zip MIME types works).
   (textures, water, jigsaw blocks), ortho + wireframe + grid toggles work, filter
   + selection work, console clean.
 
+- Build step 5 (optimiser) DONE: src/optimise.js implements the full DECISIONS 6
+  pipeline (extractFlat with canonical corner orientation, greedy meshing on the
+  phase lattice with MAX_TILE 512 chunking, shelf atlases with 1px extruded gutter
+  + FNV pixel-hash dedupe + MAX_ATLAS 8192 spill, opaque/translucent split with
+  no-depth-write translucency, animated materials fixed in place, coplanar overlay
+  demotion, per-block getCullFaces memoised on state+neighbours). useBuild swaps
+  atlas textures with the group and disposes old ones. Playwright-verified:
+  plains fountain draws 724 -> 4 (water still animated/live), ancient city
+  city_center_1 (7966 blocks) draws 51K -> 8 / tris 102K -> 10.8K, wireframe shows
+  multi-block merged quads, culling visibly removes interior faces. Console clean.
+  Doors (DECISIONS 12) are NOT in yet: openable blocks currently bake into the
+  merged mesh; they come with the doors/walk work.
+
 ## Next steps
 
-1. Build order step 5 (optimiser): the full DECISIONS 6 pipeline (extractFlat,
-   greedy meshing with phase lattice, atlases with extruded gutters + pixel-hash
-   dedupe, opaque/translucent split, animated in-place material fix, coplanar
-   overlay demotion, per-block getCullFaces culling memoised on neighbour states),
-   raw -> optimised info readout. Doors (DECISIONS 12) can come with it or after.
-2. Then steps 6-10 per PLAN.md.
+1. Build order step 6 (wireframe/collect/export): collect mode (DECISIONS 15),
+   export .glb/.obj optimised + raw (DECISIONS 16). Wireframe already done.
+   Doors (DECISIONS 12) fit naturally right before or with this step since export
+   must skip hidden door halves.
+2. Then steps 7-10 per PLAN.md.
 3. Open questions to settle with Ewan when relevant (DECISIONS.md section 18):
    pack-change auto-rebuild or explicit, easy-tooltips vs in-app tooltip, samples.
 
