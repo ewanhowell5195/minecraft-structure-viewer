@@ -7,6 +7,12 @@ first, then this).
 ## State
 
 - Phase: 0 (research). Repo initialised, plan + sources written.
+- **IMPORTANT: the research is NOT done.** PLAN.md's feature checklist is from memory
+  of the project, not from a completed scan. Before implementing ANY area, the full
+  forensic pass is mandatory: read every remaining old module end to end, walk the
+  commit history, and mine the July 5 transcript (assistant messages too, not just the
+  user extract) for that area's decisions and bug fixes. DECISIONS.md must be written
+  from that scan, area by area, and is the spec the new code is written from.
 - Read so far from the old code: nbt.js (fully), transforms.js (fully),
   full SV commit history (both pages of `git log v2-dev -- projects/structure-viewer ...`).
 - NOT yet read: app.js, optimise.js, jigsaw.js, combine.js, generators/*, walk.js,
