@@ -1,18 +1,20 @@
 <script setup>
 import { onMounted, ref } from "vue"
 import { loadLibrary } from "./lib.js"
+import { usePacks } from "./composables/usePacks.js"
+import PacksSection from "./components/PacksSection.vue"
 
-const libState = ref("loading")
 const libError = ref("")
+const { loadBase } = usePacks()
 
 onMounted(async () => {
   try {
     await loadLibrary()
-    libState.value = "ready"
   } catch (err) {
-    libState.value = "error"
     libError.value = String(err)
+    return
   }
+  await loadBase()
 })
 </script>
 
@@ -23,11 +25,10 @@ onMounted(async () => {
         <span class="material-symbols-outlined">deployed_code</span>
         <h1>Structure Viewer</h1>
       </header>
-      <div class="lib-status" :class="libState">
-        <template v-if="libState === 'loading'">Loading renderer…</template>
-        <template v-else-if="libState === 'ready'">Renderer ready</template>
-        <template v-else>Renderer failed: {{ libError }}</template>
-      </div>
+      <div v-if="libError" class="lib-error">Renderer failed: {{ libError }}</div>
+      <template v-else>
+        <PacksSection />
+      </template>
     </aside>
     <main class="viewport">
       <canvas id="view"></canvas>
@@ -49,6 +50,7 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  overflow-y: auto;
 }
 
 .app-head {
@@ -65,14 +67,11 @@ onMounted(async () => {
   margin: 0;
 }
 
-.lib-status {
+.lib-error {
   padding: 10px 14px;
-  color: var(--text-dim);
+  color: var(--red);
   font-size: 13px;
 }
-
-.lib-status.ready { color: var(--green); }
-.lib-status.error { color: var(--red); }
 
 .viewport {
   flex: 1;

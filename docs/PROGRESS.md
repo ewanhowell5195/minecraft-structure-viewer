@@ -37,14 +37,23 @@ tiny CORS static server in the session scratchpad (lib-server.mjs) serving the
 BlockModelRenderer repo on 8080; recreate it if lost (any static server with CORS
 and correct .js/.zip MIME types works).
 
+- Build step 2 (packs) DONE: src/mojang.js (proxy download, Cache Storage per
+  channel), src/composables/usePacks.js (ordered multi-pack overlay state, bytes
+  kept out of reactivity, rebuildAssets with dispose-after-swap lifecycle via a
+  `swap` callback that later hosts the scene rebuild), PacksSection.vue (Release/
+  Snapshot channel buttons, pack rows with move up/down + remove, vanilla base row,
+  Add Resource Pack or Mod with multi-select). Playwright-verified: release +
+  snapshot channels (?channel= param), add two real packs (Dokucraft + dungeons-
+  and-taverns from Downloads), reorder, remove; console clean throughout.
+
 ## Next steps
 
-1. Build order step 2 (packs): vanilla release/snapshot channels via Mojang download
-   (cors.ewanhowell.com proxy, Cache Storage per channel) + the NEW ordered
-   multi-pack overlay list (add/remove/reorder over the vanilla base), prepareAssets
-   cache lifecycle (disposeCache old bundle only after swap). Spec: DECISIONS.md
-   section 8.
-2. Then steps 3-10 per PLAN.md, each from its DECISIONS.md section, committing +
+1. Build order step 3 (structure sources): nbt reader (DECISIONS 1), discovery of
+   data/<ns>/structure(s)/*.nbt across all pack sources (DECISIONS 9), sidebar tree
+   with compaction + namespace rules, text filter, .nbt upload. Worldgen filters
+   (DECISIONS 10) can land here or with step 7; the tree + all/standalone/starters
+   dropdown skeleton belongs here.
+2. Then steps 4-10 per PLAN.md, each from its DECISIONS.md section, committing +
    Playwright-testing each and updating this file.
 3. Open questions to settle with Ewan when relevant (DECISIONS.md section 18):
    pack-change auto-rebuild or explicit, easy-tooltips vs in-app tooltip, samples.
