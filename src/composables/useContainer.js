@@ -1,7 +1,10 @@
 import { reactive, readonly } from "vue"
 import * as THREE from "three"
+import { loadLibrary } from "../lib.js"
+import { usePacks } from "./usePacks.js"
 import { useScene } from "./useScene.js"
 import { useBuild } from "./useBuild.js"
+import { useStructures } from "./useStructures.js"
 import { readLootTable, rollLoot, sampleTable, stackKey, prettyName, isInspectable } from "../loot.js"
 
 // Clicking a loot container (chest, barrel, dispenser...) opens a modal with
@@ -10,6 +13,8 @@ import { readLootTable, rollLoot, sampleTable, stackKey, prettyName, isInspectab
 // plain (non-drag) clicks.
 const sceneApi = useScene()
 const buildApi = useBuild()
+const packs = usePacks()
+const structures = useStructures()
 
 // gui metrics: texture name, its full height, how much of the top is the
 // container section, and where the slot grid starts. tiled guis compose
@@ -45,7 +50,9 @@ const state = reactive({
   pileTotal: 0,
   gui: null,       // the gui actually drawn (accumulated piles grow a chest)
   guiTitle: "",
-  dataRows: null   // technical blocks (command/structure/jigsaw) show these
+  dataRows: null,  // technical blocks (command/structure/jigsaw) show these
+  poolEntries: null, // what a jigsaw's pool can place, weighted
+  poolFallback: ""
 })
 
 let openSeq = 0 // bumps per open(): stale async work from a previous container is discarded
@@ -90,6 +97,43 @@ function dataRowsFor(name, p, nbt) {
   return rows.length ? rows : [{ label: "Data", value: "(none)" }]
 }
 
+// what the jigsaw's template pool can place: weighted entries, nested list
+// elements flattened, features and empties shown but not loadable
+async function loadPoolEntries(poolId) {
+  const seq = openSeq
+  try {
+    const lib = await loadLibrary()
+    const [ns, path] = poolId.includes(":") ? poolId.split(":") : ["minecraft", poolId]
+    const buf = await lib.readFile(`data/${ns}/worldgen/template_pool/${path}.json`, packs.assets.value)
+    if (!buf) return
+    const json = JSON.parse(new TextDecoder().decode(buf))
+    const out = []
+    const collect = (el, weight) => {
+      const type = stripNs(el?.element_type ?? "")
+      if (type === "list_pool_element") {
+        for (const c of el.elements ?? []) collect(c, weight)
+      } else if (type === "feature_pool_element") {
+        out.push({ label: "feature: " + stripNs(el.feature), weight })
+      } else if (typeof el?.location === "string") {
+        out.push({ label: stripNs(el.location), rel: el.location.replace(":", "/"), weight })
+      } else {
+        out.push({ label: "(nothing)", weight })
+      }
+    }
+    for (const e of json.elements ?? []) collect(e.element, e.weight ?? 1)
+    const total = out.reduce((a, o) => a + o.weight, 0) || 1
+    out.sort((a, b) => b.weight - a.weight || a.label.localeCompare(b.label))
+    if (seq !== openSeq || !state.open) return
+    state.poolEntries = out.map(o => ({
+      ...o,
+      pct: o.weight / total * 100,
+      clickable: !!o.rel && structures.has(o.rel)
+    }))
+    const fb = stripNs(json.fallback ?? "")
+    state.poolFallback = fb && fb !== "empty" ? fb : ""
+  } catch {}
+}
+
 async function open(block) {
   const entry = buildApi.current.value?.palette[block.state]
   const name = entry?.Name ?? "minecraft:chest"
@@ -98,6 +142,8 @@ async function open(block) {
   state.blockName = prettyName(name)
   state.kind = kindOf(name)
   state.dataRows = null
+  state.poolEntries = null
+  state.poolFallback = ""
   const bare = stripNs(name)
   if (/(^|_)(command_block|structure_block|jigsaw)$/.test(bare)) {
     state.tableId = ""
@@ -108,6 +154,7 @@ async function open(block) {
     state.dataRows = dataRowsFor(bare, entry?.Properties ?? {}, block.nbt)
     openSeq++
     state.open = true
+    if (bare === "jigsaw" && block.nbt?.pool && stripNs(block.nbt.pool) !== "empty") loadPoolEntries(block.nbt.pool)
     return
   }
   state.tableId = (block.nbt?.LootTable ?? "").replace(/^minecraft:/, "")

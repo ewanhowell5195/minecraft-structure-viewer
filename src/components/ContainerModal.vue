@@ -3,6 +3,7 @@ import { computed, nextTick, ref, watch } from "vue"
 import { loadLibrary } from "../lib.js"
 import { usePacks } from "../composables/usePacks.js"
 import { useContainer } from "../composables/useContainer.js"
+import { useStructure } from "../composables/useStructure.js"
 import { useWalk } from "../composables/useWalk.js"
 import { getFont, measure, drawText } from "../mcfont.js"
 import { describeTable, prettyName } from "../loot.js"
@@ -56,6 +57,15 @@ const fmtCount = o => o.min === o.max ? "×" + o.min : `×${o.min}-${o.max} · a
 function close() {
   container.close()
   walk.resume() // no-op unless a walk session is waiting behind the modal
+}
+
+// clicking a pool entry loads that structure (leaving any walk session,
+// since the scene it belonged to is being replaced)
+const structureApi = useStructure()
+function loadPoolStructure(rel) {
+  container.close()
+  if (walk.state.on) walk.exit()
+  structureApi.loadVanilla(rel)
 }
 
 addEventListener("keydown", e => {
@@ -178,6 +188,17 @@ watch(() => [state.open, state.stacks, state.gui], () => {
               <span class="dl">{{ r.label }}</span>
               <span class="dv" :class="{ mono: r.mono }">{{ r.value }}</span>
             </div>
+            <template v-if="state.poolEntries">
+              <div class="cols pool-head-row"><span class="nm">Pool can place</span><span class="chance-h">Chance</span></div>
+              <div v-for="(p, i) in state.poolEntries" :key="i" class="item-row"
+                :class="{ clickable: p.clickable }" :title="p.clickable ? 'Load ' + p.label : ''"
+                @click="p.clickable && loadPoolStructure(p.rel)">
+                <span class="nm mono-nm">{{ p.label }}</span>
+                <span class="meter"><i :style="{ width: Math.max(p.pct, 1.5) + '%' }"></i></span>
+                <span class="pctv">{{ p.pct >= 99.95 ? "100" : p.pct.toFixed(1) }}%</span>
+              </div>
+              <div v-if="state.poolFallback" class="note-line pool-fb">fallback pool: {{ state.poolFallback }}</div>
+            </template>
           </div>
 
           <div v-show="state.tab === 'loot' && !state.dataRows" class="pane loot">
@@ -365,6 +386,18 @@ button.icon {
   font-family: ui-monospace, monospace;
   font-size: 12.5px;
 }
+
+.pool-head-row { margin-top: 14px; }
+
+.item-row.clickable { cursor: pointer; }
+.item-row.clickable:hover .nm { color: var(--accent); }
+
+.mono-nm {
+  font-family: ui-monospace, monospace;
+  font-size: 12.5px;
+}
+
+.pool-fb { padding-top: 8px; }
 
 .pane {
   display: flex;
