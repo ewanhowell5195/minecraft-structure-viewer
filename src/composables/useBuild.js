@@ -74,7 +74,7 @@ function fixLegacyProps(name, props) {
 // surface shape gets a synthetic palette entry carrying its heights; identical
 // cells (open water, full columns) still share one template
 const FLUID_RE = /(^|:)(water|flowing_water|lava|flowing_lava)$/
-function remapFluidStates(structure, lib) {
+async function remapFluidStates(structure, lib, assets) {
   const byPos = new Map()
   for (const b of structure.blocks) byPos.set(b.pos.join(","), b)
   const byKey = new Map()
@@ -86,7 +86,7 @@ function remapFluidStates(structure, lib) {
       : e.Properties?.waterlogged === "true" ? "water" : null
     if (!type) continue
     const [bx, by, bz] = b.pos
-    const h = lib.fluidHeights(type, (dx, dy, dz) => {
+    const h = await lib.fluidHeights(assets, type, (dx, dy, dz) => {
       const nb = byPos.get((bx + dx) + "," + (by + dy) + "," + (bz + dz))
       const ne = nb && structure.palette[nb.state]
       return ne?.Name ? { id: ne.Name, properties: ne.Properties } : null
@@ -441,7 +441,7 @@ async function build(structure = source, refit = true, replace = false) {
     }
 
     // fluid surfaces shape themselves from their neighbourhood
-    if (lib.fluidHeights) remapFluidStates(structure, lib)
+    if (lib.fluidHeights) await remapFluidStates(structure, lib, assets)
 
     // build every template up front (the optimiser reads them all)
     let placedCount = 0
