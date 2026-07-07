@@ -262,27 +262,81 @@ function toggleDoor(reg) {
   }
 }
 
-// march the look ray; return the first interactable block within reach:
-// an openable ({ door }) or a loot container ({ container }). stops at a
-// solid wall so you can't reach through it
+// ray vs axis-aligned box: entry t, or null when it misses
+function rayBoxT(ox, oy, oz, dx, dy, dz, x0, y0, z0, x1, y1, z1) {
+  let tmin = 0, tmax = Infinity
+  for (const [o, d, a, b] of [[ox, dx, x0, x1], [oy, dy, y0, y1], [oz, dz, z0, z1]]) {
+    if (Math.abs(d) < 1e-9) {
+      if (o < a || o > b) return null
+    } else {
+      let t1 = (a - o) / d, t2 = (b - o) / d
+      if (t1 > t2) [t1, t2] = [t2, t1]
+      tmin = Math.max(tmin, t1)
+      tmax = Math.min(tmax, t2)
+      if (tmin > tmax) return null
+    }
+  }
+  return tmin
+}
+
+// per-state collision AABBs (template mesh boxes, block-centred local
+// coords), the same shapes the walker collides with. flat-plane models
+// (plants, rails...) have none, so they never block the ray
+let collBoxCache = new Map()
+const _cb = new THREE.Box3()
+function collisionBoxes(stateIdx) {
+  let arr = collBoxCache.get(stateIdx)
+  if (arr) return arr
+  arr = []
+  const tmpl = templates.get(stateIdx)
+  if (tmpl && !nonSolid.has(stateIdx)) {
+    tmpl.updateMatrixWorld(true)
+    tmpl.traverse(o => {
+      if (!o.isMesh) return
+      _cb.setFromObject(o)
+      if (!_cb.isEmpty()) arr.push([_cb.min.x, _cb.min.y, _cb.min.z, _cb.max.x, _cb.max.y, _cb.max.z])
+    })
+  }
+  collBoxCache.set(stateIdx, arr)
+  return arr
+}
+
+// march the look ray; return the first interactable whose vanilla shape the
+// ray actually crosses: an openable ({ door }) or a loot container
+// ({ container }). the ray is blocked by real collision boxes, not whole
+// cells, so it passes over slabs and through gaps like the game
 const _aimBox = new THREE.Box3()
 function rayHit(ox, oy, oz, dx, dy, dz) {
   const structure = current.value
   if (!structure || !root) return null
   const idx = cellIndex(), REACH = 80
+  const rx = root.position.x, ry = root.position.y, rz = root.position.z
+  const shapeT = (bx, by, bz, e) => {
+    const s = shapeFor(e)
+    const cx = bx * 16 + rx - 8, cy = by * 16 + ry - 8, cz = bz * 16 + rz - 8
+    const t = rayBoxT(ox, oy, oz, dx, dy, dz, cx + s[0], cy + s[1], cz + s[2], cx + s[3], cy + s[4], cz + s[5])
+    return t != null && t <= REACH
+  }
   let last = ""
-  for (let t = 2; t <= REACH; t += 2) {
+  for (let t = 0; t <= REACH; t += 2) {
     const [bx, by, bz] = cellOf(ox + dx * t, oy + dy * t, oz + dz * t)
     const key = bx + "," + by + "," + bz
     if (key === last) continue
     last = key
     const reg = doorByCell.get(key)
-    if (reg) return { door: reg }
+    if (reg) {
+      if (shapeT(bx, by, bz, structure.palette[reg.b.state])) return { door: reg }
+      continue
+    }
     const i = idx.get(key)
     if (i == null) continue
     const b = structure.blocks[i]
-    if (b.nbt?.LootTable) return { container: b }
-    if (!AIR.test(structure.palette[b.state]?.Name || "")) return null
+    if (b.nbt?.LootTable && shapeT(bx, by, bz, structure.palette[b.state])) return { container: b }
+    const cx = bx * 16 + rx, cy = by * 16 + ry, cz = bz * 16 + rz
+    for (const s of collisionBoxes(b.state)) {
+      const th = rayBoxT(ox, oy, oz, dx, dy, dz, s[0] + cx, s[1] + cy, s[2] + cz, s[3] + cx, s[4] + cy, s[5] + cz)
+      if (th != null && th <= REACH) return null
+    }
   }
   return null
 }
@@ -424,6 +478,7 @@ async function build(structure = source, refit = true) {
 
     templates = new Map()
     nonSolid = new Set()
+    collBoxCache = new Map()
     const isPlane = el => el.from[0] === el.to[0] || el.from[1] === el.to[1] || el.from[2] === el.to[2]
     async function template(stateIdx) {
       if (templates.has(stateIdx)) return templates.get(stateIdx)
