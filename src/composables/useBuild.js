@@ -183,7 +183,20 @@ function blockAt(wx, wy, wz) {
 let doorSlots = new Map() // canonKey -> { count, meshes: InstancedMesh[] }
 let stateRender = new Map() // stateIdx -> { key, rot: Matrix4 }
 let canonDoorTmpl = new Map() // canonKey -> template Group
-let doorStateBox = new Map() // stateIdx -> Box3 (rotated, for the aim outline)
+
+// state -> world-ish Box3 of its template (aim outline for doors/containers)
+let stateBoxCache = new Map()
+function boxForState(idx) {
+  if (stateBoxCache.has(idx)) return stateBoxCache.get(idx)
+  const tmpl = templates.get(idx)
+  let box = null
+  if (tmpl) {
+    tmpl.updateMatrixWorld(true)
+    box = new THREE.Box3().setFromObject(tmpl)
+  }
+  stateBoxCache.set(idx, box)
+  return box
+}
 const _dm = new THREE.Matrix4()
 const _dzero = new THREE.Matrix4().makeScale(0, 0, 0)
 
@@ -203,7 +216,6 @@ function attachDoors(entries) {
   const structure = current.value
   doorByCell = new Map()
   doorSlots = new Map()
-  doorStateBox = new Map()
   if (!entries.length) return 0
   // an instance slot per placement of each open/closed state, in the state's
   // canonical group
@@ -216,14 +228,6 @@ function attachDoors(entries) {
   for (const e of entries) {
     e.openSlot = slotFor(e.openIdx)
     e.closedSlot = slotFor(e.closedIdx)
-    for (const idx of [e.openIdx, e.closedIdx]) {
-      if (doorStateBox.has(idx)) continue
-      const tmpl = templates.get(idx)
-      if (tmpl) {
-        tmpl.updateMatrixWorld(true)
-        doorStateBox.set(idx, new THREE.Box3().setFromObject(tmpl))
-      } else doorStateBox.set(idx, null)
-    }
   }
   let draws = 0
   for (const [key, s] of doorSlots) {
@@ -271,10 +275,11 @@ function toggleDoor(reg) {
   }
 }
 
-// march the look ray; return the first openable block within reach (or
-// null), stopping at a solid wall so you can't reach through it
+// march the look ray; return the first interactable block within reach:
+// an openable ({ door }) or a loot container ({ container }). stops at a
+// solid wall so you can't reach through it
 const _aimBox = new THREE.Box3()
-function rayDoor(ox, oy, oz, dx, dy, dz) {
+function rayHit(ox, oy, oz, dx, dy, dz) {
   const structure = current.value
   if (!structure || !root) return null
   const idx = cellIndex(), REACH = 80
@@ -285,32 +290,54 @@ function rayDoor(ox, oy, oz, dx, dy, dz) {
     if (key === last) continue
     last = key
     const reg = doorByCell.get(key)
-    if (reg) return reg
+    if (reg) return { door: reg }
     const i = idx.get(key)
     if (i == null) continue
-    if (!AIR.test(structure.palette[structure.blocks[i].state]?.Name || "")) return null
+    const b = structure.blocks[i]
+    if (b.nbt?.LootTable) return { container: b }
+    if (!AIR.test(structure.palette[b.state]?.Name || "")) return null
   }
   return null
 }
 
-// toggle the door being looked at; returns whether anything changed
+// act on the block being looked at: toggles a door (true), hands back a
+// loot container block, or false when there is nothing in reach
 function interact(ox, oy, oz, dx, dy, dz) {
-  const reg = rayDoor(ox, oy, oz, dx, dy, dz)
-  if (!reg) return false
-  toggleDoor(reg)
-  return true
+  const h = rayHit(ox, oy, oz, dx, dy, dz)
+  if (h?.door) {
+    toggleDoor(h.door)
+    return true
+  }
+  return h?.container ?? false
 }
 
-// world-space box of the door being looked at (for the in-reach outline)
+// world-space box of the interactable being looked at (in-reach outline)
 const _aimV = new THREE.Vector3()
 function aimDoor(ox, oy, oz, dx, dy, dz) {
-  const reg = rayDoor(ox, oy, oz, dx, dy, dz)
-  if (!reg) return null
+  const h = rayHit(ox, oy, oz, dx, dy, dz)
+  if (!h) return null
   const structure = current.value
-  const open = structure.palette[reg.b.state].Properties.open === "true"
-  const box = doorStateBox.get(open ? reg.openIdx : reg.closedIdx)
+  let b, idx
+  if (h.door) {
+    b = h.door.b
+    const open = structure.palette[b.state].Properties.open === "true"
+    idx = open ? h.door.openIdx : h.door.closedIdx
+  } else {
+    b = h.container
+    idx = b.state
+  }
+  const box = boxForState(idx)
   if (!box) return null
-  return _aimBox.copy(box).translate(_aimV.set(reg.b.pos[0] * 16, reg.b.pos[1] * 16, reg.b.pos[2] * 16).add(root.position))
+  return _aimBox.copy(box).translate(_aimV.set(b.pos[0] * 16, b.pos[1] * 16, b.pos[2] * 16).add(root.position))
+}
+
+// the raw structure block at a world position (orbit-mode picking)
+function blockEntryAt(wx, wy, wz) {
+  const structure = current.value
+  if (!structure || !root) return null
+  const [bx, by, bz] = cellOf(wx, wy, wz)
+  const i = cellIndex().get(bx + "," + by + "," + bz)
+  return i == null ? null : structure.blocks[i]
 }
 
 // real world-space collision AABBs of the current structure: one per template
@@ -377,6 +404,7 @@ async function build(structure = source, refit = true) {
 
     templates = new Map()
     nonSolid = new Set()
+    stateBoxCache = new Map()
     const isPlane = el => el.from[0] === el.to[0] || el.from[1] === el.to[1] || el.from[2] === el.to[2]
     async function template(stateIdx) {
       if (templates.has(stateIdx)) return templates.get(stateIdx)
@@ -553,6 +581,6 @@ const getNonSolid = () => nonSolid
 export function useBuild() {
   return {
     state, current, build, getRoot, getTemplates, getNonSolid,
-    blockAt, interact, aimDoor, currentBoxes, exportCurrent
+    blockAt, blockEntryAt, interact, aimDoor, currentBoxes, exportCurrent
   }
 }

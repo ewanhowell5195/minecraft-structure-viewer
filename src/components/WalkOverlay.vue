@@ -83,7 +83,7 @@ requestAnimationFrame(tick)
 <template>
   <span v-if="arrow" class="dir-arrow material-symbols-outlined"
     :style="{ left: arrow.left, top: arrow.top, transform: `translate(-50%, -50%) rotate(${arrow.deg}deg)` }">arrow_upward</span>
-  <template v-if="state.on">
+  <template v-if="state.on && !state.suspended">
     <div class="crosshair" :style="pos"></div>
     <div class="hint" :style="{ left: pos.left }">
       <b>WASD</b> move · <b>mouse</b> look · <b>click</b> open door · <b>space</b> jump · <b>2×space</b> fly ·

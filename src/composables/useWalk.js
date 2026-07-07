@@ -2,6 +2,7 @@ import { reactive, readonly } from "vue"
 import * as THREE from "three"
 import { useScene } from "./useScene.js"
 import { useBuild } from "./useBuild.js"
+import { useContainer } from "./useContainer.js"
 import { useLock } from "./useLock.js"
 
 // First-person walk-around: a pointer-locked FPS camera with gravity, AABB
@@ -10,6 +11,7 @@ import { useLock } from "./useLock.js"
 // World units: 16 = one block. Constants matched to Minecraft.
 const sceneApi = useScene()
 const buildApi = useBuild()
+const containerApi = useContainer()
 const { locked } = useLock()
 
 const CLIMB = /(ladder|scaffolding)$|(^|:)vine$/  // climbable (their models are flat planes, so no collision)
@@ -20,7 +22,7 @@ const STEP = 9                                    // auto-climb up to ~half a bl
 const WALK_FOV = 78
 const DOUBLE_TAP = 350                            // minecraft's 7-tick window for double-tap sprint/fly
 
-const state = reactive({ on: false })
+const state = reactive({ on: false, suspended: false })
 
 const walk = { pos: new THREE.Vector3(), vel: new THREE.Vector3(), yaw: 0, pitch: 0, onGround: false, crouched: false, h: H_STAND, eye: EYE_STAND }
 const fly = { on: false, lastSpace: -1e9 }
@@ -266,9 +268,10 @@ function updateWalk(dt) {
     walk.pos.z - Math.sin(walk.yaw) * swayU
   )
   perspCam.rotation.set(walk.pitch + Math.abs(Math.cos(wp - 0.2) * B) * 5 * RAD, walk.yaw, Math.sin(wp) * B * 3 * RAD, "YXZ")
-  // outline the door in reach (a touch larger than the model so it doesn't z-fight)
+  // outline the interactable in reach (a touch larger than the model so it
+  // doesn't z-fight); none while a modal has the controls detached
   perspCam.getWorldDirection(_look)
-  const aim = buildApi.aimDoor(perspCam.position.x, perspCam.position.y, perspCam.position.z, _look.x, _look.y, _look.z)
+  const aim = state.suspended ? null : buildApi.aimDoor(perspCam.position.x, perspCam.position.y, perspCam.position.z, _look.x, _look.y, _look.z)
   if (aim) {
     aimBox.copy(aim).expandByScalar(0.2)
     outline.visible = true
@@ -311,10 +314,27 @@ function enter() {
   canvas.requestPointerLock()?.catch?.(() => {})
 }
 
+// a modal temporarily detaches the controls without leaving walk mode:
+// pointer lock is released but the walk sim keeps owning the camera
+function suspend() {
+  if (!state.on || state.suspended) return
+  state.suspended = true
+  keys.clear()
+  sprintW = false
+  if (document.pointerLockElement === sceneApi.canvas) document.exitPointerLock()
+}
+
+function resume() {
+  if (!state.on || !state.suspended) return
+  state.suspended = false
+  sceneApi.canvas.requestPointerLock()?.catch?.(() => exit())
+}
+
 function exit() {
   if (!state.on) return
   const perspCam = sceneApi.perspCam
   state.on = false
+  state.suspended = false
   noclip = false
   sceneApi.controls.enabled = true
   keys.clear()
@@ -341,7 +361,7 @@ sceneApi.setWalkUpdate(dt => {
 })
 
 document.addEventListener("pointerlockchange", () => {
-  if (state.on && document.pointerLockElement !== sceneApi.canvas) exit()
+  if (state.on && !state.suspended && document.pointerLockElement !== sceneApi.canvas) exit()
 })
 document.addEventListener("mousemove", e => {
   if (!state.on || document.pointerLockElement !== sceneApi.canvas) return
@@ -349,7 +369,7 @@ document.addEventListener("mousemove", e => {
   walk.pitch = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, walk.pitch - e.movementY * 0.0024))
 })
 addEventListener("keydown", e => {
-  if (!state.on) return
+  if (!state.on || state.suspended) return
   e.preventDefault() // fully capture input: no ctrl+s / quick-find / space-scroll while walking
   if (e.code === "Space" && !e.repeat) { // double-tap space toggles fly
     const t = performance.now()
@@ -369,25 +389,31 @@ addEventListener("keydown", e => {
   keys.add(e.code)
 }, { passive: false })
 addEventListener("keyup", e => {
-  if (!state.on) return
+  if (!state.on || state.suspended) return
   e.preventDefault()
   if (e.code === "KeyW") sprintW = false
   keys.delete(e.code)
 }, { passive: false })
-// click to interact: open/close the door, trapdoor or gate you're looking at
+// click to interact: toggle the door/trapdoor/gate you're looking at, or
+// open the loot modal for a container (detaching the controls until closed)
 addEventListener("mousedown", e => {
-  if (!state.on || document.pointerLockElement !== sceneApi.canvas) return
+  if (!state.on || state.suspended || document.pointerLockElement !== sceneApi.canvas) return
   e.preventDefault()
   const perspCam = sceneApi.perspCam
   const d = new THREE.Vector3()
   perspCam.getWorldDirection(d)
-  if (buildApi.interact(perspCam.position.x, perspCam.position.y, perspCam.position.z, d.x, d.y, d.z)) buildCollision()
+  const r = buildApi.interact(perspCam.position.x, perspCam.position.y, perspCam.position.z, d.x, d.y, d.z)
+  if (r === true) buildCollision()
+  else if (r) {
+    suspend()
+    containerApi.open(r)
+  }
 })
 
 export function useWalk() {
   return {
     state: readonly(state),
-    enter, exit,
+    enter, exit, suspend, resume,
     toggle: () => state.on ? exit() : enter()
   }
 }

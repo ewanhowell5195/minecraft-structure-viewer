@@ -8,6 +8,7 @@ import { useBuild } from "./composables/useBuild.js"
 import { useScene } from "./composables/useScene.js"
 import { useLock } from "./composables/useLock.js"
 import { useWalk } from "./composables/useWalk.js"
+import { useContainer } from "./composables/useContainer.js"
 import PacksSection from "./components/PacksSection.vue"
 import StructuresSection from "./components/StructuresSection.vue"
 import ViewSection from "./components/ViewSection.vue"
@@ -15,6 +16,7 @@ import SceneSection from "./components/SceneSection.vue"
 import LevelMenu from "./components/LevelMenu.vue"
 import WalkOverlay from "./components/WalkOverlay.vue"
 import FpsCounter from "./components/FpsCounter.vue"
+import ContainerModal from "./components/ContainerModal.vue"
 
 const libError = ref("")
 const canvasEl = ref(null)
@@ -44,6 +46,7 @@ onMounted(async () => {
     return
   }
   sceneApi.init(canvasEl.value)
+  useContainer().initPicking(canvasEl.value)
   // load the requested structure (?debug = the generated mesher test scene),
   // or a default so the page never starts empty
   const DEFAULT = "minecraft/village/plains/houses/plains_small_house_1"
@@ -93,6 +96,7 @@ onMounted(async () => {
       </template>
       <WalkOverlay />
       <FpsCounter />
+      <ContainerModal />
     </main>
   </div>
 </template>

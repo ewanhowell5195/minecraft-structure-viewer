@@ -1,0 +1,152 @@
+import { loadLibrary } from "./lib.js"
+import { usePacks } from "./composables/usePacks.js"
+
+// Loot tables: read from the pack data, roll them client-side, and describe
+// their rules for display. The roller covers what chest tables actually use
+// (constant/uniform/binomial numbers, weighted entries, nested tables,
+// set_count and the flavour functions); anything unknown passes through as
+// a plain item.
+const packs = usePacks()
+
+const strip = s => typeof s === "string" ? s.replace(/^minecraft:/, "") : s
+
+export async function readLootTable(id) {
+  if (!id) return null
+  const lib = await loadLibrary()
+  const assets = packs.assets.value
+  const [ns, path] = id.includes(":") ? id.split(":") : ["minecraft", id]
+  for (const dir of ["loot_table", "loot_tables"]) {
+    const buf = await lib.readFile(`data/${ns}/${dir}/${path}.json`, assets)
+    if (buf) return JSON.parse(new TextDecoder().decode(buf))
+  }
+  return null
+}
+
+// number providers: plain number, {min,max} (uniform), constant, binomial
+function rollNum(n, int = false) {
+  if (n == null) return 1
+  if (typeof n === "number") return n
+  const t = strip(n.type || "")
+  if (t === "constant") return n.value ?? 1
+  if (t === "binomial") {
+    let c = 0
+    const N = rollNum(n.n, true), p = rollNum(n.p)
+    for (let i = 0; i < N; i++) if (Math.random() < p) c++
+    return c
+  }
+  if (n.min != null || n.max != null) {
+    const a = rollNum(n.min ?? 0, int), b = rollNum(n.max ?? a, int)
+    return int ? a + Math.floor(Math.random() * (b - a + 1)) : a + Math.random() * (b - a)
+  }
+  return n.value ?? 1
+}
+
+// only random_chance is meaningful without world context; others pass
+const passes = conditions => (conditions ?? []).every(c =>
+  strip(c.condition || "") !== "random_chance" || Math.random() < (c.chance ?? 1))
+
+function applyFunctions(fns, stack) {
+  for (const f of fns ?? []) {
+    const t = strip(f.function || "")
+    if (!passes(f.conditions)) continue
+    if (t === "set_count") stack.count = Math.max(1, Math.round(rollNum(f.count, true)))
+    else if (t === "enchant_randomly" || t === "enchant_with_levels") stack.enchanted = true
+    else if (t === "set_potion") stack.components = { "minecraft:potion_contents": { potion: f.id } }
+  }
+}
+
+async function applyEntry(entry, pool, out) {
+  const type = strip(entry.type || "item")
+  if (type === "item") {
+    const stack = { id: entry.name, count: 1 }
+    applyFunctions(entry.functions, stack)
+    applyFunctions(pool?.functions, stack)
+    out.push(stack)
+  } else if (type === "loot_table") {
+    const t = typeof entry.value === "object" ? entry.value : await readLootTable(entry.value ?? entry.name)
+    if (t) await rollInto(t, out)
+  } else if (type === "alternatives" || type === "group" || type === "sequence") {
+    for (const c of entry.children ?? []) {
+      if (type === "alternatives") {
+        if (passes(c.conditions)) { await applyEntry(c, pool, out); break }
+      } else await applyEntry(c, pool, out)
+    }
+  }
+}
+
+function pickEntry(entries) {
+  const usable = entries.filter(e => passes(e.conditions))
+  const total = usable.reduce((a, e) => a + (e.weight ?? 1), 0)
+  let r = Math.random() * total
+  for (const e of usable) {
+    r -= e.weight ?? 1
+    if (r < 0) return e
+  }
+  return null
+}
+
+async function rollInto(table, out) {
+  for (const pool of table.pools ?? []) {
+    if (!passes(pool.conditions)) continue
+    const n = Math.round(rollNum(pool.rolls ?? 1, true))
+    for (let i = 0; i < n; i++) {
+      const entry = pickEntry(pool.entries ?? [])
+      if (entry) await applyEntry(entry, pool, out)
+    }
+  }
+}
+
+// -> [{ id, count, enchanted?, components? }]
+export async function rollLoot(table) {
+  const out = []
+  await rollInto(table, out)
+  return out.filter(s => s.id)
+}
+
+function fmtNum(n) {
+  if (n == null) return "1"
+  if (typeof n === "number") return String(n)
+  const t = strip(n.type || "")
+  if (t === "constant") return String(n.value ?? 1)
+  if (t === "binomial") return `binomial(${fmtNum(n.n)} tries, ${fmtNum(n.p)})`
+  if (n.min != null || n.max != null) return `${fmtNum(n.min ?? 0)}-${fmtNum(n.max ?? "?")}`
+  return String(n.value ?? 1)
+}
+
+// rules view for the modal: per pool, the rolls and each entry's odds
+export function describeTable(table) {
+  return (table.pools ?? []).map(pool => {
+    const entries = pool.entries ?? []
+    const total = entries.reduce((a, e) => a + (e.weight ?? 1), 0) || 1
+    const chance = (pool.conditions ?? []).find(c => strip(c.condition || "") === "random_chance")
+    return {
+      rolls: fmtNum(pool.rolls ?? 1),
+      bonus: pool.bonus_rolls ? fmtNum(pool.bonus_rolls) : null,
+      chance: chance ? Math.round((chance.chance ?? 1) * 100) + "% chance" : null,
+      entries: entries.map(e => {
+        const type = strip(e.type || "item")
+        const fns = e.functions ?? []
+        const sc = fns.find(f => strip(f.function) === "set_count")
+        const notes = []
+        for (const f of fns) {
+          const fn = strip(f.function || "")
+          if (fn === "enchant_randomly") notes.push("enchanted")
+          else if (fn === "enchant_with_levels") notes.push(`enchanted, ${fmtNum(f.levels)} levels`)
+          else if (fn === "set_potion") notes.push(strip(f.id))
+          else if (fn === "exploration_map") notes.push("treasure map")
+          else if (fn === "set_instrument") notes.push("random instrument")
+          else if (fn === "set_damage") notes.push("damaged")
+          else if (fn === "set_stew_effect") notes.push("random effect")
+        }
+        return {
+          name: type === "item" ? strip(e.name)
+            : type === "loot_table" ? "table: " + (typeof e.value === "string" ? strip(e.value) : strip(e.name ?? "inline"))
+            : type,
+          pct: +((e.weight ?? 1) / total * 100).toFixed(1),
+          count: sc ? fmtNum(sc.count) : null,
+          note: notes.join(", ")
+        }
+      })
+    }
+  })
+}
