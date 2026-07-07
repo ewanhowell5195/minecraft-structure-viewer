@@ -1,20 +1,12 @@
 <script setup>
 import { useScene } from "../composables/useScene.js"
 import { useBuild } from "../composables/useBuild.js"
-import { useStructure } from "../composables/useStructure.js"
 import { useLock } from "../composables/useLock.js"
 
 const sceneApi = useScene()
 const { view } = sceneApi
-const { state: buildState, clearCollected, exportCurrent } = useBuild()
-const { state: structureState } = useStructure()
+const { state: buildState } = useBuild()
 const { locked } = useLock()
-
-function onExport(ev) {
-  const v = ev.target.value
-  ev.target.value = ""
-  if (v) exportCurrent(v, structureState.name)
-}
 </script>
 
 <template>
@@ -25,12 +17,6 @@ function onExport(ev) {
       <select id="lighting" v-model="buildState.lighting" :disabled="locked">
         <option value="world">World</option>
         <option value="off">Off</option>
-      </select>
-      <label for="export">Export</label>
-      <select id="export" :disabled="locked || !buildState.info" @change="onExport">
-        <option value="" selected>Save as…</option>
-        <option value="glb">.glb</option>
-        <option value="obj">.obj</option>
       </select>
     </div>
     <label class="check">
@@ -45,17 +31,9 @@ function onExport(ev) {
       <input type="checkbox" v-model="view.grid">
       Grid
     </label>
-    <label class="check">
-      <input type="checkbox" v-model="buildState.collect" :disabled="locked">
-      Collect structures
-    </label>
     <button @click="sceneApi.fit()">
       <span class="material-symbols-outlined">recenter</span>
       Fit View
-    </button>
-    <button v-if="buildState.placedCount" :disabled="locked" @click="clearCollected()">
-      <span class="material-symbols-outlined">delete_sweep</span>
-      Clear Collected
     </button>
   </section>
 </template>

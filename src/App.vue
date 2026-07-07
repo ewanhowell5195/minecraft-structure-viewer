@@ -11,6 +11,7 @@ import { useWalk } from "./composables/useWalk.js"
 import PacksSection from "./components/PacksSection.vue"
 import StructuresSection from "./components/StructuresSection.vue"
 import ViewSection from "./components/ViewSection.vue"
+import SceneSection from "./components/SceneSection.vue"
 import LevelMenu from "./components/LevelMenu.vue"
 import WalkOverlay from "./components/WalkOverlay.vue"
 import FpsCounter from "./components/FpsCounter.vue"
@@ -72,6 +73,7 @@ onMounted(async () => {
         <PacksSection />
         <StructuresSection />
         <ViewSection />
+        <SceneSection />
       </template>
     </aside>
     <main class="viewport">
@@ -145,8 +147,8 @@ onMounted(async () => {
 
 .chip {
   position: absolute;
-  top: 10px;
-  left: 10px;
+  top: 12px;
+  left: 14px;
   background: #000000a0;
   color: var(--text-dim);
   padding: 5px 10px;
@@ -159,12 +161,11 @@ onMounted(async () => {
 
 .walk-btn {
   position: absolute;
-  left: 10px;
-  bottom: 10px;
+  left: 14px;
+  bottom: 12px;
   display: flex;
   align-items: center;
   gap: 6px;
-  background: #000000a0;
 }
 
 .walk-btn .material-symbols-outlined { font-size: 18px; }
