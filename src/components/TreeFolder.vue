@@ -8,7 +8,8 @@ import { useLock } from "../composables/useLock.js"
 const props = defineProps({
   node: Object,
   autoOpenName: String,
-  expandToken: { type: Number, default: 0 } // parent's "expand everything" signal, counts up
+  expandToken: { type: Number, default: 0 },  // parent's "expand everything" signal, counts up
+  collapseToken: { type: Number, default: 0 } // parent's "collapse everything" signal, counts up
 })
 
 const { state } = useStructures()
@@ -65,6 +66,14 @@ watch(() => props.expandToken, v => {
   mounted.value = new Set([...mounted.value, ...names])
   for (const n of names) cascade[n] = (cascade[n] ?? 0) + 1
 }, { immediate: true })
+
+// "collapse everything": closing + unmounting here resets all levels below
+watch(() => props.collapseToken, v => {
+  if (!v) return
+  opened.value = new Set()
+  mounted.value = new Set()
+  for (const k in cascade) delete cascade[k]
+})
 
 function expandAll(name) {
   addTo(opened, name)

@@ -2,12 +2,14 @@
 import { computed, nextTick, ref, watch } from "vue"
 import { useStructures } from "../composables/useStructures.js"
 import { useStructure } from "../composables/useStructure.js"
+import { useContextMenu } from "../composables/useContextMenu.js"
 import { useLock } from "../composables/useLock.js"
 import TreeFolder from "./TreeFolder.vue"
 
 const structures = useStructures()
 const { state, stateMut, computeWorldgen, filteredNames } = structures
-const { loadVanilla, loadFile } = useStructure()
+const { loadVanilla, loadMany, loadFile } = useStructure()
+const ctx = useContextMenu()
 const { locked } = useLock()
 const fileInput = ref(null)
 const treeEl = ref(null)
@@ -53,6 +55,29 @@ const tree = computed(() => {
 
 const autoOpenName = computed(() => soleNs.value ? "" : "minecraft")
 
+// the permanent root row: never collapses, and its context menu works the
+// whole list at once (during a search, "load all" takes the matches)
+const rootExpand = ref(0), rootCollapse = ref(0)
+// searching unmounts the tree; zero the tokens so the remounted tree doesn't
+// replay an old "expand all" (its token watcher runs on mount)
+watch(() => !!flat.value, isFlat => {
+  if (isFlat) {
+    rootExpand.value = 0
+    rootCollapse.value = 0
+  }
+})
+function onRootMenu(e) {
+  const rels = flat.value ?? names.value
+  const items = [
+    { label: `Load all (${rels.length})`, icon: "stacks", disabled: locked.value || !rels.length, action: () => loadMany(rels) }
+  ]
+  if (!flat.value) items.push(
+    { label: "Expand all", icon: "unfold_more", action: () => rootExpand.value++ },
+    { label: "Collapse all", icon: "unfold_less", action: () => rootCollapse.value++ }
+  )
+  ctx.open(e, items)
+}
+
 async function onMode(e) {
   stateMut.filterMode = e.target.value
   if (e.target.value !== "all") await computeWorldgen()
@@ -80,14 +105,20 @@ function onFile(e) {
     </div>
     <div class="tree" ref="treeEl">
       <div v-if="state.indexing" class="empty">Indexing…</div>
-      <template v-else-if="flat">
-        <div v-if="!flat.length" class="empty">No match</div>
-        <div v-for="rel in flat.slice(0, FLAT_CAP)" :key="rel" class="tree-file"
-          :class="{ sel: state.selected.includes(rel) }"
-          @click="loadVanilla(rel, $event)">{{ disp(rel) }}</div>
-        <div v-if="flat.length > FLAT_CAP" class="empty">…and {{ flat.length - FLAT_CAP }} more</div>
+      <template v-else>
+        <div class="tree-root" title="Right-click for options" @contextmenu.prevent="onRootMenu($event)">All Structures</div>
+        <template v-if="flat">
+          <div v-if="!flat.length" class="empty">No match</div>
+          <div v-for="rel in flat.slice(0, FLAT_CAP)" :key="rel" class="tree-file"
+            :class="{ sel: state.selected.includes(rel) }"
+            @click="loadVanilla(rel, $event)">{{ disp(rel) }}</div>
+          <div v-if="flat.length > FLAT_CAP" class="empty">…and {{ flat.length - FLAT_CAP }} more</div>
+        </template>
+        <div v-else class="root-children">
+          <TreeFolder :node="tree" :auto-open-name="autoOpenName"
+            :expand-token="rootExpand" :collapse-token="rootCollapse" />
+        </div>
       </template>
-      <TreeFolder v-else :node="tree" :auto-open-name="autoOpenName" />
     </div>
     <button :disabled="locked" @click="fileInput.click()">
       <span class="material-symbols-outlined">upload_file</span>
@@ -139,6 +170,18 @@ h2 {
 }
 
 .tree .empty { color: var(--text-dim); }
+
+.tree-root {
+  color: var(--text);
+  font-weight: 600;
+  padding: 1px 0;
+  cursor: context-menu;
+  user-select: none;
+}
+
+.tree-root:hover { color: #fff; }
+
+.root-children { margin-left: 14px; }
 
 .tree-file {
   cursor: pointer;
