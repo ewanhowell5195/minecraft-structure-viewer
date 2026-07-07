@@ -51,15 +51,43 @@ export async function decodeVanillaParam(param) {
   }
 }
 
+// switching structures pushes a history entry so the browser back button
+// walks through what you viewed. the first load and popstate-driven loads
+// replace instead, so history never gains duplicate or looping entries
+let seededHistory = false
+let navigatingHistory = false
+
 const setVanillaParam = rel => {
+  if (navigatingHistory) return
   const u = new URL(location)
+  const before = u.searchParams.get("vanilla")
   rel ? u.searchParams.set("vanilla", rel) : u.searchParams.delete("vanilla")
   // a load resets any level session; its params must not leak to the next one
   u.searchParams.delete("seed")
   u.searchParams.delete("level")
   u.searchParams.delete("debug")
-  history.replaceState(null, "", u)
+  const changed = (u.searchParams.get("vanilla") ?? null) !== (before ?? null)
+  if (changed && seededHistory) history.pushState(null, "", u)
+  else history.replaceState(null, "", u)
+  seededHistory = true
 }
+
+addEventListener("popstate", async () => {
+  const params = new URLSearchParams(location.search)
+  navigatingHistory = true
+  try {
+    const debug = params.get("debug")
+    if (debug != null) {
+      await loadDebug(debug)
+      return
+    }
+    const rels = (await decodeVanillaParam(params.get("vanilla"))).filter(r => structures.has(r))
+    if (rels.length > 1) await loadMany(rels)
+    else if (rels.length === 1) await loadVanilla(rels[0])
+  } finally {
+    navigatingHistory = false
+  }
+})
 
 // pack the loaded structures into a compact grid. each cell is the
 // structure's floor grid (footprint + 3-block border, padded even) and
