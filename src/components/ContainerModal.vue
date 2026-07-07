@@ -13,6 +13,7 @@ const state = container.state
 const walk = useWalk()
 const bgEl = ref(null)
 const itemsEl = ref(null)
+const rendering = ref(false)
 const S = 3
 
 const rules = computed(() => state.table ? describeTable(state.table) : [])
@@ -59,6 +60,15 @@ async function drawItems() {
   const c = itemsEl.value, K = state.kind
   if (!c || !K) return
   const seq = ++itemSeq
+  rendering.value = true
+  try {
+    await drawItemsInner(c, K, seq)
+  } finally {
+    if (seq === itemSeq) rendering.value = false
+  }
+}
+
+async function drawItemsInner(c, K, seq) {
   c.width = 176 * S
   c.height = (K.cropH + 7) * S
   const lib = await loadLibrary()
@@ -118,7 +128,7 @@ watch(() => [state.open, state.stacks], () => {
           <canvas ref="itemsEl" class="items"></canvas>
         </div>
         <div class="actions">
-          <button @click="container.reroll()">
+          <button :disabled="rendering" @click="container.reroll()">
             <span class="material-symbols-outlined">shuffle</span>
             Re-roll
           </button>

@@ -89,21 +89,39 @@ function close() {
 
 // orbit-mode picking: a click that didn't drag raycasts the built meshes,
 // steps one unit inside the hit face, and opens whatever loot container
-// lives in that cell. walking is excluded (pointer lock owns clicks there)
+// lives in that cell. hovering one shows the block highlight + a pointer
+// cursor. walking is excluded (pointer lock owns clicks there)
 const _ray = new THREE.Raycaster(), _ndc = new THREE.Vector2()
 let downX = 0, downY = 0, downT = 0
+let hover = null
 
-function pick(e, canvas) {
+function containerUnder(e, canvas) {
   const root = buildApi.getRoot()
-  if (!root || state.open) return
+  if (!root) return null
   const r = canvas.getBoundingClientRect()
   _ndc.set((e.clientX - r.left) / r.width * 2 - 1, -((e.clientY - r.top) / r.height * 2 - 1))
   _ray.setFromCamera(_ndc, sceneApi.camera)
   const hit = _ray.intersectObject(root, true).find(h => h.face && h.object.visible)
-  if (!hit) return
+  if (!hit) return null
   const p = hit.point.addScaledVector(hit.face.normal, -1)
   const b = buildApi.blockEntryAt(p.x, p.y, p.z)
-  if (b?.nbt?.LootTable) open(b)
+  return b?.nbt?.LootTable ? b : null
+}
+
+function clearHover(canvas) {
+  hover?.hide()
+  canvas.style.cursor = ""
+}
+
+function hoverCheck(e, canvas) {
+  if (document.pointerLockElement || state.open || e.buttons) return clearHover(canvas)
+  const b = containerUnder(e, canvas)
+  const box = b && buildApi.boxForBlock(b)
+  if (box) {
+    hover ??= sceneApi.makeHighlight()
+    hover.show(box.expandByScalar(0.2))
+    canvas.style.cursor = "pointer"
+  } else clearHover(canvas)
 }
 
 function initPicking(canvas) {
@@ -115,8 +133,25 @@ function initPicking(canvas) {
   canvas.addEventListener("pointerup", e => {
     if (document.pointerLockElement || e.button !== 0) return
     if (Math.hypot(e.clientX - downX, e.clientY - downY) > 4 || performance.now() - downT > 400) return
-    pick(e, canvas)
+    if (state.open) return
+    const b = containerUnder(e, canvas)
+    if (b) {
+      clearHover(canvas)
+      open(b)
+    }
   })
+  // hover raycasts throttle to one per frame, and skip entirely mid-drag
+  let pending = null
+  canvas.addEventListener("pointermove", e => {
+    if (pending) { pending = e; return }
+    pending = e
+    requestAnimationFrame(() => {
+      const ev = pending
+      pending = null
+      hoverCheck(ev, canvas)
+    })
+  })
+  canvas.addEventListener("pointerleave", () => clearHover(canvas))
 }
 
 export function useContainer() {

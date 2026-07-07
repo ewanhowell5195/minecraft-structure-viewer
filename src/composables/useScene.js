@@ -102,6 +102,30 @@ async function drawNameTag(spr, label) {
   spr.userData.ready = true
 }
 
+// block highlight: a bright inner box inside a dark halo box, readable on
+// any background (a single dark line disappears on dark scenes)
+function makeHighlight() {
+  const inner = new THREE.Box3(), outer = new THREE.Box3()
+  const g = new THREE.Group()
+  const wire = new THREE.Box3Helper(inner, 0xffffff)
+  wire.material.transparent = true
+  wire.material.opacity = 0.9
+  const halo = new THREE.Box3Helper(outer, 0x000000)
+  halo.material.transparent = true
+  halo.material.opacity = 0.65
+  g.add(wire, halo)
+  g.visible = false
+  scene.add(g)
+  return {
+    show(box) {
+      inner.copy(box)
+      outer.copy(box).expandByScalar(0.35)
+      g.visible = true
+    },
+    hide() { g.visible = false }
+  }
+}
+
 // proximity for the markers: ortho "zoom" moves no closer, so divide it out
 function updateGridLabels() {
   if (!gridGroup) return
@@ -263,6 +287,7 @@ function setOrthoManual(on) {
 export function useScene() {
   return {
     view, scene, init, fit, setGrids, sceneBounds, setOrtho, setOrthoManual,
+    makeHighlight,
     contentRoots, animators, perspCam, FOV, updateProjection, setWalkUpdate,
     get camera() { return camera },
     get controls() { return controls },

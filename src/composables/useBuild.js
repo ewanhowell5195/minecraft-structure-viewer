@@ -331,6 +331,14 @@ function aimDoor(ox, oy, oz, dx, dy, dz) {
   return _aimBox.copy(box).translate(_aimV.set(b.pos[0] * 16, b.pos[1] * 16, b.pos[2] * 16).add(root.position))
 }
 
+// world-space box of a specific block (orbit-mode hover highlight)
+const _blkBox = new THREE.Box3(), _blkV = new THREE.Vector3()
+function boxForBlock(b) {
+  const box = b && boxForState(b.state)
+  if (!box || !root) return null
+  return _blkBox.copy(box).translate(_blkV.set(b.pos[0] * 16, b.pos[1] * 16, b.pos[2] * 16).add(root.position))
+}
+
 // the raw structure block at a world position (orbit-mode picking)
 function blockEntryAt(wx, wy, wz) {
   const structure = current.value
@@ -581,6 +589,6 @@ const getNonSolid = () => nonSolid
 export function useBuild() {
   return {
     state, current, build, getRoot, getTemplates, getNonSolid,
-    blockAt, blockEntryAt, interact, aimDoor, currentBoxes, exportCurrent
+    blockAt, blockEntryAt, boxForBlock, interact, aimDoor, currentBoxes, exportCurrent
   }
 }

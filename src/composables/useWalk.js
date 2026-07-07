@@ -33,16 +33,11 @@ let stepSmooth = 0                                // camera lag after an auto st
 const keys = new Set()
 let collHash = new Map(), floorY = 0
 
-// outline round the door currently in reach (minecraft-style block highlight)
+// outline round the interactable currently in reach (block highlight)
 const aimBox = new THREE.Box3()
 let outline = null
 function ensureOutline() {
-  if (outline) return
-  outline = new THREE.Box3Helper(aimBox, 0x000000)
-  outline.material.transparent = true
-  outline.material.opacity = 0.5
-  outline.visible = false
-  sceneApi.scene.add(outline)
+  outline ??= sceneApi.makeHighlight()
 }
 
 function buildCollision() {
@@ -272,10 +267,8 @@ function updateWalk(dt) {
   // doesn't z-fight); none while a modal has the controls detached
   perspCam.getWorldDirection(_look)
   const aim = state.suspended ? null : buildApi.aimDoor(perspCam.position.x, perspCam.position.y, perspCam.position.z, _look.x, _look.y, _look.z)
-  if (aim) {
-    aimBox.copy(aim).expandByScalar(0.2)
-    outline.visible = true
-  } else outline.visible = false
+  if (aim) outline.show(aimBox.copy(aim).expandByScalar(0.2))
+  else outline.hide()
 }
 
 function enter() {
@@ -351,7 +344,7 @@ function exit() {
   sceneApi.controls.target.copy(perspCam.position).addScaledVector(ahead, 48)
   sceneApi.updateProjection()
   sceneApi.controls.update()
-  if (outline) outline.visible = false
+  outline?.hide()
 }
 
 sceneApi.setWalkUpdate(dt => {
