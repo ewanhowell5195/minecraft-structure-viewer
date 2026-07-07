@@ -150,6 +150,30 @@ let doorSlots = new Map() // stateIdx -> { entries, meshes: InstancedMesh[], box
 const _dm = new THREE.Matrix4()
 const _dzero = new THREE.Matrix4().makeScale(0, 0, 0)
 
+// the library materials are plain ShaderMaterials with no instancing support,
+// so instances would all render at the template origin. derive a variant
+// whose position runs through instanceMatrix; uniforms are SHARED with the
+// source so lighting changes and animated frames stay live. instances only
+// translate (or zero-scale to hide), so normals need no rework
+const instancedMats = new WeakMap()
+function instancedMaterial(m) {
+  let v = instancedMats.get(m)
+  if (v) return v
+  if (m.isShaderMaterial && m.vertexShader.includes("vec4(position, 1.0)")) {
+    // three declares the instanceMatrix attribute itself for instanced draws
+    v = new THREE.ShaderMaterial({
+      vertexShader: m.vertexShader.replace("vec4(position, 1.0)", "(instanceMatrix * vec4(position, 1.0))"),
+      fragmentShader: m.fragmentShader,
+      uniforms: m.uniforms,
+      side: m.side,
+      transparent: m.transparent,
+      depthWrite: m.depthWrite
+    })
+  } else v = m // built-in materials handle instancing themselves
+  instancedMats.set(m, v)
+  return v
+}
+
 function setDoorInstance(stateIdx, slot, pos, visible) {
   const s = doorSlots.get(stateIdx)
   if (!s) return
@@ -183,7 +207,8 @@ function attachDoors(entries) {
     s.box = new THREE.Box3().setFromObject(tmpl)
     tmpl.traverse(o => {
       if (!o.isMesh) return
-      const im = new THREE.InstancedMesh(o.geometry, o.material, s.count)
+      const mat = Array.isArray(o.material) ? o.material.map(instancedMaterial) : instancedMaterial(o.material)
+      const im = new THREE.InstancedMesh(o.geometry, mat, s.count)
       im.userData.baseMatrix = o.matrixWorld.clone()
       im.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
       // instances spread across the structure; the geometry's own bounds
