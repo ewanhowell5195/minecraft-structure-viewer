@@ -6,6 +6,7 @@ import { useScene } from "./useScene.js"
 import { useLock } from "./useLock.js"
 import { optimise } from "../optimise.js"
 import { exportScene } from "../export.js"
+import { makeSignTexts } from "../signs.js"
 import { JIGSAW, parseState } from "../transforms.js"
 
 const packs = usePacks()
@@ -495,6 +496,9 @@ function disposeGroup(g) {
     if (!o.isMesh || o.userData.shared) return
     if (o.isInstancedMesh) o.dispose()
     o.geometry?.dispose()
+    // only textures created for this mesh (sign text canvases): atlas and
+    // library-cached textures are managed elsewhere
+    if (o.userData.ownsMap) o.material?.map?.dispose?.()
     for (const m of [].concat(o.material)) m?.dispose?.()
   })
   g.removeFromParent()
@@ -667,6 +671,10 @@ async function build(structure = source, refit = true) {
     if (animator) sceneApi.animators.delete(animator)
     const doorDraws = attachDoors(doorEntries)
     const entityDraws = await attachEntities(structure, lib, assets)
+    try {
+      const signs = await makeSignTexts(structure)
+      if (signs) root.add(signs)
+    } catch {}
     animator = lib.createAnimator(root)
     sceneApi.animators.add(animator)
     // one floor grid per structure part, hugging its footprint with a 3-block
