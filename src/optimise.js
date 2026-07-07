@@ -145,112 +145,36 @@ function extractFlats(geo, grp, mw, nm, tex, mat, cull) {
 // stay on the atlas path in submission order, else they z-fight
 const rectsOverlap = (f, g) => f.a0 < g.a0 + g.wa - 0.01 && g.a0 < f.a0 + f.wa - 0.01 && f.b0 < g.b0 + g.wb - 0.01 && g.b0 < f.b0 + f.wb - 0.01
 
-// composite cache: identical merged runs (same member layout + textures)
-// share one canvas, so repeated walls/floors hash and pack once
-const compositeCache = new Map()
+// pre-tiled texture cache: cell key + repeats -> canvas
+const tiledCache = new Map()
+function tiledSub(srcImg, key, sub, ur, vr) {
+  const k = key + "|" + ur + "x" + vr
+  let c = tiledCache.get(k)
+  if (c) return c
+  c = new OffscreenCanvas(sub.sw * ur, sub.sh * vr)
+  const ctx = c.getContext("2d")
+  for (let j = 0; j < vr; j++) for (let i = 0; i < ur; i++) ctx.drawImage(srcImg, sub.sx, sub.sy, sub.sw, sub.sh, i * sub.sw, j * sub.sh, sub.sw, sub.sh)
+  tiledCache.set(k, c)
+  return c
+}
 
-// greedily merge coplanar same-material flats: NON-overlapping neighbours
-// join into one quad even across different textures and face sizes. pass 1
-// merges identical-height runs along a, pass 2 stacks identical-width strips
-// along b; runs are capped at MAX_TILE so composites stay atlas-sized
-const MEPS = 0.01
-
-// one row-then-column sweep over rects
-function mergeOnce(items) {
-  const rows = new Map()
-  for (const m of items) {
-    const k = m.b0.toFixed(2) + "|" + m.b1.toFixed(2)
-    let r = rows.get(k)
-    if (!r) rows.set(k, r = [])
-    r.push(m)
-  }
-  const strips = []
-  for (const row of rows.values()) {
-    row.sort((p, q) => p.a0 - q.a0)
-    let cur = null
-    for (const m of row) {
-      if (cur && Math.abs(m.a0 - cur.a1) < MEPS && m.a1 - cur.a0 <= MAX_TILE) {
-        cur.a1 = m.a1
-        cur.members.push(...m.members)
-      } else {
-        strips.push(cur = { a0: m.a0, a1: m.a1, b0: m.b0, b1: m.b1, members: [...m.members] })
-      }
+// greedily merge a set of "a,b" plane cells into maximal rectangles
+function greedyRects(cellSet) {
+  const done = new Set(), rects = []
+  const coords = [...cellSet].map(s => s.split(",").map(Number)).sort((p, q) => p[1] - q[1] || p[0] - q[0])
+  for (const [a, b] of coords) {
+    if (done.has(a + "," + b)) continue
+    let a1 = a
+    while (cellSet.has((a1 + 1) + "," + b) && !done.has((a1 + 1) + "," + b)) a1++
+    let b1 = b, grow = true
+    while (grow) {
+      for (let x = a; x <= a1; x++) if (!cellSet.has(x + "," + (b1 + 1)) || done.has(x + "," + (b1 + 1))) { grow = false; break }
+      if (grow) b1++
     }
-  }
-  const cols = new Map()
-  for (const s of strips) {
-    const k = s.a0.toFixed(2) + "|" + s.a1.toFixed(2)
-    let c = cols.get(k)
-    if (!c) cols.set(k, c = [])
-    c.push(s)
-  }
-  const rects = []
-  for (const col of cols.values()) {
-    col.sort((p, q) => p.b0 - q.b0)
-    let cur = null
-    for (const s of col) {
-      if (cur && Math.abs(s.b0 - cur.b1) < MEPS && s.b1 - cur.b0 <= MAX_TILE) {
-        cur.b1 = s.b1
-        cur.members.push(...s.members)
-      } else {
-        rects.push(cur = s)
-      }
-    }
+    for (let y = b; y <= b1; y++) for (let x = a; x <= a1; x++) done.add(x + "," + y)
+    rects.push([a, a1, b, b1])
   }
   return rects
-}
-
-// repeated sweeps let strips formed in one round pair up in the next
-// (an L of rows becomes one block once their extents line up)
-function mergePlaneFaces(faces) {
-  let items = faces.map(m => ({ a0: m.a0, a1: m.a0 + m.f.wa, b0: m.b0, b1: m.b0 + m.f.wb, members: [m] }))
-  for (let i = 0; i < 4; i++) {
-    const before = items.length
-    items = mergeOnce(items)
-    if (items.length === before) break
-  }
-  return items
-}
-
-// paint a merged rect's member faces into one canvas (1 texel per world unit
-// at scale 1). rotated/flipped uvs are honoured by solving the affine that
-// maps each face's source sub-rect onto its spot
-function compositeRect(rect, colorSpace) {
-  let scale = 1
-  for (const m of rect.members) scale = Math.max(scale, Math.round(m.f.sub.sw / m.f.wa), Math.round(m.f.sub.sh / m.f.wb))
-  const key = scale + "|" + rect.members.map(m => (m.a0 - rect.a0).toFixed(2) + "," + (m.b0 - rect.b0).toFixed(2) + "," + m.f.cellKey).join(";")
-  let image = compositeCache.get(key)
-  if (!image) {
-    const cw = Math.max(1, Math.round((rect.a1 - rect.a0) * scale))
-    const ch = Math.max(1, Math.round((rect.b1 - rect.b0) * scale))
-    const ctx = new OffscreenCanvas(cw, ch).getContext("2d")
-    ctx.imageSmoothingEnabled = false
-    for (const m of rect.members) {
-      const f = m.f, sw = f.sub.sw, sh = f.sub.sh
-      const dx = (m.a0 - rect.a0) * scale, dy = (rect.b1 - (m.b0 + f.wb)) * scale
-      const dw = f.wa * scale, dh = f.wb * scale
-      const cn = {}
-      for (const v of f.verts) cn[`${v.ha}${v.hb}`] = v
-      if (!cn["00"] || !cn["10"] || !cn["01"]) continue
-      // source pixel of a corner (v runs bottom-up), dest pixel (canvas top = b1)
-      const S = h => [cn[h].u * sw, (1 - cn[h].v) * sh]
-      const D = { "00": [dx, dy + dh], "10": [dx + dw, dy + dh], "01": [dx, dy] }
-      const s00 = S("00"), s10 = S("10"), s01 = S("01")
-      const u1 = [s10[0] - s00[0], s10[1] - s00[1]], u2 = [s01[0] - s00[0], s01[1] - s00[1]]
-      const d1 = [D["10"][0] - D["00"][0], D["10"][1] - D["00"][1]], d2 = [D["01"][0] - D["00"][0], D["01"][1] - D["00"][1]]
-      const det = u1[0] * u2[1] - u1[1] * u2[0]
-      if (!det) continue
-      const ta = (d1[0] * u2[1] - d2[0] * u1[1]) / det
-      const tc = (u1[0] * d2[0] - d1[0] * u2[0]) / det
-      const tb = (d1[1] * u2[1] - d2[1] * u1[1]) / det
-      const td = (u1[0] * d2[1] - d1[1] * u2[0]) / det
-      ctx.setTransform(ta, tb, tc, td, D["00"][0] - ta * s00[0] - tc * s00[1], D["00"][1] - tb * s00[0] - td * s00[1])
-      ctx.drawImage(f.tex.image, f.sub.sx, f.sub.sy, sw, sh, 0, 0, sw, sh)
-    }
-    image = ctx.canvas
-    compositeCache.set(key, image)
-  }
-  return { image, colorSpace }
 }
 
 // pack textures into atlases with a 1px extruded gutter (nearest-filter never
@@ -314,7 +238,7 @@ function appendGroup(geo, start, count, mat, nmat, rect, W, H, acc) {
 
 export async function optimise(structure, templates, position, { getCullFaces, setStatus }) {
   setStatus?.("optimising…")
-  compositeCache.clear()
+  tiledCache.clear()
   const pending = []
   await new Promise(r => setTimeout(r))
 
@@ -431,32 +355,43 @@ export async function optimise(structure, templates, position, { getCullFaces, s
     tdata.set(state, { merge, meshes: [...meshMap.values()] })
   }
 
-  // greedy: bucket flat faces by (plane, normal, material signature, pass)
-  // across all placed blocks, then merge non-overlapping neighbours into big
-  // composite quads regardless of texture or face size
-  const planes = new Map()
+  // greedy: bucket flat faces by (plane, normal, cell, phase) across all
+  // placed blocks; phase = world offset mod cell size so equal faces at odd
+  // offsets still align to a lattice
+  const grids = new Map()
   for (const b of structure.blocks) {
     const td = tdata.get(b.state)
     if (!td) continue
     for (const f of td.merge) {
       if (f.cull && hidden(b, f.cull)) continue
-      const translucent = isTranslucent(f.tex)
-      const sig = f.sig + (translucent ? "|T" : "|O")
       const wpc = f.pc + b.pos[f.na] * 16
-      const key = f.na + "|" + wpc.toFixed(2) + "|" + f.ns + "|" + sig
-      let pl = planes.get(key)
-      if (!pl) planes.set(key, pl = { f, sig, translucent, wpc, faces: [] })
-      pl.faces.push({ f, a0: f.a0 + b.pos[f.pa] * 16, b0: f.b0 + b.pos[f.pb] * 16 })
+      const wa0 = f.a0 + b.pos[f.pa] * 16, wb0 = f.b0 + b.pos[f.pb] * 16
+      const phaseA = ((wa0 % f.wa) + f.wa) % f.wa, phaseB = ((wb0 % f.wb) + f.wb) % f.wb
+      const key = f.na + "|" + wpc.toFixed(2) + "|" + f.ns + "|" + f.cellKey + "|" + phaseA.toFixed(2) + "|" + phaseB.toFixed(2)
+      let grid = grids.get(key)
+      if (!grid) grids.set(key, grid = { f, wpc, phaseA, phaseB, cells: new Set() })
+      grid.cells.add(Math.round((wa0 - phaseA) / f.wa) + "," + Math.round((wb0 - phaseB) / f.wb))
     }
   }
   const greedyQuads = []
-  for (const pl of planes.values()) {
-    let grp = atlasGroups.get(pl.sig)
-    if (!grp) atlasGroups.set(pl.sig, grp = { textures: new Set(), repMat: pl.f.mat, translucent: pl.translucent })
-    for (const rect of mergePlaneFaces(pl.faces)) {
-      const pseudo = compositeRect(rect, pl.f.tex.colorSpace)
-      grp.textures.add(pseudo)
-      greedyQuads.push({ sig: pl.sig, pseudo, na: pl.f.na, ns: pl.f.ns, pa: pl.f.pa, pb: pl.f.pb, wpc: pl.wpc, rect })
+  for (const grid of grids.values()) {
+    const f = grid.f
+    const translucent = isTranslucent(f.tex)
+    const sig = f.sig + (translucent ? "|T" : "|O")
+    let grp = atlasGroups.get(sig)
+    if (!grp) atlasGroups.set(sig, grp = { textures: new Set(), repMat: f.mat, translucent })
+    const maxA = Math.max(1, Math.floor(MAX_TILE / f.sub.sw)), maxB = Math.max(1, Math.floor(MAX_TILE / f.sub.sh))
+    for (const [i0, i1, j0, j1] of greedyRects(grid.cells)) {
+      for (let ci = i0; ci <= i1; ci += maxA) for (let cj = j0; cj <= j1; cj += maxB) {
+        const ei = Math.min(ci + maxA - 1, i1), ej = Math.min(cj + maxB - 1, j1)
+        const Na = ei - ci + 1, Nb = ej - cj + 1
+        const wALo = grid.phaseA + ci * f.wa, wAHi = grid.phaseA + (ei + 1) * f.wa
+        const wBLo = grid.phaseB + cj * f.wb, wBHi = grid.phaseB + (ej + 1) * f.wb
+        const ur = f.uAxisIsPa ? Na : Nb, vr = f.uAxisIsPa ? Nb : Na
+        const pseudo = { image: tiledSub(f.tex.image, f.cellKey, f.sub, ur, vr), colorSpace: f.tex.colorSpace }
+        grp.textures.add(pseudo)
+        greedyQuads.push({ sig, pseudo, f, wpc: grid.wpc, wALo, wAHi, wBLo, wBHi })
+      }
     }
   }
 
@@ -503,24 +438,19 @@ export async function optimise(structure, templates, position, { getCullFaces, s
     }
   }
 
-  // emit merged quads: two triangles over the rect, uv 0..1 into the
-  // composite's atlas spot (orientation was baked in when compositing)
+  // emit greedy quads (positions at the merged rect, uv 0..1 into the
+  // pre-tiled cell's atlas rect; orientation lives in the per-vert uv)
   for (const q of greedyQuads) {
-    const at = atlases.get(q.sig), rect = at.rects.get(q.pseudo), s = at.sizes[rect.ai], acc = at.accs[rect.ai]
-    // winding: +a cross +b points along +na for x/z planes, -na for y planes
-    const flip = q.ns !== (q.na === 1 ? -1 : 1)
-    const corners = flip
-      ? [[0, 0], [1, 1], [1, 0], [0, 0], [0, 1], [1, 1]]
-      : [[0, 0], [1, 0], [1, 1], [0, 0], [1, 1], [0, 1]]
-    for (const [ha, hb] of corners) {
+    const at = atlases.get(q.sig), rect = at.rects.get(q.pseudo), s = at.sizes[rect.ai], acc = at.accs[rect.ai], f = q.f
+    for (const vert of f.verts) {
       const p = [0, 0, 0], nn = [0, 0, 0]
-      p[q.na] = q.wpc
-      p[q.pa] = ha ? q.rect.a1 : q.rect.a0
-      p[q.pb] = hb ? q.rect.b1 : q.rect.b0
-      nn[q.na] = q.ns
+      p[f.na] = q.wpc
+      p[f.pa] = vert.ha ? q.wAHi : q.wALo
+      p[f.pb] = vert.hb ? q.wBHi : q.wBLo
+      nn[f.na] = f.ns
       acc.P.push(p[0], p[1], p[2])
       acc.N.push(nn[0], nn[1], nn[2])
-      acc.U.push((rect.x + ha * rect.w) / s.w, 1 - (rect.y + (1 - hb) * rect.h) / s.h)
+      acc.U.push((rect.x + vert.u * rect.w) / s.w, 1 - (rect.y + (1 - vert.v) * rect.h) / s.h)
     }
   }
 
