@@ -70,6 +70,42 @@ function fixLegacyProps(name, props) {
   return props
 }
 
+// fluid cells: corner heights depend on the neighbourhood, so each distinct
+// surface shape gets a synthetic palette entry carrying its heights; identical
+// cells (open water, full columns) still share one template
+const FLUID_RE = /(^|:)(water|flowing_water|lava|flowing_lava)$/
+function remapFluidStates(structure, lib) {
+  const byPos = new Map()
+  for (const b of structure.blocks) byPos.set(b.pos.join(","), b)
+  const byKey = new Map()
+  structure.palette.forEach((e, i) => { if (e?.__fluidKey) byKey.set(e.__fluidKey, i) })
+  for (const b of structure.blocks) {
+    const e = structure.palette[b.state]
+    if (!e?.Name) continue
+    const type = FLUID_RE.test(e.Name) ? (/lava/.test(e.Name) ? "lava" : "water")
+      : e.Properties?.waterlogged === "true" ? "water" : null
+    if (!type) continue
+    const [bx, by, bz] = b.pos
+    const h = lib.fluidHeights(type, (dx, dy, dz) => {
+      const nb = byPos.get((bx + dx) + "," + (by + dy) + "," + (bz + dz))
+      const ne = nb && structure.palette[nb.state]
+      return ne?.Name ? { id: ne.Name, properties: ne.Properties } : null
+    })
+    const key = `${e.Name}|${JSON.stringify(e.Properties ?? null)}|${h.nw.toFixed(3)},${h.ne.toFixed(3)},${h.sw.toFixed(3)},${h.se.toFixed(3)}|${h.full ? 1 : 0}|${h.angle == null ? "" : h.angle.toFixed(2)}`
+    let idx = byKey.get(key)
+    if (idx === undefined) {
+      idx = structure.palette.length
+      const entry = { Name: e.Name }
+      if (e.Properties) entry.Properties = e.Properties
+      entry.__fluidHeights = h
+      entry.__fluidKey = key
+      structure.palette.push(entry)
+      byKey.set(key, idx)
+    }
+    b.state = idx
+  }
+}
+
 const state = reactive({
   lighting: "world",
   hideStructureBlocks: localStorage.getItem("hideStructureBlocks") !== "false",
@@ -392,7 +428,7 @@ async function build(structure = source, refit = true, replace = false) {
           let any = false, allPlanes = true
           for (const model of await lib.parseBlockstate(assets, name, { data: props ?? {}, ignoreAtlases: true })) {
             const data = await lib.resolveModelData(assets, model)
-            await lib.loadModel(g, assets, data, { display: {}, lighting: state.lighting, animate: false })
+            await lib.loadModel(g, assets, data, { display: {}, lighting: state.lighting, animate: false, fluidHeights: entry.__fluidHeights })
             for (const el of data?.elements ?? []) { any = true; if (!isPlane(el)) allPlanes = false }
           }
           if (any && allPlanes) nonSolid.add(stateIdx)
@@ -402,6 +438,9 @@ async function build(structure = source, refit = true, replace = false) {
       templates.set(stateIdx, tmpl)
       return tmpl
     }
+
+    // fluid surfaces shape themselves from their neighbourhood
+    if (lib.fluidHeights) remapFluidStates(structure, lib)
 
     // build every template up front (the optimiser reads them all)
     let placedCount = 0

@@ -29,9 +29,16 @@ export function makeDebug() {
   put(0, 0, 18, "oak_planks"); put(0, 1, 18, "oak_planks"); put(1, 0, 18, "oak_slab", { type: "bottom" }) // cull: slab against a cube
   run(20, "dirt_path")                                            // 15/16-tall top (never culls): tops merge, sides partial
   put(0, 0, 22, "grass_block"); put(1, 0, 22, "dirt_path"); put(2, 0, 22, "grass_block") // path between full cubes: shared sides cull
-  // fluids: source (level 0) then flowing levels 1-7, each lower than the last
+  // fluids: source (level 0) then flowing levels 1-7, each lower than the
+  // last, so the surface slopes down the run
   for (let i = 0; i < 8; i++) put(i, 0, 24, "water", { level: String(i) })
   for (let i = 0; i < 8; i++) put(i, 0, 26, "lava", { level: String(i) })
+  // stacked columns: same fluid above renders the lower block full 16 tall;
+  // level 8 is falling (also full-ish). plus a waterlogged slab
+  put(9, 0, 24, "water", { level: "0" }); put(9, 1, 24, "water", { level: "0" })
+  put(11, 0, 24, "water", { level: "8" })
+  put(9, 0, 26, "lava", { level: "0" }); put(9, 1, 26, "lava", { level: "0" })
+  put(0, 0, 30, "oak_slab", { type: "bottom", waterlogged: "true" })
   // stained glass wall (2 tall), mixed colours: same colour culls the shared
   // face (vertical pairs), different colours don't (horizontal neighbours)
   const glassCols = ["red", "orange", "yellow", "lime", "light_blue", "blue", "purple", "magenta"]
