@@ -8,6 +8,7 @@ import { optimise } from "../optimise.js"
 import { exportScene } from "../export.js"
 import { makeSignTexts } from "../signs.js"
 import { JIGSAW, parseState } from "../transforms.js"
+import { isContainer } from "../loot.js"
 
 const packs = usePacks()
 const sceneApi = useScene()
@@ -376,7 +377,7 @@ function rayHit(ox, oy, oz, dx, dy, dz) {
     const i = idx.get(key)
     if (i == null) continue
     const b = structure.blocks[i]
-    if (b.nbt?.LootTable && shapeT(bx, by, bz, structure.palette[b.state])) return { container: b }
+    if ((isContainer(structure.palette[b.state]?.Name) || b.nbt?.LootTable) && shapeT(bx, by, bz, structure.palette[b.state])) return { container: b }
     const cx = bx * 16 + rx, cy = by * 16 + ry, cz = bz * 16 + rz
     for (const s of collisionBoxes(b.state)) {
       const th = rayBoxT(ox, oy, oz, dx, dy, dz, s[0] + cx, s[1] + cy, s[2] + cz, s[3] + cx, s[4] + cy, s[5] + cz)

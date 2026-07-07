@@ -159,7 +159,7 @@ watch(() => [state.open, state.stacks], () => {
       </header>
       <div v-if="state.error" class="err">{{ state.error }}</div>
       <template v-else>
-        <nav class="tabs">
+        <nav class="tabs" v-if="state.table">
           <button v-for="t in TABS" :key="t.id" :class="{ active: state.tab === t.id }"
             @click="container.setTab(t.id)">{{ t.label }}</button>
         </nav>
@@ -170,7 +170,8 @@ watch(() => [state.open, state.stacks], () => {
               <canvas ref="bgEl"></canvas>
               <canvas ref="itemsEl" class="items"></canvas>
             </div>
-            <div class="actions">
+            <div v-if="state.note" class="note-line">{{ state.note }}</div>
+            <div class="actions" v-if="state.table">
               <button :disabled="rendering" @click="container.reroll()">
                 <span class="material-symbols-outlined">shuffle</span>
                 Re-roll
@@ -358,6 +359,12 @@ button.icon {
 .actions .material-symbols-outlined, .sim-bar .material-symbols-outlined { font-size: 18px; }
 
 .err { color: var(--red); font-size: 13px; }
+
+.note-line {
+  color: var(--text-dim);
+  font-size: 12px;
+  text-align: center;
+}
 
 .empty {
   color: var(--text-dim);

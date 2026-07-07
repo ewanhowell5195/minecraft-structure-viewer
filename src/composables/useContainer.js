@@ -2,7 +2,7 @@ import { reactive, readonly } from "vue"
 import * as THREE from "three"
 import { useScene } from "./useScene.js"
 import { useBuild } from "./useBuild.js"
-import { readLootTable, rollLoot, sampleTable, stackKey, prettyName } from "../loot.js"
+import { readLootTable, rollLoot, sampleTable, stackKey, prettyName, isContainer } from "../loot.js"
 
 // Clicking a loot container (chest, barrel, dispenser...) opens a modal with
 // its loot table rules and a rolled inventory rendered in the vanilla GUI.
@@ -36,6 +36,7 @@ const state = reactive({
   kind: null,
   stacks: [],
   error: "",
+  note: "",
   tab: "loot",     // loot | odds | sim | rules
   odds: null,      // sampleTable result, computed once per open on demand
   oddsBusy: false,
@@ -49,6 +50,7 @@ async function open(block) {
   const entry = buildApi.current.value?.palette[block.state]
   const name = entry?.Name ?? "minecraft:chest"
   state.error = ""
+  state.note = ""
   state.blockName = prettyName(name)
   state.kind = kindOf(name)
   state.tableId = (block.nbt?.LootTable ?? "").replace(/^minecraft:/, "")
@@ -62,13 +64,28 @@ async function open(block) {
   openSeq++
   state.open = true
   try {
-    const table = await readLootTable(block.nbt?.LootTable)
-    if (!table) {
-      state.error = "loot table not found: " + state.tableId
-      return
+    if (block.nbt?.LootTable) {
+      const table = await readLootTable(block.nbt.LootTable)
+      if (!table) {
+        state.error = "loot table not found: " + state.tableId
+        return
+      }
+      state.table = table
+      await reroll()
+    } else if (Array.isArray(block.nbt?.Items) && block.nbt.Items.length) {
+      // pre-filled inventory (mansion allium/sapling chests and such): show
+      // the exact items in their saved slots
+      const cap = state.kind.cols * state.kind.rows
+      state.stacks = block.nbt.Items.filter(it => it?.id).map(it => ({
+        id: it.id,
+        count: it.count ?? it.Count ?? 1,
+        components: it.components,
+        slot: Math.min(cap - 1, Math.max(0, it.Slot ?? 0))
+      }))
+      state.note = "Fixed contents stored in the structure."
+    } else {
+      state.note = "This container has no loot table."
     }
-    state.table = table
-    await reroll()
   } catch (err) {
     state.error = String(err)
   }
@@ -155,7 +172,9 @@ function containerUnder(e, canvas) {
   if (!hit) return null
   const p = hit.point.addScaledVector(hit.face.normal, -1)
   const b = buildApi.blockEntryAt(p.x, p.y, p.z)
-  return b?.nbt?.LootTable ? b : null
+  if (!b) return null
+  const name = buildApi.current.value?.palette[b.state]?.Name
+  return isContainer(name) || b.nbt?.LootTable ? b : null
 }
 
 function clearHover(canvas) {
