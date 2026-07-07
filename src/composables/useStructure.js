@@ -74,7 +74,7 @@ async function onAssetsSwapped() {
   if (sel && structures.has(sel)) {
     try {
       const s = await readVanilla(sel)
-      if (s) { await loadStructure(s); return }
+      if (s) { await buildApi.build(s, false, true); return }
     } catch {}
   }
   if (structure.value) await buildApi.build(structure.value, false)

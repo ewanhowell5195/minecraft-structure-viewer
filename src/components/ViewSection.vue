@@ -5,7 +5,7 @@ import { useLock } from "../composables/useLock.js"
 
 const sceneApi = useScene()
 const { view } = sceneApi
-const { state: buildState } = useBuild()
+const { state: buildState, clearCollected } = useBuild()
 const { locked } = useLock()
 </script>
 
@@ -31,9 +31,17 @@ const { locked } = useLock()
       <input type="checkbox" v-model="view.grid">
       Grid
     </label>
+    <label class="check">
+      <input type="checkbox" v-model="buildState.collect" :disabled="locked">
+      Collect structures
+    </label>
     <button @click="sceneApi.fit()">
       <span class="material-symbols-outlined">recenter</span>
       Fit View
+    </button>
+    <button v-if="buildState.placedCount" :disabled="locked" @click="clearCollected()">
+      <span class="material-symbols-outlined">delete_sweep</span>
+      Clear Collected
     </button>
   </section>
 </template>

@@ -38,6 +38,8 @@ function fixLegacyProps(name, props) {
 
 const state = reactive({
   lighting: "world",
+  collect: false,
+  placedCount: 0,
   building: false,
   status: "",
   info: null
@@ -63,6 +65,11 @@ let nonSolid = new Set()
 let atlasTextures = [] // the displayed atlases; swapped + disposed on rebuild
 let doorByCell = new Map()
 let blockMap = null, blockMapFor = null
+
+// collect mode: committed structures stay in the scene beside the current one
+let placed = []
+let sceneRight = 0 // world-space right edge of everything placed
+let offsetX = 0    // x centre of the current build (0 unless collecting)
 
 // palette index for the same block with a different `open` value (added if new)
 function stateWithOpen(structure, stateIdx, open) {
@@ -176,9 +183,44 @@ function aimDoor(ox, oy, oz, dx, dy, dz) {
   return g ? _aimBox.setFromObject(g) : null
 }
 
+// the current structure keeps ownership of its group, animator, textures and
+// collision boxes only until it is committed: after this the next build's
+// atomic swap has nothing to remove or dispose
+function commitCurrent() {
+  const box = new THREE.Box3().setFromObject(root)
+  sceneRight = placed.length ? Math.max(sceneRight, box.max.x) : box.max.x
+  placed.push({ group: root, animator, textures: atlasTextures, boxes: rawBoxes() })
+  state.placedCount = placed.length
+  root = null
+  animator = null
+  atlasTextures = []
+  doorByCell = new Map()
+}
+
+function clearPlaced() {
+  for (const p of placed) {
+    sceneApi.contentRoots.delete(p.group)
+    sceneApi.animators.delete(p.animator)
+    disposeGroup(p.group)
+    for (const t of p.textures) t.dispose()
+  }
+  placed = []
+  state.placedCount = 0
+  sceneRight = 0
+}
+
+// clear button: drop every placed structure and rebuild the current one back
+// at the origin
+async function clearCollected() {
+  if (state.building) return
+  clearPlaced()
+  if (current.value) await build(current.value)
+  else sceneApi.remakeGrid()
+}
+
 // real world-space collision AABBs of the current structure: one per template
 // mesh (a stair yields its stepped boxes, a slab a half box), per block
-function currentBoxes() {
+function rawBoxes() {
   const structure = current.value
   const out = []
   if (!structure || !root || !templates) return out
@@ -207,6 +249,14 @@ function currentBoxes() {
   return out
 }
 
+// walk collision spans the whole scene: placed structures too
+function currentBoxes() {
+  const out = []
+  for (const p of placed) out.push(...p.boxes)
+  out.push(...rawBoxes())
+  return out
+}
+
 function disposeGroup(g) {
   if (!g) return
   g.traverse(o => {
@@ -232,16 +282,27 @@ function stat(t) {
   return { dc, tris }
 }
 
-async function build(structure = current.value, refit = true) {
+// replace: the structure object is fresh but stands in for the current one
+// (pack swap re-read), so it must not count as a new load
+async function build(structure = current.value, refit = true, replace = false) {
   const assets = packs.assets.value
   if (!assets || !structure || state.building) return
-  current.value = structure
+  const isNew = !replace && structure !== current.value
   state.building = true
   lock(true)
   try {
+    if (isNew) {
+      if (state.collect && root) commitCurrent()
+      else if (!state.collect) clearPlaced()
+    }
+    current.value = structure
     const lib = await loadLibrary()
     const [sx, sy, sz] = structure.size
     state.status = "building…"
+
+    // collecting lays structures out left to right with a 2-block gap;
+    // rebuilds in place keep their spot
+    offsetX = placed.length ? (isNew ? sceneRight + 32 + sx * 8 : offsetX) : 0
 
     templates = new Map()
     nonSolid = new Set()
@@ -294,7 +355,7 @@ async function build(structure = current.value, refit = true) {
     // centre, snapped so every block fills a whole grid cell: templates are
     // block-centred, so a centre ≡ 8 (mod 16) keeps blocks on the lattice
     const gridCentre = v => Math.round((v - 8) / 16) * 16 + 8
-    const position = new THREE.Vector3(gridCentre(-(sx - 1) * 8), gridCentre(-(sy - 1) * 8), gridCentre(-(sz - 1) * 8))
+    const position = new THREE.Vector3(gridCentre(offsetX - (sx - 1) * 8), gridCentre(-(sy - 1) * 8), gridCentre(-(sz - 1) * 8))
 
     // openable blocks render live (both models pre-built): keep them out of
     // the optimised static mesh
@@ -351,6 +412,6 @@ const getNonSolid = () => nonSolid
 export function useBuild() {
   return {
     state, current, build, getRoot, getTemplates, getNonSolid,
-    blockAt, interact, aimDoor, currentBoxes
+    blockAt, interact, aimDoor, currentBoxes, clearCollected
   }
 }
