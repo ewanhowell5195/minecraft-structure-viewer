@@ -51,7 +51,8 @@ const state = reactive({
   gui: null,       // the gui actually drawn (accumulated piles grow a chest)
   guiTitle: "",
   dataRows: null,  // technical blocks (command/structure/jigsaw) show these
-  poolEntries: null, // what a jigsaw's pool can place, weighted
+  poolId: "",      // the jigsaw's template pool
+  poolEntries: null, // what that pool can place, weighted
   poolFallback: ""
 })
 
@@ -68,9 +69,9 @@ function dataRowsFor(name, p, nbt) {
   }
   if (name.endsWith("command_block")) {
     add("Type", name === "chain_command_block" ? "Chain" : name === "repeating_command_block" ? "Repeating" : "Impulse")
-    add("Command", nbt?.Command || "(empty)", true)
     add("Conditional", p.conditional === "true" ? "Yes" : "No")
     add("Behaviour", nbt?.auto ? "Always Active" : "Needs Redstone")
+    rows.push({ label: "Command", value: nbt?.Command || "(empty)", mono: true, wide: true })
   } else if (name === "structure_block") {
     add("Mode", stripNs(nbt?.mode ?? p.mode ?? "").toUpperCase())
     add("Structure", stripNs(nbt?.name), true)
@@ -85,7 +86,6 @@ function dataRowsFor(name, p, nbt) {
     add("Metadata", nbt?.metadata, true)
     if (nbt?.ignoreEntities != null) add("Entities", nbt.ignoreEntities ? "Ignored" : "Included")
   } else if (name === "jigsaw") {
-    add("Pool", stripNs(nbt?.pool), true)
     add("Name", stripNs(nbt?.name), true)
     add("Target", stripNs(nbt?.target), true)
     add("Turns into", stripNs(nbt?.final_state), true)
@@ -94,7 +94,7 @@ function dataRowsFor(name, p, nbt) {
     if (nbt?.selection_priority) add("Selection priority", nbt.selection_priority)
     if (nbt?.placement_priority) add("Placement priority", nbt.placement_priority)
   }
-  return rows.length ? rows : [{ label: "Data", value: "(none)" }]
+  return rows
 }
 
 // what the jigsaw's template pool can place: weighted entries, nested list
@@ -142,6 +142,7 @@ async function open(block) {
   state.blockName = prettyName(name)
   state.kind = kindOf(name)
   state.dataRows = null
+  state.poolId = ""
   state.poolEntries = null
   state.poolFallback = ""
   const bare = stripNs(name)
@@ -154,7 +155,10 @@ async function open(block) {
     state.dataRows = dataRowsFor(bare, entry?.Properties ?? {}, block.nbt)
     openSeq++
     state.open = true
-    if (bare === "jigsaw" && block.nbt?.pool && stripNs(block.nbt.pool) !== "empty") loadPoolEntries(block.nbt.pool)
+    if (bare === "jigsaw" && block.nbt?.pool && stripNs(block.nbt.pool) !== "empty") {
+      state.poolId = stripNs(block.nbt.pool)
+      loadPoolEntries(block.nbt.pool)
+    }
     return
   }
   state.tableId = (block.nbt?.LootTable ?? "").replace(/^minecraft:/, "")

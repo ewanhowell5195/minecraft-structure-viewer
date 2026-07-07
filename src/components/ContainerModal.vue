@@ -68,6 +68,12 @@ function loadPoolStructure(rel) {
   structureApi.loadVanilla(rel)
 }
 
+// entries usually live inside the pool's folder: show just what differs
+const poolLeaf = label => label.startsWith(state.poolId + "/") ? label.slice(state.poolId.length + 1) : label
+
+const facts = computed(() => (state.dataRows ?? []).filter(r => !r.wide))
+const wides = computed(() => (state.dataRows ?? []).filter(r => r.wide))
+
 addEventListener("keydown", e => {
   if (e.key === "Escape" && state.open) close()
 })
@@ -184,21 +190,30 @@ watch(() => [state.open, state.stacks, state.gui], () => {
         <div class="body" :class="{ compact: state.dataRows }">
 
           <div v-if="state.dataRows" class="pane data">
-            <div v-for="r in state.dataRows" :key="r.label" class="data-row">
-              <span class="dl">{{ r.label }}</span>
-              <span class="dv" :class="{ mono: r.mono }">{{ r.value }}</span>
+            <div class="facts" v-if="facts.length">
+              <div v-for="r in facts" :key="r.label" class="fact">
+                <div class="fl">{{ r.label }}</div>
+                <div class="fv" :class="{ mono: r.mono }">{{ r.value }}</div>
+              </div>
             </div>
-            <template v-if="state.poolEntries">
-              <div class="cols pool-head-row"><span class="nm">Pool can place</span><span class="chance-h">Chance</span></div>
-              <div v-for="(p, i) in state.poolEntries" :key="i" class="item-row"
+            <div v-for="r in wides" :key="r.label" class="wide-card">
+              <div class="fl">{{ r.label }}</div>
+              <pre>{{ r.value }}</pre>
+            </div>
+            <div v-if="state.poolId" class="pool-card">
+              <div class="ph">
+                <span class="fl">Template pool</span>
+                <span class="pid">{{ state.poolId }}</span>
+              </div>
+              <div v-for="(p, i) in state.poolEntries ?? []" :key="i" class="pe"
                 :class="{ clickable: p.clickable }" :title="p.clickable ? 'Load ' + p.label : ''"
                 @click="p.clickable && loadPoolStructure(p.rel)">
-                <span class="nm mono-nm">{{ p.label }}</span>
+                <span class="nm mono-nm">{{ poolLeaf(p.label) }}</span>
                 <span class="meter"><i :style="{ width: Math.max(p.pct, 1.5) + '%' }"></i></span>
                 <span class="pctv">{{ p.pct >= 99.95 ? "100" : p.pct.toFixed(1) }}%</span>
               </div>
-              <div v-if="state.poolFallback" class="note-line pool-fb">fallback pool: {{ state.poolFallback }}</div>
-            </template>
+              <div v-if="state.poolFallback" class="pfb">fallback pool: {{ state.poolFallback }}</div>
+            </div>
           </div>
 
           <div v-show="state.tab === 'loot' && !state.dataRows" class="pane loot">
@@ -358,46 +373,95 @@ button.icon {
 
 .body.compact { min-height: 0; }
 
-.data { gap: 4px; }
+.data { gap: 10px; }
 
-.data-row {
-  display: grid;
-  grid-template-columns: 130px 1fr;
-  gap: 10px;
-  padding: 5px 8px;
-  border-radius: 6px;
-  align-items: baseline;
+.fl {
+  font-size: 11px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
 }
 
-.data-row:nth-child(even) { background: #ffffff06; }
+.facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 8px;
+}
 
-.dl {
+.fact {
+  background: #ffffff05;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.fact .fv {
+  margin-top: 3px;
+  overflow-wrap: anywhere;
+}
+
+.fact .fv.mono, .mono-nm {
+  font-family: ui-monospace, monospace;
+  font-size: 12.5px;
+}
+
+.wide-card {
+  background: #ffffff05;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.wide-card pre {
+  margin: 4px 0 0;
+  font-family: ui-monospace, monospace;
+  font-size: 12.5px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.pool-card {
+  background: #ffffff05;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.pool-card .ph {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.pool-card .pid {
+  font-family: ui-monospace, monospace;
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.pool-card .pe {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 10px;
+}
+
+.pool-card .pe:nth-child(even) { background: #ffffff05; }
+.pool-card .pe.clickable { cursor: pointer; }
+.pool-card .pe.clickable:hover { background: #ffffff0d; }
+.pool-card .pe.clickable:hover .nm { color: var(--accent); }
+.pool-card .pe .nm { flex: 1; }
+
+.pool-card .pfb {
+  padding: 6px 10px;
+  border-top: 1px solid var(--border);
   color: var(--text-dim);
   font-size: 12px;
 }
-
-.dv {
-  min-width: 0;
-  overflow-wrap: anywhere;
-  white-space: pre-wrap;
-}
-
-.dv.mono {
-  font-family: ui-monospace, monospace;
-  font-size: 12.5px;
-}
-
-.pool-head-row { margin-top: 14px; }
-
-.item-row.clickable { cursor: pointer; }
-.item-row.clickable:hover .nm { color: var(--accent); }
-
-.mono-nm {
-  font-family: ui-monospace, monospace;
-  font-size: 12.5px;
-}
-
-.pool-fb { padding-top: 8px; }
 
 .pane {
   display: flex;
