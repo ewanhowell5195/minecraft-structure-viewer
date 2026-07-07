@@ -375,9 +375,19 @@ function exit() {
   // degenerate (zero radius) and freezes the camera until "fit view"
   perspCam.position.set(walk.pos.x, walk.pos.y + walk.eye, walk.pos.z)
   perspCam.rotation.set(walk.pitch, walk.yaw, 0, "YXZ")
-  const ahead = new THREE.Vector3()
-  perspCam.getWorldDirection(ahead)
-  sceneApi.controls.target.copy(perspCam.position).addScaledVector(ahead, 48)
+  perspCam.updateMatrixWorld(true)
+  const frustum = new THREE.Frustum().setFromProjectionMatrix(
+    new THREE.Matrix4().multiplyMatrices(perspCam.projectionMatrix, perspCam.matrixWorldInverse))
+  if (!frustum.intersectsBox(sceneApi.sceneBounds())) {
+    // nothing in view (the edge arrow would show): aim at the scene centre
+    const c = sceneApi.sceneBounds().getCenter(new THREE.Vector3())
+    perspCam.lookAt(c)
+    sceneApi.controls.target.copy(c)
+  } else {
+    const ahead = new THREE.Vector3()
+    perspCam.getWorldDirection(ahead)
+    sceneApi.controls.target.copy(perspCam.position).addScaledVector(ahead, 48)
+  }
   sceneApi.updateProjection()
   sceneApi.controls.update()
   outline?.hide()
