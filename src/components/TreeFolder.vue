@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from "vue"
+import { computed, ref, watch } from "vue"
 import { useStructure } from "../composables/useStructure.js"
 import { useStructures } from "../composables/useStructures.js"
 
@@ -30,12 +30,25 @@ function onToggle(name, e) {
   if (e.target.open) opened.value = new Set(opened.value).add(name)
 }
 
+// reveal the page-load selection: folders containing a selected structure
+// expand once, then behave normally. children mount with the selection
+// already set, so their immediate run cascades the whole path open
+let revealed = false
+watch(() => state.selected, sel => {
+  if (revealed || !sel.length) return
+  revealed = true
+  const hasSel = node => node.files.some(f => sel.includes(f)) || [...node.dirs.values()].some(hasSel)
+  const add = new Set(opened.value)
+  for (const { name, child } of entries.value) if (hasSel(child)) add.add(name)
+  opened.value = add
+}, { immediate: true })
+
 const leaf = rel => rel.split("/").at(-1)
 </script>
 
 <template>
   <details v-for="{ name, child } in entries" :key="name"
-    :open="name === autoOpenName" @toggle.stop="onToggle(name, $event)">
+    :open="name === autoOpenName || opened.has(name)" @toggle.stop="onToggle(name, $event)">
     <summary>{{ name }}</summary>
     <div class="children" v-if="opened.has(name) || name === autoOpenName">
       <TreeFolder :node="child" />

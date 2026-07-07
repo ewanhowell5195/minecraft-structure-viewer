@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from "vue"
+import { computed, nextTick, ref, watch } from "vue"
 import { useStructures } from "../composables/useStructures.js"
 import { useStructure } from "../composables/useStructure.js"
 import { useLock } from "../composables/useLock.js"
@@ -10,6 +10,16 @@ const { state, stateMut, computeWorldgen, filteredNames } = structures
 const { loadVanilla, loadFile } = useStructure()
 const { locked } = useLock()
 const fileInput = ref(null)
+const treeEl = ref(null)
+
+// page load: once the selection lands (and TreeFolder has expanded the path
+// to it), bring the first selected row into view
+const stopReveal = watch(() => state.selected.length, async n => {
+  if (!n) return
+  stopReveal()
+  await nextTick()
+  treeEl.value?.querySelector(".tree-file.sel")?.scrollIntoView({ block: "center" })
+})
 
 const names = computed(() => {
   void state.worldgenReady
@@ -68,7 +78,7 @@ function onFile(e) {
         <option value="starters">Starters</option>
       </select>
     </div>
-    <div class="tree">
+    <div class="tree" ref="treeEl">
       <div v-if="state.indexing" class="empty">Indexing…</div>
       <template v-else-if="flat">
         <div v-if="!flat.length" class="empty">No match</div>
