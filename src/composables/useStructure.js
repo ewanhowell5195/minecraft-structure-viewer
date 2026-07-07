@@ -135,7 +135,7 @@ async function apply(refit = true) {
     await buildApi.build(s, refit)
     await session.startSession(s, name)
   } else {
-    state.name = "combination"
+    state.name = `${loaded.length} structures`
     const rels = loaded.map(e => e.rel)
     structures.stateMut.selected = rels.filter(Boolean)
     setVanillaParam(rels.every(Boolean) ? await encodeRels(rels) : null)
@@ -186,7 +186,10 @@ function sortLoaded(order) {
 let anchor = null
 function loadVanilla(rel, ev) {
   if (locked.value) return
-  const shift = !!ev?.shiftKey, ctrl = !!(ev?.ctrlKey || ev?.metaKey)
+  // file/debug structures (no rel) never combine: an additive click on the
+  // tree just replaces them with the clicked structure
+  const canCombine = loaded.length > 0 && loaded.every(e => e.rel)
+  const shift = !!ev?.shiftKey && canCombine, ctrl = !!(ev?.ctrlKey || ev?.metaKey) && canCombine
   return withLock(async () => {
     state.error = ""
     try {
