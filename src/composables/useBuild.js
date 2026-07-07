@@ -111,8 +111,6 @@ const state = reactive({
   lighting: "world",
   hideStructureBlocks: localStorage.getItem("hideStructureBlocks") !== "false",
   hasStructureBlocks: false,
-  collect: false,
-  placedCount: 0,
   building: false,
   status: "",
   info: null
@@ -139,11 +137,6 @@ let nonSolid = new Set()
 let atlasTextures = [] // the displayed atlases; swapped + disposed on rebuild
 let doorByCell = new Map()
 let blockMap = null, blockMapFor = null
-
-// collect mode: committed structures stay in the scene beside the current one
-let placed = []
-let sceneRight = 0 // world-space right edge of everything placed
-let offsetX = 0    // x centre of the current build (0 unless collecting)
 
 // palette index for the same block with a different `open` value (added if new)
 function stateWithOpen(structure, stateIdx, open) {
@@ -303,44 +296,9 @@ function aimDoor(ox, oy, oz, dx, dy, dz) {
   return _aimBox.copy(s.box).translate(_aimV.set(reg.b.pos[0] * 16, reg.b.pos[1] * 16, reg.b.pos[2] * 16).add(root.position))
 }
 
-// the current structure keeps ownership of its group, animator, textures and
-// collision boxes only until it is committed: after this the next build's
-// atomic swap has nothing to remove or dispose
-function commitCurrent() {
-  const box = new THREE.Box3().setFromObject(root)
-  sceneRight = placed.length ? Math.max(sceneRight, box.max.x) : box.max.x
-  placed.push({ group: root, animator, textures: atlasTextures, boxes: rawBoxes() })
-  state.placedCount = placed.length
-  root = null
-  animator = null
-  atlasTextures = []
-  doorByCell = new Map()
-}
-
-function clearPlaced() {
-  for (const p of placed) {
-    sceneApi.contentRoots.delete(p.group)
-    sceneApi.animators.delete(p.animator)
-    disposeGroup(p.group)
-    for (const t of p.textures) t.dispose()
-  }
-  placed = []
-  state.placedCount = 0
-  sceneRight = 0
-}
-
-// clear button: drop every placed structure and rebuild the current one back
-// at the origin
-async function clearCollected() {
-  if (state.building) return
-  clearPlaced()
-  if (source) await build()
-  else sceneApi.remakeGrid()
-}
-
 // real world-space collision AABBs of the current structure: one per template
 // mesh (a stair yields its stepped boxes, a slab a half box), per block
-function rawBoxes() {
+function currentBoxes() {
   const structure = current.value
   const out = []
   if (!structure || !root || !templates) return out
@@ -369,13 +327,6 @@ function rawBoxes() {
   return out
 }
 
-// walk collision spans the whole scene: placed structures too
-function currentBoxes() {
-  const out = []
-  for (const p of placed) out.push(...p.boxes)
-  out.push(...rawBoxes())
-  return out
-}
 
 function disposeGroup(g) {
   if (!g) return
@@ -388,19 +339,12 @@ function disposeGroup(g) {
   g.removeFromParent()
 }
 
-// replace: the structure object is fresh but stands in for the current one
-// (pack swap re-read), so it must not count as a new load
-async function build(structure = source, refit = true, replace = false) {
+async function build(structure = source, refit = true) {
   const assets = packs.assets.value
   if (!assets || !structure || state.building) return
-  const isNew = !replace && structure !== source
   state.building = true
   lock(true)
   try {
-    if (isNew) {
-      if (state.collect && root) commitCurrent()
-      else if (!state.collect) clearPlaced()
-    }
     source = structure
     // whether the show/hide toggle has anything to act on
     const techStates = new Set()
@@ -413,10 +357,6 @@ async function build(structure = source, refit = true, replace = false) {
     const lib = await loadLibrary()
     const [sx, sy, sz] = structure.size
     state.status = "building…"
-
-    // collecting lays structures out left to right with a 2-block gap;
-    // rebuilds in place keep their spot
-    offsetX = placed.length ? (isNew ? sceneRight + 32 + sx * 8 : offsetX) : 0
 
     templates = new Map()
     nonSolid = new Set()
@@ -463,7 +403,7 @@ async function build(structure = source, refit = true, replace = false) {
     // centre, snapped so every block fills a whole grid cell: templates are
     // block-centred, so a centre ≡ 8 (mod 16) keeps blocks on the lattice
     const gridCentre = v => Math.round((v - 8) / 16) * 16 + 8
-    const position = new THREE.Vector3(gridCentre(offsetX - (sx - 1) * 8), gridCentre(-(sy - 1) * 8), gridCentre(-(sz - 1) * 8))
+    const position = new THREE.Vector3(gridCentre(-(sx - 1) * 8), gridCentre(-(sy - 1) * 8), gridCentre(-(sz - 1) * 8))
 
     // openable blocks render live (both models pre-built): keep them out of
     // the optimised static mesh
@@ -494,7 +434,20 @@ async function build(structure = source, refit = true, replace = false) {
     const doorDraws = attachDoors(doorEntries)
     animator = lib.createAnimator(root)
     sceneApi.animators.add(animator)
-    sceneApi.remakeGrid()
+    // one floor grid per structure part, hugging its footprint with a 3-block
+    // border (4 on one side when needed to keep the size even, so the centre
+    // cross lands on a block boundary)
+    const parts = structure.__parts ?? [{ off: [0, 0, 0], size: structure.size }]
+    sceneApi.setGrids(parts.map(p => {
+      const gw = p.size[0] + 6 + (p.size[0] % 2), gd = p.size[2] + 6 + (p.size[2] % 2)
+      return {
+        x: position.x + (p.off[0] - 3) * 16 - 8,
+        z: position.z + (p.off[2] - 3) * 16 - 8,
+        y: position.y + p.off[1] * 16 - 8.01,
+        w: gw,
+        d: gd
+      }
+    }))
     if (refit) sceneApi.fit()
     state.info = {
       size: `${sx}×${sy}×${sz}`,
@@ -523,7 +476,7 @@ async function exportCurrent(format, name) {
   lock(true)
   state.status = "exporting…"
   try {
-    await exportScene({ format, name, root, placed })
+    await exportScene({ format, name, root })
     state.status = ""
   } catch (err) {
     state.status = `export failed: ${err}`
@@ -539,6 +492,6 @@ const getNonSolid = () => nonSolid
 export function useBuild() {
   return {
     state, current, build, getRoot, getTemplates, getNonSolid,
-    blockAt, interact, aimDoor, currentBoxes, clearCollected, exportCurrent
+    blockAt, interact, aimDoor, currentBoxes, exportCurrent
   }
 }

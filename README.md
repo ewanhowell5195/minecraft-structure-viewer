@@ -20,8 +20,8 @@ a standalone Vue 3 + Vite app.
   rules). Seeded and reproducible; seed + level persist in the URL.
 - Procedural generators: igloo, end city and woodland mansion are assembled in
   code from the decompiled game logic, with the same level stepping.
-- Collect mode keeps structures side by side; export the scene as `.glb` or
-  `.obj`.
+- Shift/ctrl-click structures to pack several into one scene, each on its own
+  floor grid; export the scene as `.glb` or `.obj`.
 - Walk mode: pointer-locked first person with Minecraft physics: collision,
   step-up, sprint, crouch with edge guard, ladders, fly, noclip, view bobbing,
   and doors that open when you click them.
@@ -42,6 +42,7 @@ in for the CDN; it must send CORS headers). Override the URL with
 ## URL params
 
 - `?vanilla=<name>` load a vanilla structure, e.g.
-  `minecraft/village/plains/town_centers/plains_fountain_01`
+  `minecraft/village/plains/town_centers/plains_fountain_01`; a
+  comma-separated list restores a packed combination
 - `?channel=snapshot` use the snapshot jar
 - `?seed=<hex>&level=<n>` restore a jigsaw/procedural session

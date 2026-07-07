@@ -90,11 +90,10 @@ function bakeGroup(scene, group, caches) {
   })
 }
 
-export async function exportScene({ format, name, root, placed }) {
+export async function exportScene({ format, name, root }) {
   const scene = new THREE.Scene()
   const caches = { mat: new Map(), tex: new Map() }
   if (root) bakeGroup(scene, root, caches)
-  for (const pl of placed) bakeGroup(scene, pl.group, caches)
   if (!scene.children.length) return
 
   const base = name?.split("/").pop() || "structure"

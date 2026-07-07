@@ -12,7 +12,15 @@ const open = ref(false)
 </script>
 
 <template>
-  <div v-if="s.active" class="level-menu" :class="{ locked }">
+  <!-- without a session (plain pieces, combinations) only the show/hide
+       toggle remains, as a lone floating button -->
+  <div v-if="!s.active && buildState.hasStructureBlocks" class="level-menu" :class="{ locked }">
+    <button :disabled="locked" @click="buildState.hideStructureBlocks = !buildState.hideStructureBlocks">
+      <span class="material-symbols-outlined">{{ buildState.hideStructureBlocks ? "visibility" : "visibility_off" }}</span>
+      {{ buildState.hideStructureBlocks ? "Show Structure Blocks" : "Hide Structure Blocks" }}
+    </button>
+  </div>
+  <div v-else-if="s.active" class="level-menu" :class="{ locked }">
     <!-- buttons that can't do anything at this level aren't rendered at all.
          collapsed, the panel is hidden but keeps its width so the head button
          stretches to match -->

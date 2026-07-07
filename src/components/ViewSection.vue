@@ -19,18 +19,20 @@ const { locked } = useLock()
         <option value="off">Off</option>
       </select>
     </div>
-    <label class="check">
-      <input type="checkbox" :checked="view.ortho" @change="sceneApi.setOrthoManual($event.target.checked)">
-      Orthographic camera
-    </label>
-    <label class="check">
-      <input type="checkbox" v-model="view.wireframe">
-      Wireframe
-    </label>
-    <label class="check">
-      <input type="checkbox" v-model="view.grid">
-      Grid
-    </label>
+    <div class="checks">
+      <label class="check">
+        <input type="checkbox" :checked="view.ortho" @change="sceneApi.setOrthoManual($event.target.checked)">
+        Orthographic camera
+      </label>
+      <label class="check">
+        <input type="checkbox" v-model="view.wireframe">
+        Wireframe
+      </label>
+      <label class="check">
+        <input type="checkbox" v-model="view.grid">
+        Grid
+      </label>
+    </div>
     <button @click="sceneApi.fit()">
       <span class="material-symbols-outlined">recenter</span>
       Fit View
@@ -45,6 +47,16 @@ const { locked } = useLock()
   gap: 8px;
   align-items: center;
 }
+
+.checks {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 4px 0;
+}
+
+.checks:first-child { margin-top: 0; }
+.checks:last-child { margin-bottom: 0; }
 
 .check {
   display: flex;

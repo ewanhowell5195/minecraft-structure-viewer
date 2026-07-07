@@ -43,7 +43,17 @@ button {
 }
 
 button:hover:not(:disabled) { background: #2e2e36; }
-button:disabled { opacity: 0.5; cursor: default; }
+select:hover:not(:disabled) { background: #2e2e36; }
+
+button:disabled, select:disabled, input:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+label:has(> input:disabled) {
+  opacity: 0.5;
+  cursor: default;
+}
 
 button.primary {
   background: var(--accent);
@@ -61,6 +71,8 @@ input, select {
   padding: 5px 8px;
   font: inherit;
 }
+
+select { cursor: pointer; }
 
 input:focus-visible, select:focus-visible, button:focus-visible {
   outline: 2px solid var(--accent);

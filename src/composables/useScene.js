@@ -29,13 +29,44 @@ const animators = new Set()
 
 const wireMat = new THREE.MeshBasicMaterial({ wireframe: true, color: 0x9fd0ff })
 
-let grid = null
+// floor grids: one rectangular grid per structure, hugging its footprint.
+// dimensions are even block counts so the brighter centre cross lands on a
+// block boundary
+let gridGroup = null
 const gridVisible = () => view.grid && !view.wireframe
-function makeGrid(span) {
-  if (grid) { grid.removeFromParent(); grid.geometry.dispose(); grid.material.dispose() }
-  grid = new THREE.GridHelper(span, span / 16, GRID_COLOR, 0x333336)
-  grid.visible = gridVisible()
-  scene.add(grid)
+const GRID_LINE = 0x333336
+
+function makeRectGrid({ x, z, w, d, y }) {
+  const P = [], C = []
+  const cross = new THREE.Color(GRID_COLOR), line = new THREE.Color(GRID_LINE)
+  const push = c => C.push(c.r, c.g, c.b, c.r, c.g, c.b)
+  for (let i = 0; i <= w; i++) {
+    P.push(x + i * 16, y, z, x + i * 16, y, z + d * 16)
+    push(i * 2 === w ? cross : line)
+  }
+  for (let j = 0; j <= d; j++) {
+    P.push(x, y, z + j * 16, x + w * 16, y, z + j * 16)
+    push(j * 2 === d ? cross : line)
+  }
+  const geo = new THREE.BufferGeometry()
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(P, 3))
+  geo.setAttribute("color", new THREE.Float32BufferAttribute(C, 3))
+  return new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ vertexColors: true }))
+}
+
+// rects: [{ x, z, y, w, d }] with x/z/y in world units and w/d in blocks
+function setGrids(rects) {
+  if (gridGroup) {
+    gridGroup.removeFromParent()
+    gridGroup.traverse(o => {
+      o.geometry?.dispose()
+      o.material?.dispose?.()
+    })
+  }
+  gridGroup = new THREE.Group()
+  gridGroup.visible = gridVisible()
+  for (const r of rects) gridGroup.add(makeRectGrid(r))
+  scene.add(gridGroup)
 }
 
 const _bb = new THREE.Box3()
@@ -44,16 +75,6 @@ function sceneBounds() {
   for (const r of contentRoots) _bb.expandByObject(r)
   if (_bb.isEmpty()) _bb.set(new THREE.Vector3(-8, -8, -8), new THREE.Vector3(8, 8, 8))
   return _bb
-}
-
-// grid lines land on block boundaries: span is a multiple of 16 and the
-// position snaps to whole cells
-function remakeGrid() {
-  const box = sceneBounds()
-  const span = Math.max(64, Math.ceil(Math.max(box.max.x - box.min.x, box.max.z - box.min.z) / 64) * 64 + 64)
-  makeGrid(span)
-  const s16 = v => Math.round(v / 16) * 16
-  grid.position.set(s16((box.min.x + box.max.x) / 2), box.min.y - 0.01, s16((box.min.z + box.max.z) / 2))
 }
 
 function updateProjection() {
@@ -122,14 +143,14 @@ function init(canvasEl) {
   controls.enableDamping = true
   // a camera move reverts auto-enabled ortho; a manual toggle sticks
   controls.addEventListener("start", () => { if (camera === orthoCam && !orthoManual) setOrtho(false) })
-  makeGrid(256)
+  setGrids([{ x: -128, z: -128, y: -8.01, w: 16, d: 16 }])
   new ResizeObserver(resize).observe(canvas)
 
   watch(() => view.wireframe, on => {
     scene.overrideMaterial = on ? wireMat : null
-    grid.visible = gridVisible()
+    if (gridGroup) gridGroup.visible = gridVisible()
   })
-  watch(() => view.grid, () => { grid.visible = gridVisible() })
+  watch(() => view.grid, () => { if (gridGroup) gridGroup.visible = gridVisible() })
 
   let lastT = performance.now()
   requestAnimationFrame(function frame() {
@@ -156,7 +177,7 @@ function setOrthoManual(on) {
 
 export function useScene() {
   return {
-    view, scene, init, fit, remakeGrid, sceneBounds, setOrtho, setOrthoManual,
+    view, scene, init, fit, setGrids, sceneBounds, setOrtho, setOrthoManual,
     contentRoots, animators, perspCam, FOV, updateProjection, setWalkUpdate,
     get camera() { return camera },
     get controls() { return controls },

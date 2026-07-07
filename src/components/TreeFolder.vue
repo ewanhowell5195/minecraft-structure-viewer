@@ -42,7 +42,8 @@ const leaf = rel => rel.split("/").at(-1)
     </div>
   </details>
   <div v-for="rel in node.files" :key="rel" class="tree-file"
-    :class="{ sel: rel === state.selected }" @click="loadVanilla(rel)">{{ leaf(rel) }}</div>
+    :class="{ sel: rel === state.selected }"
+    @click="loadVanilla(rel, $event.shiftKey || $event.ctrlKey)">{{ leaf(rel) }}</div>
 </template>
 
 <style scoped>

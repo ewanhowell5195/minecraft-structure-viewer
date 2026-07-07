@@ -120,7 +120,7 @@ async function regenerate() {
       buildApi.state.status = `couldn't assemble: ${err}`
       return
     }
-    await buildApi.build(structure, false, true)
+    await buildApi.build(structure, false)
     const root = buildApi.getRoot()
     const a = structure.anchor ?? [0, 0, 0]
     const aw = new THREE.Vector3(a[0] * 16, a[1] * 16, a[2] * 16).add(root.position)
@@ -243,7 +243,7 @@ function endSession() {
 async function rebase(structure, name) {
   if (!state.active || name !== baseName) return false
   base = structure
-  if (state.level === 0) await buildApi.build(structure, false, true)
+  if (state.level === 0) await buildApi.build(structure, false)
   else await regenerate()
   return true
 }
