@@ -139,13 +139,15 @@ async function reroll() {
   display()
 }
 
-async function addRoll() {
+async function addRoll(n = 1) {
   if (!state.table || !state.kind) return
   const seq = openSeq
-  const loot = await rollLoot(state.table)
-  if (seq !== openSeq || !state.open) return // a different container opened meanwhile
-  mergeRoll(loot)
-  state.rolls++
+  for (let i = 0; i < n; i++) {
+    const loot = await rollLoot(state.table)
+    if (seq !== openSeq || !state.open) return // a different container opened meanwhile
+    mergeRoll(loot)
+    state.rolls++
+  }
   display()
 }
 

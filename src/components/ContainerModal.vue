@@ -169,10 +169,16 @@ watch(() => [state.open, state.stacks], () => {
               <span class="roll-stats" v-if="state.rolls > 1">
                 {{ state.rolls }} opens · {{ state.pileTotal }} item{{ state.pileTotal === 1 ? "" : "s" }}
               </span>
-              <button class="push" :disabled="rendering" @click="container.addRoll()">
-                <span class="material-symbols-outlined">casino</span>
-                Add Roll
-              </button>
+              <span v-else></span>
+              <div class="right">
+                <button :disabled="rendering" @click="container.addRoll()">
+                  <span class="material-symbols-outlined">casino</span>
+                  Add Roll
+                </button>
+                <button :disabled="rendering" title="Add 100 rolls" @click="container.addRoll(100)">
+                  ×100
+                </button>
+              </div>
             </div>
           </div>
 
@@ -321,7 +327,8 @@ button.icon {
 }
 
 .actions {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
   gap: 12px;
 }
@@ -332,12 +339,18 @@ button.icon {
   gap: 6px;
 }
 
-.actions .push { margin-left: auto; }
+.actions > button { justify-self: start; }
+
+.actions .right {
+  justify-self: end;
+  display: flex;
+  gap: 6px;
+}
 
 .roll-stats {
   font-size: 12px;
   color: var(--text-dim);
-  margin: 0 auto;
+  text-align: center;
 }
 
 .actions .material-symbols-outlined { font-size: 18px; }
