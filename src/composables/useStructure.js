@@ -61,9 +61,11 @@ const setVanillaParam = rel => {
   history.replaceState(null, "", u)
 }
 
-// shelf-pack the loaded structures into a compact grid. each cell is the
+// pack the loaded structures into a compact grid. each cell is the
 // structure's floor grid (footprint + 3-block border, padded even) and
-// neighbouring grids sit 3 blocks apart. returns one combined structure with
+// neighbouring grids sit 3 blocks apart. bottom-left packing in tree order:
+// each grid takes the frontmost (then leftmost) pocket it fits in, so small
+// grids fill the space beside big ones. returns one combined structure with
 // __parts describing where each one landed
 function packLoaded() {
   const GAP = 3
@@ -72,18 +74,23 @@ function packLoaded() {
     gw: s.size[0] + 6 + (s.size[0] % 2),
     gd: s.size[2] + 6 + (s.size[2] % 2)
   }))
-  const rowMax = Math.max(Math.ceil(Math.sqrt(cells.reduce((a, c) => a + c.gw * c.gd, 0))), ...cells.map(c => c.gw))
-  let x = 0, z = 0, rowD = 0
+  const W = Math.max(Math.ceil(Math.sqrt(cells.reduce((a, c) => a + (c.gw + GAP) * (c.gd + GAP), 0))), ...cells.map(c => c.gw))
+  const placed = []
+  const fits = (x, z, w, d) =>
+    x >= 0 && x + w <= W &&
+    !placed.some(p => x < p.x + p.w + GAP && p.x < x + w + GAP && z < p.z + p.d + GAP && p.z < z + d + GAP)
   const parts = []
   for (const c of cells) {
-    if (x > 0 && x + c.gw > rowMax) {
-      z += rowD + GAP
-      x = 0
-      rowD = 0
+    const candidates = [[0, 0]]
+    for (const p of placed) candidates.push([p.x + p.w + GAP, p.z], [p.x, p.z + p.d + GAP])
+    let best = null
+    for (const [x, z] of candidates) {
+      if (!fits(x, z, c.gw, c.gd)) continue
+      if (!best || z < best[1] || (z === best[1] && x < best[0])) best = [x, z]
     }
-    parts.push({ s: c.s, off: [x + 3, 0, z + 3], size: c.s.size })
-    x += c.gw + GAP
-    rowD = Math.max(rowD, c.gd)
+    best ??= [0, Math.max(0, ...placed.map(p => p.z + p.d + GAP))]
+    placed.push({ x: best[0], z: best[1], w: c.gw, d: c.gd })
+    parts.push({ s: c.s, off: [best[0] + 3, 0, best[1] + 3], size: c.s.size })
   }
   const palette = [], byKey = new Map()
   const stateFor = e => {
