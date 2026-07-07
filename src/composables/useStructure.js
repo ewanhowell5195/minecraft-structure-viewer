@@ -7,6 +7,7 @@ import { useSession } from "./useSession.js"
 import { useLock } from "./useLock.js"
 import { readStructure } from "../nbt.js"
 import { readLitematic, readMcstructure, readSchem } from "../formats.js"
+import { makeDebug } from "../debug.js"
 
 const READERS = { nbt: readStructure, litematic: readLitematic, schem: readSchem, mcstructure: readMcstructure }
 
@@ -27,6 +28,7 @@ const setVanillaParam = rel => {
   // a load resets any level session; its params must not leak to the next one
   u.searchParams.delete("seed")
   u.searchParams.delete("level")
+  u.searchParams.delete("debug")
   history.replaceState(null, "", u)
 }
 
@@ -57,6 +59,21 @@ function loadVanilla(rel) {
     } catch (err) {
       state.error = `couldn't load structure: ${err}`
     }
+  })
+}
+
+// ?debug: the generated mesher test scene (src/debug.js), no files needed
+function loadDebug() {
+  if (locked.value) return
+  return withLock(async () => {
+    state.error = ""
+    state.name = "debug"
+    structures.stateMut.selected = null
+    setVanillaParam(null)
+    const u = new URL(location)
+    u.searchParams.set("debug", "1")
+    history.replaceState(null, "", u)
+    await loadStructure(makeDebug(), "debug")
   })
 }
 
@@ -96,5 +113,5 @@ async function onAssetsSwapped() {
 packs.setSwapHandler(onAssetsSwapped)
 
 export function useStructure() {
-  return { state: readonly(state), structure, loadVanilla, loadFile }
+  return { state: readonly(state), structure, loadVanilla, loadFile, loadDebug }
 }
