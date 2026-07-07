@@ -11,7 +11,8 @@ const packs = usePacks()
 const container = useContainer()
 const state = container.state
 const walk = useWalk()
-const canvasEl = ref(null)
+const bgEl = ref(null)
+const itemsEl = ref(null)
 const S = 3
 
 const rules = computed(() => state.table ? describeTable(state.table) : [])
@@ -25,55 +26,76 @@ addEventListener("keydown", e => {
   if (e.key === "Escape" && state.open) close()
 })
 
-// the vanilla container gui: crop the container section of the texture, a
-// bottom border strip, the title in the game font, items rendered into the
-// slots by the library, and stack counts on top
-let drawSeq = 0
-async function draw() {
-  const c = canvasEl.value, K = state.kind
+const inner = (K, slot) => [K.ox + (slot % K.cols) * 18 + 1, K.oy + (slot / K.cols | 0) * 18 + 1]
+
+// two stacked canvases: the gui texture + title draw immediately when the
+// modal opens, items render on the overlay as they finish, so a re-roll
+// never flashes the background away
+let bgSeq = 0
+async function drawBg() {
+  const c = bgEl.value, K = state.kind
   if (!c || !K) return
-  const seq = ++drawSeq
+  const seq = ++bgSeq
+  c.width = 176 * S
+  c.height = (K.cropH + 7) * S
   const lib = await loadLibrary()
   const assets = packs.assets.value
   const [bgBuf, font] = await Promise.all([
     lib.readFile(`assets/minecraft/textures/gui/container/${K.tex}.png`, assets),
     getFont()
   ])
-  if (seq !== drawSeq || !bgBuf) return
+  if (seq !== bgSeq || !bgBuf) return
   const img = await createImageBitmap(new Blob([bgBuf], { type: "image/png" }))
-  c.width = 176 * S
-  c.height = (K.cropH + 7) * S
+  if (seq !== bgSeq) return
   const ctx = c.getContext("2d")
   ctx.imageSmoothingEnabled = false
   ctx.drawImage(img, 0, 0, 176, K.cropH, 0, 0, 176 * S, K.cropH * S)
   ctx.drawImage(img, 0, K.texH - 7, 176, 7, 0, K.cropH * S, 176 * S, 7 * S)
   drawText(ctx, font, state.blockName, 8 * S, 6 * S, { scale: S, color: "#404040" })
-  const inner = slot => [K.ox + (slot % K.cols) * 18 + 1, K.oy + (slot / K.cols | 0) * 18 + 1]
+}
+
+let itemSeq = 0
+async function drawItems() {
+  const c = itemsEl.value, K = state.kind
+  if (!c || !K) return
+  const seq = ++itemSeq
+  c.width = 176 * S
+  c.height = (K.cropH + 7) * S
+  const lib = await loadLibrary()
+  const assets = packs.assets.value
+  const font = await getFont()
+  if (seq !== itemSeq) return
+  const ctx = c.getContext("2d")
   for (const st of state.stacks) {
-    if (seq !== drawSeq) return
-    const [ix, iy] = inner(st.slot)
+    if (seq !== itemSeq) return
+    const [ix, iy] = inner(K, st.slot)
     try {
       await lib.renderItem({
         id: st.id,
         assets,
         components: st.components ?? {},
+        width: 16 * S,
+        height: 16 * S,
         canvas: { canvas: c, x: ix * S, y: iy * S, width: 16 * S, height: 16 * S }
       })
     } catch {}
   }
-  if (seq !== drawSeq) return
+  if (seq !== itemSeq) return
   for (const st of state.stacks) {
     if (st.count <= 1) continue
     const t = String(st.count)
-    const [ix, iy] = inner(st.slot)
+    const [ix, iy] = inner(K, st.slot)
     const tx = (ix + 17) * S - measure(font, t) * S, ty = (iy + 9) * S
     drawText(ctx, font, t, tx + S, ty + S, { scale: S, color: "#3f3f3f" })
     drawText(ctx, font, t, tx, ty, { scale: S, color: "#ffffff" })
   }
 }
 
+watch(() => [state.open, state.kind, state.blockName], () => {
+  if (state.open) nextTick(drawBg)
+})
 watch(() => [state.open, state.stacks], () => {
-  if (state.open) nextTick(draw)
+  if (state.open) nextTick(drawItems)
 })
 </script>
 
@@ -92,11 +114,12 @@ watch(() => [state.open, state.stacks], () => {
       <div v-if="state.error" class="err">{{ state.error }}</div>
       <template v-else>
         <div class="gui">
-          <canvas ref="canvasEl"></canvas>
+          <canvas ref="bgEl"></canvas>
+          <canvas ref="itemsEl" class="items"></canvas>
         </div>
         <div class="actions">
           <button @click="container.reroll()">
-            <span class="material-symbols-outlined">casino</span>
+            <span class="material-symbols-outlined">shuffle</span>
             Re-roll
           </button>
         </div>
@@ -166,9 +189,17 @@ button.icon {
   padding: 4px;
 }
 
-.gui canvas {
-  display: block;
+.gui {
+  position: relative;
+  width: fit-content;
   margin: 0 auto;
+}
+
+.gui canvas { display: block; }
+
+.gui .items {
+  position: absolute;
+  inset: 0;
 }
 
 .actions {
