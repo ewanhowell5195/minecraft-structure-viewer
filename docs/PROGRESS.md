@@ -152,10 +152,24 @@ and correct .js/.zip MIME types works).
   generates 37K-43K blocks in ~2.5s at 4 draws with 61 marker chests, re-rolls
   differ, URL seed adoption rebuilds the identical mansion. Console clean.
 
+- Build step 9 (walk mode) DONE: src/composables/useWalk.js per DECISIONS 7
+  (transcribed from the old validated walk.js, adapted to composables), plus
+  WalkOverlay.vue (canvas-centre difference-blend crosshair, hint bar) and a
+  Walk Around button in ViewSection. useScene exposes perspCam/FOV/
+  updateProjection/canvas and a setWalkUpdate frame hook (walk drives the
+  camera instead of controls.update()). All MC constants preserved: sizes/
+  speeds/gravity/jump, STEP 9 with eased step-up, double-tap sprint + fly,
+  noclip with bump-out, sneak edge guard, ladder rules, embedded-box exemption,
+  pointer-lock exit handling, door interact + outline + collision rebuild.
+  requestPointerLock rejection swallowed (automation/no-gesture contexts).
+  Playwright-verified numerically: gravity settles the eye at ground+25.92,
+  walk 78/s, sprint 118/s, fly 140/s rise, crouch eye 20.32, jump arc up ~19
+  and back, closed door blocks at its panel face and opens to walk through,
+  exit restores FOV 45 + OrbitControls with a valid target. Console clean.
+
 ## Next steps
 
-1. Build order step 9 (walk mode, DECISIONS 7).
-2. Then step 10 per PLAN.md.
+1. Build order step 10 (polish + final docs) per PLAN.md.
 3. Open questions to settle with Ewan when relevant (DECISIONS.md section 18):
    pack-change auto-rebuild or explicit, easy-tooltips vs in-app tooltip, samples.
 

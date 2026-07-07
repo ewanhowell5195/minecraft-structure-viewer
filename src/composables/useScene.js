@@ -122,14 +122,23 @@ function init(canvasEl) {
   })
   watch(() => view.grid, () => { grid.visible = gridVisible() })
 
+  let lastT = performance.now()
   requestAnimationFrame(function frame() {
     requestAnimationFrame(frame)
+    const now = performance.now()
+    const dt = (now - lastT) / 1000
+    lastT = now
     resize()
-    controls.update()
+    // while walking, the walk sim drives the camera instead of the orbit
+    if (!walkUpdate?.(dt)) controls.update()
     for (const a of animators) a.update()
     renderer.render(scene, camera)
   })
 }
+
+// walk mode's per-frame hook: returns true while it owns the camera
+let walkUpdate = null
+const setWalkUpdate = fn => { walkUpdate = fn }
 
 function setOrthoManual(on) {
   orthoManual = on
@@ -139,8 +148,9 @@ function setOrthoManual(on) {
 export function useScene() {
   return {
     view, scene, init, fit, remakeGrid, sceneBounds, setOrtho, setOrthoManual,
-    contentRoots, animators,
+    contentRoots, animators, perspCam, FOV, updateProjection, setWalkUpdate,
     get camera() { return camera },
-    get controls() { return controls }
+    get controls() { return controls },
+    get canvas() { return canvas }
   }
 }

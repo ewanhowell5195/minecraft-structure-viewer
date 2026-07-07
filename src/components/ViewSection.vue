@@ -2,12 +2,14 @@
 import { useScene } from "../composables/useScene.js"
 import { useBuild } from "../composables/useBuild.js"
 import { useStructure } from "../composables/useStructure.js"
+import { useWalk } from "../composables/useWalk.js"
 import { useLock } from "../composables/useLock.js"
 
 const sceneApi = useScene()
 const { view } = sceneApi
 const { state: buildState, clearCollected, exportCurrent } = useBuild()
 const { state: structureState } = useStructure()
+const walk = useWalk()
 const { locked } = useLock()
 
 function onExport(ev) {
@@ -56,6 +58,10 @@ function onExport(ev) {
     <button @click="sceneApi.fit()">
       <span class="material-symbols-outlined">recenter</span>
       Fit View
+    </button>
+    <button :disabled="locked || !buildState.info" @click="walk.enter()">
+      <span class="material-symbols-outlined">directions_walk</span>
+      Walk Around
     </button>
     <button v-if="buildState.placedCount" :disabled="locked" @click="clearCollected()">
       <span class="material-symbols-outlined">delete_sweep</span>
