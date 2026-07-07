@@ -521,6 +521,7 @@ async function build(structure = source, refit = true) {
         await new Promise(r => setTimeout(r))
       }
     }
+    state.progress = { phase: "build", done: structure.blocks.length, total: structure.blocks.length }
 
     // centre, snapped so every block fills a whole grid cell: templates are
     // block-centred, so a centre ≡ 8 (mod 16) keeps blocks on the lattice

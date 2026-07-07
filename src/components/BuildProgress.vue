@@ -14,8 +14,8 @@ const pct = computed(() => {
 </script>
 
 <template>
-  <div v-if="state.progress" class="build-progress" :class="state.progress.phase"
-    :style="{ width: pct + '%' }"></div>
+  <div v-if="state.progress" :key="state.progress.phase" class="build-progress"
+    :class="state.progress.phase" :style="{ width: pct + '%' }"></div>
 </template>
 
 <style scoped>
