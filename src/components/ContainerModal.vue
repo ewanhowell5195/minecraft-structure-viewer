@@ -326,7 +326,6 @@ button.icon {
 .body {
   overflow: auto;
   min-height: 280px;
-  scrollbar-gutter: stable;
 }
 
 .pane {
