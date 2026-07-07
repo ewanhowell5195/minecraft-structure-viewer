@@ -382,7 +382,7 @@ button.icon {
 
 .body.compact { min-height: 0; }
 
-.data { gap: 10px; }
+.pane.data { gap: 8px; }
 
 .fl {
   font-size: 11px;
