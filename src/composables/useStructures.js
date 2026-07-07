@@ -15,7 +15,7 @@ const state = reactive({
   names: [],
   filterText: "",
   filterMode: "all",
-  selected: null,
+  selected: [],
   indexing: false,
   worldgenReady: false
 })
@@ -36,7 +36,7 @@ async function populate() {
     }
   }
   state.names = [...structPath.keys()].sort()
-  if (state.selected && !structPath.has(state.selected)) state.selected = null
+  if (state.selected.length) state.selected = state.selected.filter(rel => structPath.has(rel))
 }
 
 async function allZipKeys() {

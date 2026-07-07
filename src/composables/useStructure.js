@@ -26,6 +26,31 @@ const state = reactive({ name: "", error: "" })
 // [{ structure, name, rel? }]: rel present when it came from the vanilla tree
 let loaded = []
 
+// multi-structure lists are deflate + base64url encoded ("!<data>") to keep
+// the url short: the shared path prefixes compress well. structure names
+// never start with "!", so the marker is unambiguous
+async function encodeRels(rels) {
+  const stream = new Blob([rels.join(",")]).stream().pipeThrough(new CompressionStream("deflate-raw"))
+  const bytes = new Uint8Array(await new Response(stream).arrayBuffer())
+  let s = ""
+  for (const b of bytes) s += String.fromCharCode(b)
+  return "!" + btoa(s).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "")
+}
+
+// accepts either form: plain single/comma names or the encoded list
+export async function decodeVanillaParam(param) {
+  if (!param) return []
+  if (!param.startsWith("!")) return param.split(",")
+  try {
+    const bin = atob(param.slice(1).replaceAll("-", "+").replaceAll("_", "/"))
+    const bytes = Uint8Array.from(bin, c => c.charCodeAt(0))
+    const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw"))
+    return (await new Response(stream).text()).split(",")
+  } catch {
+    return []
+  }
+}
+
 const setVanillaParam = rel => {
   const u = new URL(location)
   rel ? u.searchParams.set("vanilla", rel) : u.searchParams.delete("vanilla")
@@ -98,15 +123,15 @@ async function apply(refit = true) {
   if (loaded.length === 1) {
     const { structure: s, name, rel } = loaded[0]
     state.name = name
-    structures.stateMut.selected = rel ?? null
+    structures.stateMut.selected = rel ? [rel] : []
     if (rel) setVanillaParam(rel)
     await buildApi.build(s, refit)
     await session.startSession(s, name)
   } else {
     state.name = "combination"
-    structures.stateMut.selected = null
     const rels = loaded.map(e => e.rel)
-    setVanillaParam(rels.every(Boolean) ? rels.join(",") : null)
+    structures.stateMut.selected = rels.filter(Boolean)
+    setVanillaParam(rels.every(Boolean) ? await encodeRels(rels) : null)
     session.endSession()
     await buildApi.build(packLoaded(), refit)
   }
@@ -119,12 +144,22 @@ async function readVanilla(rel) {
   return readStructure(await lib.readFile(zp, packs.assets.value))
 }
 
-// additive (shift/ctrl-click) keeps what is already there
+// additive (shift/ctrl-click) keeps what is already there; clicking an
+// already-loaded structure additively removes it instead of duplicating
 function loadVanilla(rel, additive = false) {
   if (locked.value) return
   return withLock(async () => {
     state.error = ""
     try {
+      if (additive && loaded.length) {
+        const at = loaded.findIndex(e => e.rel === rel)
+        if (at >= 0) {
+          if (loaded.length === 1) return
+          loaded.splice(at, 1)
+          await apply()
+          return
+        }
+      }
       const s = await readVanilla(rel)
       if (!s) return
       const entry = { structure: s, name: rel, rel }
@@ -144,7 +179,7 @@ function loadMany(rels) {
     state.error = ""
     try {
       const entries = []
-      for (const rel of rels) {
+      for (const rel of new Set(rels)) {
         const s = await readVanilla(rel)
         if (s) entries.push({ structure: s, name: rel, rel })
       }

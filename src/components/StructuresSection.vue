@@ -73,7 +73,7 @@ function onFile(e) {
       <template v-else-if="flat">
         <div v-if="!flat.length" class="empty">No match</div>
         <div v-for="rel in flat.slice(0, FLAT_CAP)" :key="rel" class="tree-file"
-          :class="{ sel: rel === state.selected }"
+          :class="{ sel: state.selected.includes(rel) }"
           @click="loadVanilla(rel, $event.shiftKey || $event.ctrlKey)">{{ disp(rel) }}</div>
         <div v-if="flat.length > FLAT_CAP" class="empty">…and {{ flat.length - FLAT_CAP }} more</div>
       </template>

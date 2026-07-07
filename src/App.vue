@@ -3,7 +3,7 @@ import { computed, onMounted, ref, watch } from "vue"
 import { loadLibrary } from "./lib.js"
 import { usePacks } from "./composables/usePacks.js"
 import { useStructures } from "./composables/useStructures.js"
-import { useStructure } from "./composables/useStructure.js"
+import { useStructure, decodeVanillaParam } from "./composables/useStructure.js"
 import { useBuild } from "./composables/useBuild.js"
 import { useScene } from "./composables/useScene.js"
 import { useLock } from "./composables/useLock.js"
@@ -50,10 +50,10 @@ onMounted(async () => {
   const params = new URLSearchParams(location.search)
   const vanilla = params.get("vanilla")
   const debug = params.get("debug")
-  const stop = watch(() => structures.state.names.length, n => {
+  const stop = watch(() => structures.state.names.length, async n => {
     if (!n) return
     stop()
-    const rels = (vanilla ?? "").split(",").filter(r => structures.has(r))
+    const rels = (await decodeVanillaParam(vanilla)).filter(r => structures.has(r))
     if (debug != null) loadDebug(debug)
     else if (rels.length > 1) loadMany(rels)
     else if (rels.length === 1) loadVanilla(rels[0])
