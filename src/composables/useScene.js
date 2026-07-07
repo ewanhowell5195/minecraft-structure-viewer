@@ -66,30 +66,78 @@ function makeNorth({ x, z, y, w, d }) {
   return seg
 }
 
+// the minecraft font, straight from the pack's ascii.png: 16x16 grid of
+// glyph cells, advance widths scanned from the alpha channel the way the
+// game does (space is half a cell). re-read when the packs change
+let fontPromise = null, fontVersion = -1
+async function loadFont() {
+  const { loadLibrary } = await import("../lib.js")
+  const { usePacks } = await import("./usePacks.js")
+  const packs = usePacks()
+  const v = packs.state.assetsVersion
+  if (fontPromise && v === fontVersion) return fontPromise
+  fontVersion = v
+  return fontPromise = (async () => {
+    const lib = await loadLibrary()
+    const buf = await lib.readFile("assets/minecraft/textures/font/ascii.png", packs.assets.value)
+    const img = await createImageBitmap(new Blob([buf], { type: "image/png" }))
+    const c = document.createElement("canvas")
+    c.width = img.width
+    c.height = img.height
+    const ctx = c.getContext("2d")
+    ctx.drawImage(img, 0, 0)
+    const data = ctx.getImageData(0, 0, c.width, c.height).data
+    const cw = c.width / 16, ch = c.height / 16
+    const widths = []
+    for (let i = 0; i < 256; i++) {
+      const gx = (i % 16) * cw, gy = (i / 16 | 0) * ch
+      let wpx = 0
+      for (let px = cw - 1; px >= 0 && !wpx; px--)
+        for (let py = 0; py < ch; py++)
+          if (data[((gy + py) * c.width + gx + px) * 4 + 3]) { wpx = px + 1; break }
+      widths[i] = i === 32 ? cw / 2 : wpx
+    }
+    return { canvas: c, cw, ch, widths }
+  })()
+}
+
 // combination mode: the north marker's spot holds a floating nametag
-// instead, fading in as the camera gets near that structure
+// instead, fading in as the camera gets near that structure. the sprite
+// stays hidden until the font has loaded and the texture is drawn
 function makeNameTag({ x, z, y, w, d, label }) {
-  const fs = 32, pad = 10
+  const spr = new THREE.Sprite(new THREE.SpriteMaterial({ transparent: true }))
+  spr.visible = false
+  spr.position.set(x + w * 8, y + 6, z - 6)
+  spr.userData = { center: new THREE.Vector3(x + w * 8, y, z + d * 8), showDist: Math.max(350, Math.hypot(w, d) * 20), fades: true, ready: false }
+  drawNameTag(spr, label)
+  return spr
+}
+
+async function drawNameTag(spr, label) {
+  let font
+  try { font = await loadFont() } catch { return }
+  const { canvas, cw, ch, widths } = font
+  const S = 4, pad = S * 2
+  const codes = [...label].map(g => { const n = g.codePointAt(0); return n < 256 && widths[n] ? n : 63 })
   const c = document.createElement("canvas")
-  let ctx = c.getContext("2d")
-  ctx.font = `${fs}px ui-monospace, monospace`
-  c.width = Math.ceil(ctx.measureText(label).width) + pad * 2
-  c.height = fs + pad * 2
-  ctx = c.getContext("2d")
-  ctx.font = `${fs}px ui-monospace, monospace`
+  c.width = codes.reduce((a, n) => a + (widths[n] + 1) * S, 0) - S + pad * 2
+  c.height = ch * S + pad * 2
+  const ctx = c.getContext("2d")
+  ctx.imageSmoothingEnabled = false
   ctx.fillStyle = "#00000059"
   ctx.fillRect(0, 0, c.width, c.height)
-  ctx.fillStyle = "#c8c8d0"
-  ctx.textAlign = "center"
-  ctx.textBaseline = "middle"
-  ctx.fillText(label, c.width / 2, c.height / 2)
+  let dx = pad
+  for (const n of codes) {
+    ctx.drawImage(canvas, (n % 16) * cw, (n / 16 | 0) * ch, cw, ch, dx, pad, cw * S, ch * S)
+    dx += (widths[n] + 1) * S
+  }
   const tex = new THREE.CanvasTexture(c)
-  const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true }))
+  tex.magFilter = THREE.NearestFilter
+  spr.material.map = tex
+  spr.material.needsUpdate = true
   const H = 7
   spr.scale.set(H * c.width / c.height, H, 1)
-  spr.position.set(x + w * 8, y + 6, z - 6)
-  spr.userData = { center: new THREE.Vector3(x + w * 8, y, z + d * 8), showDist: Math.max(350, Math.hypot(w, d) * 20), fades: true }
-  return spr
+  spr.userData.ready = true
 }
 
 // proximity for the markers: ortho "zoom" moves no closer, so divide it out
@@ -100,6 +148,7 @@ function updateGridLabels() {
     if (!u.showDist) continue
     const dist = camera.position.distanceTo(u.center) / (camera.zoom || 1)
     if (u.fades) {
+      if (!u.ready) { o.visible = false; continue }
       const f = Math.min(Math.max((u.showDist - dist) / (u.showDist * 0.15), 0), 1)
       o.visible = f > 0
       o.material.opacity = f
