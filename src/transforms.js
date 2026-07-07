@@ -23,6 +23,8 @@ export function rotPos([x, y, z], k) {
   }
 }
 
+export const add3 = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
+
 // mulberry32
 export function rnd(seed) {
   let s = seed | 0

@@ -9,6 +9,7 @@ import { useLock } from "./useLock.js"
 import { readStructure } from "../nbt.js"
 import { JIGSAW, mix } from "../transforms.js"
 import { runJigsaw } from "../jigsaw.js"
+import { runEndCity, runIgloo, runMansion } from "../generators/index.js"
 import { PROC } from "../proc.js"
 
 // A level session exists for jigsaw structures (any palette block named
@@ -65,11 +66,11 @@ async function loadPool(ref) {
   return buf ? JSON.parse(new TextDecoder().decode(buf)) : null
 }
 
-// step 8 fills this in: gen name -> (base, seed, maxDepth) => structure
-export const generators = {}
+// PROC gen name -> (loadStruct, { maxDepth, seed }) => { structure, maxDepth }
+const generators = { igloo: runIgloo, end_city: runEndCity, mansion: runMansion }
 
 async function resolve(level) {
-  if (level === 0 || !base) return { structure: base, pieces: 1 }
+  if (level === 0 || !base) return { structure: base }
   if (state.kind === "jigsaw") {
     return runJigsaw(base, {
       loadStruct, loadPool,
@@ -79,8 +80,8 @@ async function resolve(level) {
     })
   }
   const gen = generators[state.kind]
-  if (!gen) return { structure: base, pieces: 1 }
-  return gen(base, state.seed, level, loadStruct)
+  if (!gen) return { structure: base }
+  return gen(loadStruct, { maxDepth: level, seed: state.seed })
 }
 
 // rebuild the resolved structure, keeping the camera relatively positioned to
@@ -130,9 +131,10 @@ async function setLevel(target, { freshSeed = false } = {}) {
   if (target > 0 && (freshSeed || state.seed == null)) {
     state.seed = rand32()
     // a procedural's true depth depends on the seed; a jigsaw's comes from
-    // the worldgen size (re-read in case packs changed)
+    // the worldgen size (re-read in case packs changed); the one-shot mansion
+    // has nothing to probe
     if (state.kind === "jigsaw") state.maxDepth = structures.getStructDepth(baseName) ?? state.maxDepth
-    else await probeDepth()
+    else if (state.steps) await probeDepth()
   }
   target = Math.max(0, Math.min(target, state.maxDepth))
   if (target === 0) state.seed = null // next ascent from the base re-rolls
@@ -160,8 +162,8 @@ const generate = fullReload // one-shot for non-stepped procedurals (mansion)
 async function probeDepth() {
   const gen = generators[state.kind]
   if (!gen || state.seed == null) return
-  const { depth } = await gen(base, state.seed, Infinity, loadStruct)
-  if (typeof depth === "number") state.maxDepth = depth
+  const { maxDepth } = await gen(loadStruct, { maxDepth: Infinity, seed: state.seed })
+  if (typeof maxDepth === "number") state.maxDepth = maxDepth
 }
 
 // called by useStructure after a NEW structure builds. adopts ?seed/?level
@@ -176,7 +178,7 @@ async function startSession(structure, name) {
     state.kind = proc.gen
     state.label = proc.label
     state.steps = proc.steps
-    state.maxDepth = proc.maxDepth ?? 8
+    state.maxDepth = proc.maxDepth ?? 1
   } else if (isJigsaw) {
     state.kind = "jigsaw"
     state.label = "structure blocks"

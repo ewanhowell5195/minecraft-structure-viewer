@@ -139,11 +139,23 @@ and correct .js/.zip MIME types works).
     reset returns to base + clears URL, outpost assembles on its base plate
     (no tent pile-up), non-jigsaw structures get no menu. Console clean.
 
+- Build step 8 (procedural generators) DONE: src/generators/{igloo,endcity,
+  mansion,index}.js per DECISIONS 5, adapted from the old validated ports
+  (rng -> rnd rename only, seed-consumption order untouched). useSession's
+  generators map wires igloo/end_city/mansion to the PROC entries; probeDepth
+  runs a steppable generator at Infinity when a seed is picked so "next"
+  disables at the seed's true depth; the one-shot mansion (steps false) skips
+  probing and shows Generate/Regenerate; menu head hides "level N" for it.
+  Playwright-verified: igloo steps top(114) -> shaft(219) -> basement(398) and
+  undo/redo is stable; end city prefix-stable across undo/redo, per-seed depth
+  (7 and 15 seen), 6K-block multi-tower city renders with bridges; mansion
+  generates 37K-43K blocks in ~2.5s at 4 draws with 61 marker chests, re-rolls
+  differ, URL seed adoption rebuilds the identical mansion. Console clean.
+
 ## Next steps
 
-1. Build order step 8 (procedural generators: igloo, end city, mansion,
-   DECISIONS 5) registering into useSession's `generators` map.
-2. Then steps 9-10 per PLAN.md.
+1. Build order step 9 (walk mode, DECISIONS 7).
+2. Then step 10 per PLAN.md.
 3. Open questions to settle with Ewan when relevant (DECISIONS.md section 18):
    pack-change auto-rebuild or explicit, easy-tooltips vs in-app tooltip, samples.
 

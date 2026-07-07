@@ -45,7 +45,7 @@ const open = ref(false)
     </div>
     <button class="head" @click="open = !open">
       <span class="material-symbols-outlined">{{ open ? "expand_more" : "expand_less" }}</span>
-      {{ s.label }} · level {{ s.level + 1 }}
+      {{ s.steps ? `${s.label} · level ${s.level + 1}` : s.label }}
     </button>
   </div>
 </template>
