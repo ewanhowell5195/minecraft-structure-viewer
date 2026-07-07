@@ -158,16 +158,15 @@ function poolBack() {
 function jigsawBlurb(p, nbt) {
   const pool = stripNs(nbt?.pool ?? "")
   const target = stripNs(nbt?.target ?? "")
-  const final = stripNs(nbt?.final_state ?? "").split("[")[0] || "air"
   const dir = (p.orientation ?? "").split("_")[0]
   const where = dir === "up" ? "on top of this block" : dir === "down" ? "underneath this block" : "beside this block"
   if (!pool || pool === "empty") {
-    return `Places nothing itself: parent pieces attach here by its name. Becomes ${final} after generation.`
+    return "Places nothing itself: parent pieces attach here by its name."
   }
   const joint = dir === "up" || dir === "down"
     ? (nbt?.joint === "aligned" ? " The piece keeps its rotation." : " The piece can be randomly rotated.")
     : ""
-  return `Places a random piece from the pool ${where}, joined at that piece's "${target}" jigsaw.${joint} Becomes ${final} after generation.`
+  return `Places a random piece from the pool ${where}, joined at that piece's "${target}" jigsaw.${joint}`
 }
 
 async function open(block) {
