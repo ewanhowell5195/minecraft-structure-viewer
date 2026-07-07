@@ -93,7 +93,8 @@ async function remapFluidStates(structure, lib, assets) {
       return ne?.Name ? { id: ne.Name, properties: ne.Properties } : null
     })
     const ov = h.overlay ? (h.overlay.north ? "n" : "") + (h.overlay.south ? "s" : "") + (h.overlay.east ? "e" : "") + (h.overlay.west ? "w" : "") : ""
-    const key = `${e.Name}|${JSON.stringify(e.Properties ?? null)}|${h.nw.toFixed(3)},${h.ne.toFixed(3)},${h.sw.toFixed(3)},${h.se.toFixed(3)}|${h.full ? 1 : 0}|${h.angle == null ? "" : h.angle.toFixed(2)}|${ov}`
+    const sm = h.same ? (h.same.north ? "n" : "") + (h.same.south ? "s" : "") + (h.same.east ? "e" : "") + (h.same.west ? "w" : "") + (h.same.up ? "u" : "") + (h.same.down ? "d" : "") : ""
+    const key = `${e.Name}|${JSON.stringify(e.Properties ?? null)}|${h.nw.toFixed(3)},${h.ne.toFixed(3)},${h.sw.toFixed(3)},${h.se.toFixed(3)}|${h.full ? 1 : 0}|${h.angle == null ? "" : h.angle.toFixed(2)}|${ov}|${sm}`
     let idx = byKey.get(key)
     if (idx === undefined) {
       idx = structure.palette.length
