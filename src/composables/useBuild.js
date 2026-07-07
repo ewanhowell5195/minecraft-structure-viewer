@@ -173,20 +173,27 @@ function blockAt(wx, wy, wz) {
   return i == null ? null : structure.palette[structure.blocks[i].state]
 }
 
-// openable blocks render as ONE InstancedMesh per unique state per template
+// openable blocks render as ONE InstancedMesh per unique MODEL per template
 // mesh, not per-block clone groups: a build with hundreds of trapdoors was
-// thousands of draw calls. a hidden instance is collapsed to zero scale, so
-// toggling stays a matrix write with no rebuild
-let doorSlots = new Map() // stateIdx -> { entries, meshes: InstancedMesh[], box }
+// thousands of draw calls. states that differ only by blockstate rotation
+// (facing etc.) share one canonical unrotated template, with the rotation
+// folded into each instance matrix (the shader lights from instance-space
+// normals, so shading stays correct). a hidden instance is collapsed to zero
+// scale, so toggling stays a matrix write with no rebuild
+let doorSlots = new Map() // canonKey -> { count, meshes: InstancedMesh[] }
+let stateRender = new Map() // stateIdx -> { key, rot: Matrix4 }
+let canonDoorTmpl = new Map() // canonKey -> template Group
+let doorStateBox = new Map() // stateIdx -> Box3 (rotated, for the aim outline)
 const _dm = new THREE.Matrix4()
 const _dzero = new THREE.Matrix4().makeScale(0, 0, 0)
 
 
 function setDoorInstance(stateIdx, slot, pos, visible) {
-  const s = doorSlots.get(stateIdx)
+  const r = stateRender.get(stateIdx)
+  const s = r && doorSlots.get(r.key)
   if (!s) return
   for (const im of s.meshes) {
-    if (visible) im.setMatrixAt(slot, _dm.makeTranslation(pos[0] * 16, pos[1] * 16, pos[2] * 16).multiply(im.userData.baseMatrix))
+    if (visible) im.setMatrixAt(slot, _dm.makeTranslation(pos[0] * 16, pos[1] * 16, pos[2] * 16).multiply(r.rot).multiply(im.userData.baseMatrix))
     else im.setMatrixAt(slot, _dzero)
     im.instanceMatrix.needsUpdate = true
   }
@@ -196,23 +203,33 @@ function attachDoors(entries) {
   const structure = current.value
   doorByCell = new Map()
   doorSlots = new Map()
+  doorStateBox = new Map()
   if (!entries.length) return 0
-  // an instance slot per placement of each open/closed state
-  const slotFor = (e, stateIdx) => {
-    let s = doorSlots.get(stateIdx)
-    if (!s) doorSlots.set(stateIdx, s = { count: 0, meshes: [], box: null })
+  // an instance slot per placement of each open/closed state, in the state's
+  // canonical group
+  const slotFor = stateIdx => {
+    const key = stateRender.get(stateIdx).key
+    let s = doorSlots.get(key)
+    if (!s) doorSlots.set(key, s = { count: 0, meshes: [] })
     return s.count++
   }
   for (const e of entries) {
-    e.openSlot = slotFor(e, e.openIdx)
-    e.closedSlot = slotFor(e, e.closedIdx)
+    e.openSlot = slotFor(e.openIdx)
+    e.closedSlot = slotFor(e.closedIdx)
+    for (const idx of [e.openIdx, e.closedIdx]) {
+      if (doorStateBox.has(idx)) continue
+      const tmpl = templates.get(idx)
+      if (tmpl) {
+        tmpl.updateMatrixWorld(true)
+        doorStateBox.set(idx, new THREE.Box3().setFromObject(tmpl))
+      } else doorStateBox.set(idx, null)
+    }
   }
   let draws = 0
-  for (const [stateIdx, s] of doorSlots) {
-    const tmpl = templates.get(stateIdx)
+  for (const [key, s] of doorSlots) {
+    const tmpl = canonDoorTmpl.get(key)
     if (!tmpl) continue
     tmpl.updateMatrixWorld(true)
-    s.box = new THREE.Box3().setFromObject(tmpl)
     tmpl.traverse(o => {
       if (!o.isMesh) return
       // the library shader handles USE_INSTANCING, so materials are shared as-is
@@ -291,9 +308,9 @@ function aimDoor(ox, oy, oz, dx, dy, dz) {
   if (!reg) return null
   const structure = current.value
   const open = structure.palette[reg.b.state].Properties.open === "true"
-  const s = doorSlots.get(open ? reg.openIdx : reg.closedIdx)
-  if (!s?.box) return null
-  return _aimBox.copy(s.box).translate(_aimV.set(reg.b.pos[0] * 16, reg.b.pos[1] * 16, reg.b.pos[2] * 16).add(root.position))
+  const box = doorStateBox.get(open ? reg.openIdx : reg.closedIdx)
+  if (!box) return null
+  return _aimBox.copy(box).translate(_aimV.set(reg.b.pos[0] * 16, reg.b.pos[1] * 16, reg.b.pos[2] * 16).add(root.position))
 }
 
 // real world-space collision AABBs of the current structure: one per template
@@ -416,6 +433,49 @@ async function build(structure = source, refit = true) {
       await template(closedIdx)
       doorEntries.push({ b, openIdx, closedIdx })
     }
+
+    // canonical grouping: states whose single variant differs only by
+    // blockstate rotation share an unrotated template; anything else (missing
+    // model, multiple parts like waterlogged, uvlock rotation that bakes UVs)
+    // falls back to its own per-state template with an identity rotation
+    stateRender = new Map()
+    canonDoorTmpl = new Map()
+    for (const e of doorEntries) {
+      for (const stateIdx of [e.openIdx, e.closedIdx]) {
+        if (stateRender.has(stateIdx)) continue
+        const entry = structure.palette[stateIdx]
+        let key = null
+        const rot = new THREE.Matrix4()
+        try {
+          const name = LEGACY_RENAMES[entry.Name.replace("minecraft:", "")] ?? entry.Name
+          const props = fixLegacyProps(name.replace("minecraft:", ""), entry.Properties)
+          const models = await lib.parseBlockstate(assets, name, { data: props ?? {}, ignoreAtlases: true })
+          const m = models.length === 1 ? models[0] : null
+          if (m && !(m.uvlock && (m.x || m.y || m.z))) {
+            key = JSON.stringify({ ...m, x: 0, y: 0, z: 0 })
+            // same convention loadModel bakes: rotation.set(-x, -y, z, "ZYX")
+            rot.makeRotationFromEuler(new THREE.Euler(
+              THREE.MathUtils.degToRad(-(m.x ?? 0)),
+              THREE.MathUtils.degToRad(-(m.y ?? 0)),
+              THREE.MathUtils.degToRad(m.z ?? 0), "ZYX"))
+            if (!canonDoorTmpl.has(key)) {
+              const g = new THREE.Group()
+              const data = await lib.resolveModelData(assets, { ...m, x: 0, y: 0, z: 0 })
+              await lib.loadModel(g, assets, data, { display: {}, lighting: state.lighting, animate: false })
+              canonDoorTmpl.set(key, g.children.length ? g : null)
+            }
+            if (!canonDoorTmpl.get(key)) key = null
+          }
+        } catch {}
+        if (!key) {
+          key = "state:" + stateIdx
+          rot.identity()
+          canonDoorTmpl.set(key, templates.get(stateIdx))
+        }
+        stateRender.set(stateIdx, { key, rot })
+      }
+    }
+
     const optStruct = doorEntries.length ? { ...structure, blocks: structure.blocks.filter(b => !isOpenable(structure.palette[b.state])) } : structure
 
     const { group: next, atlasTextures: pending, drawCalls, tris } = await optimise(optStruct, templates, position, {
