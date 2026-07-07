@@ -6,7 +6,7 @@ import * as THREE from "three"
 // urls once the library starts releasing. VITE_LIB_URL overrides (e.g. a
 // localhost dev server). The app owns the three instance and hands it over,
 // so there is only ever one copy of three.
-const LIB_URL = import.meta.env.VITE_LIB_URL ?? "https://cdn.jsdelivr.net/gh/ewanhowell5195/block-model-renderer@cfa84f8/src/web.js"
+const LIB_URL = import.meta.env.VITE_LIB_URL ?? "https://cdn.jsdelivr.net/gh/ewanhowell5195/block-model-renderer@700e34e/src/web.js"
 
 let promise = null
 
