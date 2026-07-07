@@ -652,8 +652,24 @@ async function build(structure = source, refit = true) {
 
     const optStruct = doorEntries.length ? { ...structure, blocks: structure.blocks.filter(b => !isOpenable(structure.palette[b.state])) } : structure
 
+    // culling must see the same renamed blocks that render: a legacy name
+    // (grass_path) has no blockstate in modern packs, and the missing-model
+    // fallback would occlude like a full cube
+    const legacyCull = (name, props) => {
+      const renamed = LEGACY_RENAMES[name.replace("minecraft:", "")] ?? name
+      return [renamed, fixLegacyProps(renamed.replace("minecraft:", ""), props)]
+    }
     const opt = await optimise(optStruct, templates, position, {
-      getCullFaces: opts => lib.getCullFaces({ ...opts, assets }),
+      getCullFaces: opts => {
+        const [id, blockstates] = legacyCull(opts.id, opts.blockstates)
+        const neighbors = {}
+        for (const [dir, n] of Object.entries(opts.neighbors ?? {})) {
+          const { id: nid, ...props } = n
+          const [rid, rprops] = legacyCull(nid, props)
+          neighbors[dir] = { id: rid, ...(rprops ?? {}) }
+        }
+        return lib.getCullFaces({ id, blockstates, neighbors, assets })
+      },
       setStatus: s => { state.status = s },
       setProgress: (done, total) => { state.progress = { phase: "optimise", done, total } },
       shouldCancel: () => cancelBuild
