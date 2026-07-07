@@ -268,21 +268,6 @@ function disposeGroup(g) {
   g.removeFromParent()
 }
 
-// per-template draw-call + triangle counts, summed over placements
-function stat(t) {
-  let dc = 0, tris = 0
-  t.traverse(o => {
-    if (!o.isMesh) return
-    const mats = [].concat(o.material)
-    const gs = o.geometry.groups.length ? o.geometry.groups : [{ count: o.geometry.index.count, materialIndex: 0 }]
-    for (const g of gs) {
-      const m = mats[g.materialIndex]
-      if (m && m.visible !== false) { dc++; tris += g.count / 3 }
-    }
-  })
-  return { dc, tris }
-}
-
 // replace: the structure object is fresh but stands in for the current one
 // (pack swap re-read), so it must not count as a new load
 async function build(structure = current.value, refit = true, replace = false) {
@@ -334,19 +319,10 @@ async function build(structure = current.value, refit = true, replace = false) {
       return tmpl
     }
 
-    // build every template up front (the optimiser reads them all) and sum
-    // per-placement stats for the raw -> optimised readout
-    const tstat = new Map()
-    let placedCount = 0, rawDc = 0, rawTris = 0
+    // build every template up front (the optimiser reads them all)
+    let placedCount = 0
     for (let i = 0; i < structure.blocks.length; i++) {
-      const b = structure.blocks[i]
-      const tmpl = await template(b.state)
-      if (tmpl) {
-        placedCount++
-        let s = tstat.get(b.state)
-        if (s === undefined) tstat.set(b.state, s = stat(tmpl))
-        rawDc += s.dc; rawTris += s.tris
-      }
+      if (await template(structure.blocks[i].state)) placedCount++
       if (i % 400 === 399) {
         state.status = `building… ${i + 1}/${structure.blocks.length}`
         await new Promise(r => setTimeout(r))
@@ -371,7 +347,7 @@ async function build(structure = current.value, refit = true, replace = false) {
     }
     const optStruct = doorEntries.length ? { ...structure, blocks: structure.blocks.filter(b => !isOpenable(structure.palette[b.state])) } : structure
 
-    const { group: next, atlasTextures: pending, drawCalls: optDc, tris: optTris } = await optimise(optStruct, templates, position, {
+    const { group: next, atlasTextures: pending, tris } = await optimise(optStruct, templates, position, {
       getCullFaces: opts => lib.getCullFaces({ ...opts, assets }),
       setStatus: s => { state.status = s }
     })
@@ -393,7 +369,7 @@ async function build(structure = current.value, refit = true, replace = false) {
       size: `${sx}×${sy}×${sz}`,
       blocks: placedCount,
       palette: templates.size,
-      rawDc, rawTris, optDc, optTris
+      tris
     }
     state.status = ""
     disposeGroup(old)
@@ -406,12 +382,12 @@ async function build(structure = current.value, refit = true, replace = false) {
 
 watch(() => state.lighting, () => { if (current.value) build(current.value, false) })
 
-async function exportCurrent(format, raw, name) {
+async function exportCurrent(format, name) {
   if (!root || state.building) return
   lock(true)
   state.status = "exporting…"
   try {
-    await exportScene({ format, raw, name, root, placed, structure: current.value, templates })
+    await exportScene({ format, name, root, placed })
     state.status = ""
   } catch (err) {
     state.status = `export failed: ${err}`

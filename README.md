@@ -20,7 +20,7 @@ a standalone Vue 3 + Vite app.
 - Procedural generators: igloo, end city and woodland mansion are assembled in
   code from the decompiled game logic, with the same level stepping.
 - Collect mode keeps structures side by side; export the scene as `.glb` or
-  `.obj`, optimised or raw.
+  `.obj`.
 - Walk mode: pointer-locked first person with Minecraft physics: collision,
   step-up, sprint, crouch with edge guard, ladders, fly, noclip, view bobbing,
   and doors that open when you click them.

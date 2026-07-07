@@ -15,9 +15,7 @@ const { locked } = useLock()
 function onExport(ev) {
   const v = ev.target.value
   ev.target.value = ""
-  if (!v) return
-  const [format, raw] = v.split(":")
-  exportCurrent(format, raw === "raw", structureState.name)
+  if (v) exportCurrent(v, structureState.name)
 }
 </script>
 
@@ -33,10 +31,8 @@ function onExport(ev) {
       <label for="export">Export</label>
       <select id="export" :disabled="locked || !buildState.info" @change="onExport">
         <option value="" selected>Save as…</option>
-        <option value="glb:opt">.glb</option>
-        <option value="glb:raw">.glb (raw)</option>
-        <option value="obj:opt">.obj</option>
-        <option value="obj:raw">.obj (raw)</option>
+        <option value="glb">.glb</option>
+        <option value="obj">.obj</option>
       </select>
     </div>
     <label class="check">

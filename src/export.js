@@ -5,8 +5,7 @@ import { OBJExporter } from "three/addons/exporters/OBJExporter.js"
 // Export the current scene to .glb or .obj. Live shader materials and
 // OffscreenCanvas-backed atlas textures aren't portable, so every exported
 // mesh is cloned with a MeshStandardMaterial + real-canvas texture and baked
-// to world space. Raw mode re-expands the current structure to one template
-// clone per block (collected structures always export optimised).
+// to world space.
 
 const matMap = m => m.uniforms?.map?.value ?? m.map
 
@@ -80,30 +79,14 @@ function bakeGroup(scene, group, caches) {
   })
 }
 
-const _blockT = new THREE.Matrix4(), _full = new THREE.Matrix4()
-
-export async function exportScene({ format, raw, name, root, placed, structure, templates }) {
+export async function exportScene({ format, name, root, placed }) {
   const scene = new THREE.Scene()
   const caches = { mat: new Map(), tex: new Map() }
-
-  if (raw && structure && templates) {
-    // un-merged: every face, separate textures, no culling. door blocks pick
-    // up the template of their current open state via b.state
-    const p = root.position
-    for (const b of structure.blocks) {
-      const tmpl = templates.get(b.state)
-      if (!tmpl) continue
-      tmpl.updateMatrixWorld(true)
-      _blockT.makeTranslation(p.x + b.pos[0] * 16, p.y + b.pos[1] * 16, p.z + b.pos[2] * 16)
-      tmpl.traverseVisible(o => {
-        if (o.isMesh) bakeMesh(scene, o, _full.multiplyMatrices(_blockT, o.matrixWorld), caches)
-      })
-    }
-  } else if (root) bakeGroup(scene, root, caches)
+  if (root) bakeGroup(scene, root, caches)
   for (const pl of placed) bakeGroup(scene, pl.group, caches)
   if (!scene.children.length) return
 
-  const base = (name?.split("/").pop() || "structure") + (raw ? "-raw" : "")
+  const base = name?.split("/").pop() || "structure"
   let blob
   if (format === "glb") {
     const buf = await new GLTFExporter().parseAsync(scene, { binary: true })
