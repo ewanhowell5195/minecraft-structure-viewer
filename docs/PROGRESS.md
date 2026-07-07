@@ -84,13 +84,41 @@ and correct .js/.zip MIME types works).
   Doors (DECISIONS 12) are NOT in yet: openable blocks currently bake into the
   merged mesh; they come with the doors/walk work.
 
+- Build step 6 (doors/collect/export) DONE (wireframe landed with step 4):
+  - Doors (DECISIONS 12) in useBuild.js: openable blocks (door/trapdoor/fence_gate
+    with an `open` prop) are excluded from the optimised mesh; both open+closed
+    palette entries/templates are ensured and cloned onto the root with visibility
+    matching state. toggleDoor repoints b.state (collision follows), door halves
+    pair via the cell above/below and toggle together. rayDoor marches the look
+    ray (2-unit steps, reach 80, dedupe cells, solid non-air stops it); interact/
+    aimDoor/blockAt/currentBoxes exported for walk mode later. main.js exposes a
+    DEV-only window.__sv handle for browser testing.
+  - Collect (DECISIONS 15): state.collect checkbox; a new load commits the current
+    group/animator/atlas textures/collision boxes into a `placed` list (ownership
+    transfer, so the build swap doesn't dispose them), lays out left-to-right
+    (sceneRight + 32 + sx*8, grid-snapped). Rebuilds in place (lighting, pack swap)
+    keep their spot via a `replace` flag on build(); pack-swap re-reads pass it so
+    they no longer count as new loads (also no longer refit the camera). Clear
+    Collected disposes everything placed and rebuilds current at origin; loading
+    with collect off clears placed first.
+  - Export (DECISIONS 16): src/export.js, Save as… dropdown (.glb/.obj, optimised
+    or raw). Meshes re-materialised to MeshStandardMaterial (map, transparent,
+    alphaTest 0.5 cutout, roughness 1, metalness 0, side kept), textures redrawn
+    onto real canvases (OffscreenCanvas atlases aren't portable), baked to world
+    space, hidden subtrees skipped via traverseVisible (non-showing door half stays
+    out); meshes carrying invisible material groups are exploded per visible group.
+    Raw re-expands the current structure per block from templates (doors follow
+    b.state); collected structures always export optimised. GLTFExporter binary /
+    OBJExporter, leaf-name filename (+ -raw), object URL revoked after 2s.
+  - Playwright-verified on plains_small_house_1 + igloo/top + plains_fountain_01:
+    door toggle open/close with paired halves, ray blocked by walls, three
+    structures collected side by side with live water, clear returns to origin,
+    glb magic + obj text + raw/collected mesh counts all correct. Console clean.
+
 ## Next steps
 
-1. Build order step 6 (wireframe/collect/export): collect mode (DECISIONS 15),
-   export .glb/.obj optimised + raw (DECISIONS 16). Wireframe already done.
-   Doors (DECISIONS 12) fit naturally right before or with this step since export
-   must skip hidden door halves.
-2. Then steps 7-10 per PLAN.md.
+1. Build order step 7 (jigsaw assembler + level menu + seeds, DECISIONS 3/13).
+2. Then steps 8-10 per PLAN.md.
 3. Open questions to settle with Ewan when relevant (DECISIONS.md section 18):
    pack-change auto-rebuild or explicit, easy-tooltips vs in-app tooltip, samples.
 
