@@ -378,7 +378,7 @@ button.icon {
 }
 
 .cols .chance-h { width: 118px; text-align: right; flex-shrink: 0; }
-.cols .cnt-h { width: 104px; text-align: right; flex-shrink: 0; }
+.cols .cnt-h { width: 118px; text-align: right; flex-shrink: 0; }
 
 .item-row {
   display: flex;
@@ -426,12 +426,13 @@ button.icon {
 }
 
 .cntv {
-  width: 104px;
+  width: 118px;
   text-align: right;
   font-family: ui-monospace, monospace;
   font-size: 12px;
   color: var(--text-dim);
   flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .cntv.big {

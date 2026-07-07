@@ -1,15 +1,20 @@
 <script setup>
-import { computed, ref, watch } from "vue"
+import { computed, reactive, ref, watch } from "vue"
 import { useStructure } from "../composables/useStructure.js"
 import { useStructures } from "../composables/useStructures.js"
+import { useContextMenu } from "../composables/useContextMenu.js"
+import { useLock } from "../composables/useLock.js"
 
 const props = defineProps({
   node: Object,
-  autoOpenName: String
+  autoOpenName: String,
+  expandToken: { type: Number, default: 0 } // parent's "expand everything" signal, counts up
 })
 
 const { state } = useStructures()
-const { loadVanilla } = useStructure()
+const { loadVanilla, loadMany } = useStructure()
+const ctx = useContextMenu()
+const { locked } = useLock()
 
 // chains of single-child folders compact into one "a/b/c" row
 const entries = computed(() => {
@@ -25,9 +30,69 @@ const entries = computed(() => {
   return out
 })
 
+// opened mirrors the details' actual state; mounted is "ever opened", so a
+// natively re-closed folder keeps its children (and their expansion) alive
 const opened = ref(new Set())
+const mounted = ref(new Set())
+// per-child expand-everything tokens (cascades the command down the tree)
+const cascade = reactive({})
+
+const addTo = (setRef, name) => { setRef.value = new Set(setRef.value).add(name) }
+const dropFrom = (setRef, name) => {
+  const next = new Set(setRef.value)
+  next.delete(name)
+  setRef.value = next
+}
+
+watch(() => props.autoOpenName, n => {
+  if (!n) return
+  addTo(opened, n)
+  addTo(mounted, n)
+}, { immediate: true })
+
 function onToggle(name, e) {
-  if (e.target.open) opened.value = new Set(opened.value).add(name)
+  if (e.target.open) {
+    addTo(opened, name)
+    addTo(mounted, name)
+  } else dropFrom(opened, name)
+}
+
+// a parent said "expand everything": open every folder here and pass it on
+watch(() => props.expandToken, v => {
+  if (!v) return
+  const names = entries.value.map(e => e.name)
+  opened.value = new Set([...opened.value, ...names])
+  mounted.value = new Set([...mounted.value, ...names])
+  for (const n of names) cascade[n] = (cascade[n] ?? 0) + 1
+}, { immediate: true })
+
+function expandAll(name) {
+  addTo(opened, name)
+  addTo(mounted, name)
+  cascade[name] = (cascade[name] ?? 0) + 1
+}
+
+// dropping from mounted unmounts the subtree, so every level below starts
+// collapsed again next time it opens
+function collapseAll(name) {
+  dropFrom(opened, name)
+  dropFrom(mounted, name)
+  delete cascade[name]
+}
+
+function collectFiles(node, out = []) {
+  out.push(...node.files)
+  for (const child of node.dirs.values()) collectFiles(child, out)
+  return out
+}
+
+function onMenu(name, child, e) {
+  const rels = collectFiles(child)
+  ctx.open(e, [
+    { label: `Load all (${rels.length})`, icon: "stacks", disabled: locked.value || !rels.length, action: () => loadMany(rels) },
+    { label: "Expand all", icon: "unfold_more", action: () => expandAll(name) },
+    { label: "Collapse all", icon: "unfold_less", action: () => collapseAll(name) }
+  ])
 }
 
 // reveal the page-load selection: folders containing a selected structure
@@ -38,9 +103,10 @@ watch(() => state.selected, sel => {
   if (revealed || !sel.length) return
   revealed = true
   const hasSel = node => node.files.some(f => sel.includes(f)) || [...node.dirs.values()].some(hasSel)
-  const add = new Set(opened.value)
-  for (const { name, child } of entries.value) if (hasSel(child)) add.add(name)
-  opened.value = add
+  for (const { name, child } of entries.value) if (hasSel(child)) {
+    addTo(opened, name)
+    addTo(mounted, name)
+  }
 }, { immediate: true })
 
 const leaf = rel => rel.split("/").at(-1)
@@ -48,10 +114,10 @@ const leaf = rel => rel.split("/").at(-1)
 
 <template>
   <details v-for="{ name, child } in entries" :key="name"
-    :open="name === autoOpenName || opened.has(name)" @toggle.stop="onToggle(name, $event)">
-    <summary>{{ name }}</summary>
-    <div class="children" v-if="opened.has(name) || name === autoOpenName">
-      <TreeFolder :node="child" />
+    :open="opened.has(name)" @toggle.stop="onToggle(name, $event)">
+    <summary @contextmenu.prevent="onMenu(name, child, $event)">{{ name }}</summary>
+    <div class="children" v-if="mounted.has(name)">
+      <TreeFolder :node="child" :expand-token="cascade[name] ?? 0" />
     </div>
   </details>
   <div v-for="rel in node.files" :key="rel" class="tree-file"

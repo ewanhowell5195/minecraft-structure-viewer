@@ -17,6 +17,7 @@ import LevelMenu from "./components/LevelMenu.vue"
 import WalkOverlay from "./components/WalkOverlay.vue"
 import FpsCounter from "./components/FpsCounter.vue"
 import ContainerModal from "./components/ContainerModal.vue"
+import ContextMenu from "./components/ContextMenu.vue"
 
 const libError = ref("")
 const canvasEl = ref(null)
@@ -97,6 +98,7 @@ onMounted(async () => {
       <WalkOverlay />
       <FpsCounter />
       <ContainerModal />
+      <ContextMenu />
     </main>
   </div>
 </template>
