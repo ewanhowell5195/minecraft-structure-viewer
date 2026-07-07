@@ -1,11 +1,12 @@
 import * as THREE from "three"
 
-// The library is loaded at runtime from jsDelivr, tracking the latest-v2
-// branch: an alias of v2, pushed alongside it, because jsdelivr reads "@v2"
-// as a semver range rather than a branch. VITE_LIB_URL overrides (e.g. a
+// The library is loaded at runtime from jsDelivr, pinned to a commit for
+// now: commit urls are immutable so the CDN can never serve stale files
+// (the latest-v2 alias kept old copies cached). switches to version-pinned
+// urls once the library starts releasing. VITE_LIB_URL overrides (e.g. a
 // localhost dev server). The app owns the three instance and hands it over,
 // so there is only ever one copy of three.
-const LIB_URL = import.meta.env.VITE_LIB_URL ?? "https://cdn.jsdelivr.net/gh/ewanhowell5195/block-model-renderer@latest-v2/src/web.js"
+const LIB_URL = import.meta.env.VITE_LIB_URL ?? "https://cdn.jsdelivr.net/gh/ewanhowell5195/block-model-renderer@cfa84f8/src/web.js"
 
 let promise = null
 
