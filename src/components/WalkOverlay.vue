@@ -21,9 +21,12 @@ watch(() => state.on, on => { if (on) { place(); requestAnimationFrame(tick) } e
 addEventListener("resize", () => { if (state.on) place() })
 
 // when no part of the structure is in the camera frustum, point an arrow at
-// the canvas edge toward it: camera-space x/y of the bounds centre says which
-// way to turn (and still does when the target is behind you)
+// the canvas edge toward it. the direction is the yaw/pitch DELTAS needed to
+// face the bounds centre, not the camera-space offset: pitch clamps at +-90,
+// so a target behind you must read as "turn around" (horizontal), never as
+// "pitch further" past the clamp
 const _frustum = new THREE.Frustum(), _m = new THREE.Matrix4(), _v = new THREE.Vector3()
+const wrapPi = a => ((a + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI
 
 function tick() {
   if (!state.on) return
@@ -37,8 +40,11 @@ function tick() {
     arrow.value = null
     return
   }
-  box.getCenter(_v).applyMatrix4(cam.matrixWorldInverse)
-  let dx = _v.x, dy = -_v.y // CSS y grows downward
+  box.getCenter(_v).sub(cam.position).normalize()
+  // walk camera rotation is YXZ: y = yaw, x = pitch (matching useWalk)
+  const dyaw = wrapPi(Math.atan2(-_v.x, -_v.z) - cam.rotation.y)
+  const dpitch = Math.asin(Math.max(-1, Math.min(1, _v.y))) - cam.rotation.x
+  let dx = -dyaw, dy = -dpitch // CSS: right = negative yaw delta, down = negative pitch delta
   const n = Math.hypot(dx, dy)
   if (n < 1e-6) { dx = 1; dy = 0 } else { dx /= n; dy /= n }
   const r = canvas.getBoundingClientRect()
