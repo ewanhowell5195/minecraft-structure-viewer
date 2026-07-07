@@ -160,17 +160,14 @@ function jigsawBlurb(p, nbt) {
   const target = stripNs(nbt?.target ?? "")
   const final = stripNs(nbt?.final_state ?? "").split("[")[0] || "air"
   const dir = (p.orientation ?? "").split("_")[0]
-  const where = dir === "up" ? "on top of it" : dir === "down" ? "underneath it" : "beside it"
+  const where = dir === "up" ? "on top of this block" : dir === "down" ? "underneath this block" : "beside this block"
   if (!pool || pool === "empty") {
-    return `A passive connection point: it places nothing itself, but a piece being generated can attach here by matching a jigsaw named "${target}". Once generation finishes it turns into ${final}.`
+    return `Places nothing itself: parent pieces attach here by its name. Becomes ${final} after generation.`
   }
-  const vertical = dir === "up" || dir === "down"
-  const joint = vertical
-    ? (nbt?.joint === "aligned"
-      ? " The joint is aligned, so the attached piece keeps its rotation relative to this one."
-      : " The joint is rollable, so the attached piece can be randomly rotated.")
+  const joint = dir === "up" || dir === "down"
+    ? (nbt?.joint === "aligned" ? " The piece keeps its rotation." : " The piece can be randomly rotated.")
     : ""
-  return `When this piece generates, the jigsaw rolls the pool below and attaches the picked piece ${where}, lining it up with a jigsaw named "${target}" inside that piece. If nothing fits, the fallback pool is tried.${joint} Once generation finishes this block turns into ${final}.`
+  return `Places a random piece from the pool ${where}, joined at that piece's "${target}" jigsaw.${joint} Becomes ${final} after generation.`
 }
 
 async function open(block) {
