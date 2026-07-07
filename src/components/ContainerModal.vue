@@ -17,13 +17,22 @@ const itemsEl = ref(null)
 const rendering = ref(false)
 const S = 3
 
-const TABS = [
-  { id: "loot", label: "Chest" },
-  { id: "odds", label: "All Items" },
-  { id: "rules", label: "Rules" }
-]
+const TABS = computed(() => state.table
+  ? [
+    { id: "loot", label: "Chest" },
+    { id: "list", label: "List" },
+    { id: "odds", label: "All Items" },
+    { id: "rules", label: "Rules" }
+  ]
+  : state.stacks.length
+    ? [{ id: "loot", label: "Chest" }, { id: "list", label: "List" }]
+    : [])
 
 const rules = computed(() => state.table ? describeTable(state.table) : [])
+
+// the list tab mirrors the chest contents as text, biggest stacks first
+const listStacks = computed(() => [...state.stacks].sort((a, b) =>
+  b.count - a.count || stackName(a).localeCompare(stackName(b))))
 
 function stackName(s) {
   let n = prettyName(s.id)
@@ -158,7 +167,7 @@ watch(() => [state.open, state.stacks, state.gui], () => {
       </header>
       <div v-if="state.error" class="err">{{ state.error }}</div>
       <template v-else>
-        <nav class="tabs" v-if="state.table">
+        <nav class="tabs" v-if="TABS.length">
           <button v-for="t in TABS" :key="t.id" :class="{ active: state.tab === t.id }"
             @click="container.setTab(t.id)">{{ t.label }}</button>
         </nav>
@@ -170,21 +179,14 @@ watch(() => [state.open, state.stacks, state.gui], () => {
               <canvas ref="itemsEl" class="items"></canvas>
             </div>
             <div v-if="state.note" class="note-line">{{ state.note }}</div>
-            <div class="actions" v-if="state.table">
-              <button :disabled="rendering" @click="container.reroll()">
-                <span class="material-symbols-outlined">shuffle</span>
-                Re-roll
-              </button>
-              <span></span>
-              <div class="right">
-                <button :disabled="rendering" @click="container.addRoll()">
-                  <span class="material-symbols-outlined">casino</span>
-                  Add Roll
-                </button>
-                <button :disabled="rendering" title="Add 100 rolls" @click="container.addRoll(100)">
-                  +100
-                </button>
-              </div>
+          </div>
+
+          <div v-if="state.tab === 'list'" class="pane">
+            <div v-if="!listStacks.length" class="empty">Empty.</div>
+            <div v-for="(s, i) in listStacks" :key="i" class="item-row">
+              <ItemIcon :id="s.id" :components="s.components" :size="28" />
+              <span class="nm" :title="stackName(s)">{{ stackName(s) }}</span>
+              <span class="cntv big">×{{ s.count }}</span>
             </div>
           </div>
 
@@ -217,6 +219,22 @@ watch(() => [state.open, state.stacks, state.gui], () => {
             </div>
           </div>
 
+        </div>
+        <div class="actions" v-if="state.table && (state.tab === 'loot' || state.tab === 'list')">
+          <button :disabled="rendering" @click="container.reroll()">
+            <span class="material-symbols-outlined">shuffle</span>
+            Re-roll
+          </button>
+          <span></span>
+          <div class="right">
+            <button :disabled="rendering" @click="container.addRoll()">
+              <span class="material-symbols-outlined">casino</span>
+              Add Roll
+            </button>
+            <button :disabled="rendering" title="Add 100 rolls" @click="container.addRoll(100)">
+              +100
+            </button>
+          </div>
         </div>
       </template>
     </div>
@@ -437,6 +455,12 @@ button.icon {
   color: var(--text-dim);
   flex-shrink: 0;
   white-space: nowrap;
+}
+
+.cntv.big {
+  width: auto;
+  font-size: 13px;
+  color: var(--text);
 }
 
 /* rules */
