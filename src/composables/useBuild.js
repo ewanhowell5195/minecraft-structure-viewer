@@ -264,8 +264,6 @@ async function attachEntities(structure, lib, assets) {
     const [ns, name] = id.includes(":") ? id.split(":") : ["minecraft", id]
     const yaw = Number(e.nbt.Rotation?.[0] ?? 0)
     const facing = ["south", "west", "north", "east"][((Math.floor(yaw / 90 + 0.5) % 4) + 4) % 4]
-    // entity nbt strings double as blockstate properties (cushions keep
-    // their colour there: color: "pink"), plus the yaw-derived facing
     const data = { facing }
     for (const [k, v] of Object.entries(e.nbt)) if (typeof v === "string" && k !== "id") data[k] = v
     const key = id + "|" + JSON.stringify(data)
