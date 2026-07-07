@@ -37,11 +37,11 @@ const state = reactive({
   stacks: [],
   error: "",
   note: "",
-  tab: "loot",     // loot | odds | sim | rules
+  tab: "loot",     // loot | odds | rules
   odds: null,      // sampleTable result, computed once per open on demand
   oddsBusy: false,
-  simRolls: 0,
-  simStacks: []    // accumulated { key, id, components, count }
+  rolls: 0,        // opens accumulated into the gui pile
+  pileTotal: 0
 })
 
 let openSeq = 0 // bumps per open(): stale async work from a previous container is discarded
@@ -59,8 +59,9 @@ async function open(block) {
   state.tab = "loot"
   state.odds = null
   state.oddsBusy = false
-  state.simRolls = 0
-  state.simStacks = []
+  state.rolls = 0
+  state.pileTotal = 0
+  pile = []
   openSeq++
   state.open = true
   try {
@@ -107,47 +108,45 @@ async function ensureOdds() {
 
 function setTab(tab) {
   state.tab = tab
-  if (tab === "odds" || tab === "sim") ensureOdds()
+  if (tab === "odds") ensureOdds()
 }
 
-// one more simulated open, merged into the running totals
-async function simRoll() {
-  if (!state.table) return
-  const seq = openSeq
-  const loot = await rollLoot(state.table)
-  if (seq !== openSeq || !state.open) return // a different container opened meanwhile
-  state.simRolls++
+// the gui shows an accumulated pile of opens: re-roll starts a fresh one,
+// add-roll opens the container again on top, biggest stacks first
+let pile = []
+
+function mergeRoll(loot) {
   for (const s of loot) {
     const k = stackKey(s)
-    const ex = state.simStacks.find(t => t.key === k)
+    const ex = pile.find(t => t.key === k)
     if (ex) ex.count += s.count
-    else state.simStacks.push({ key: k, id: s.id, components: s.components, count: s.count })
+    else pile.push({ key: k, id: s.id, components: s.components, count: s.count })
   }
 }
 
-function simReset() {
-  state.simRolls = 0
-  state.simStacks = []
+function display() {
+  const cap = state.kind.cols * state.kind.rows
+  const sorted = [...pile].sort((a, b) => b.count - a.count || prettyName(a.id).localeCompare(prettyName(b.id)))
+  state.stacks = sorted.slice(0, cap).map((s, i) => ({ id: s.id, components: s.components, count: s.count, slot: i }))
+  state.pileTotal = pile.reduce((a, s) => a + s.count, 0)
 }
 
 async function reroll() {
   if (!state.table || !state.kind) return
+  pile = []
+  mergeRoll(await rollLoot(state.table))
+  state.rolls = 1
+  display()
+}
+
+async function addRoll() {
+  if (!state.table || !state.kind) return
+  const seq = openSeq
   const loot = await rollLoot(state.table)
-  const cap = state.kind.cols * state.kind.rows
-  // over capacity: merge same-item stacks until it fits (or give up and cap)
-  while (loot.length > cap) {
-    const j = loot.findIndex((o, oi) => loot.findIndex(s => s.id === o.id) < oi)
-    if (j < 0) break
-    const i = loot.findIndex(s => s.id === loot[j].id)
-    loot[i].count += loot[j].count
-    loot.splice(j, 1)
-  }
-  const slots = [...Array(cap).keys()]
-  for (let i = slots.length - 1; i > 0; i--) {
-    const j = Math.random() * (i + 1) | 0
-    ;[slots[i], slots[j]] = [slots[j], slots[i]]
-  }
-  state.stacks = loot.slice(0, cap).map((s, i) => ({ ...s, slot: slots[i] }))
+  if (seq !== openSeq || !state.open) return // a different container opened meanwhile
+  mergeRoll(loot)
+  state.rolls++
+  display()
 }
 
 function close() {
@@ -224,5 +223,5 @@ function initPicking(canvas) {
 }
 
 export function useContainer() {
-  return { state: readonly(state), open, close, reroll, setTab, ensureOdds, simRoll, simReset, initPicking }
+  return { state: readonly(state), open, close, reroll, addRoll, setTab, ensureOdds, initPicking }
 }

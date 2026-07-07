@@ -20,20 +20,10 @@ const S = 3
 const TABS = [
   { id: "loot", label: "Chest" },
   { id: "odds", label: "All Items" },
-  { id: "sim", label: "Simulate" },
   { id: "rules", label: "Rules" }
 ]
 
 const rules = computed(() => state.table ? describeTable(state.table) : [])
-
-// simulate view: accumulated stacks ordered by measured commonness, then name
-const oddsIndex = computed(() => new Map((state.odds ?? []).map((o, i) => [o.id + "|" + JSON.stringify(o.components ?? null), i])))
-const simSorted = computed(() => [...state.simStacks].sort((a, b) => {
-  const ia = oddsIndex.value.get(a.key) ?? Infinity
-  const ib = oddsIndex.value.get(b.key) ?? Infinity
-  return ia - ib || stackName(a).localeCompare(stackName(b))
-}))
-const simTotal = computed(() => state.simStacks.reduce((a, s) => a + s.count, 0))
 
 function stackName(s) {
   let n = prettyName(s.id)
@@ -176,6 +166,13 @@ watch(() => [state.open, state.stacks], () => {
                 <span class="material-symbols-outlined">shuffle</span>
                 Re-roll
               </button>
+              <span class="roll-stats" v-if="state.rolls > 1">
+                {{ state.rolls }} opens · {{ state.pileTotal }} item{{ state.pileTotal === 1 ? "" : "s" }}
+              </span>
+              <button class="push" :disabled="rendering" @click="container.addRoll()">
+                <span class="material-symbols-outlined">casino</span>
+                Add Roll
+              </button>
             </div>
           </div>
 
@@ -192,28 +189,6 @@ watch(() => [state.open, state.stacks], () => {
                 <span class="cntv">{{ fmtCount(o) }}</span>
               </div>
             </template>
-          </div>
-
-          <div v-if="state.tab === 'sim'" class="pane">
-            <div class="sim-bar">
-              <button class="primary" @click="container.simRoll()">
-                <span class="material-symbols-outlined">casino</span>
-                Roll
-              </button>
-              <span class="sim-stats" v-if="state.simRolls">
-                {{ state.simRolls }} {{ state.simRolls === 1 ? "open" : "opens" }} · {{ simTotal }} item{{ simTotal === 1 ? "" : "s" }}
-              </span>
-              <span class="sim-stats" v-else>Each roll opens the container again and adds to the pile.</span>
-              <button class="icon push" title="Reset" :disabled="!state.simRolls" @click="container.simReset()">
-                <span class="material-symbols-outlined">restart_alt</span>
-              </button>
-            </div>
-            <div v-if="state.simRolls && !state.simStacks.length" class="empty">Nothing yet. Unlucky!</div>
-            <div v-for="s in simSorted" :key="s.key" class="item-row">
-              <ItemIcon :id="s.id" :components="s.components" :size="28" />
-              <span class="nm" :title="stackName(s)">{{ stackName(s) }}</span>
-              <span class="cntv big">×{{ s.count }}</span>
-            </div>
           </div>
 
           <div v-if="state.tab === 'rules'" class="pane rules">
@@ -347,16 +322,25 @@ button.icon {
 
 .actions {
   display: flex;
-  justify-content: center;
+  align-items: center;
+  gap: 12px;
 }
 
-.actions button, .sim-bar button {
+.actions button {
   display: flex;
   align-items: center;
   gap: 6px;
 }
 
-.actions .material-symbols-outlined, .sim-bar .material-symbols-outlined { font-size: 18px; }
+.actions .push { margin-left: auto; }
+
+.roll-stats {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin: 0 auto;
+}
+
+.actions .material-symbols-outlined { font-size: 18px; }
 
 .err { color: var(--red); font-size: 13px; }
 
@@ -441,27 +425,6 @@ button.icon {
   flex-shrink: 0;
   white-space: nowrap;
 }
-
-.cntv.big {
-  width: auto;
-  font-size: 13px;
-  color: var(--text);
-}
-
-/* simulate toolbar */
-.sim-bar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding-bottom: 8px;
-}
-
-.sim-stats {
-  font-size: 12px;
-  color: var(--text-dim);
-}
-
-.sim-bar .push { margin-left: auto; }
 
 /* rules */
 .rules { gap: 10px; }
