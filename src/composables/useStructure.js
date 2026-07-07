@@ -6,6 +6,9 @@ import { useBuild } from "./useBuild.js"
 import { useSession } from "./useSession.js"
 import { useLock } from "./useLock.js"
 import { readStructure } from "../nbt.js"
+import { readLitematic, readMcstructure, readSchem } from "../formats.js"
+
+const READERS = { nbt: readStructure, litematic: readLitematic, schem: readSchem, mcstructure: readMcstructure }
 
 // The currently loaded structure: loading + selection + the ?vanilla= param.
 // Every loader funnels into loadStructure, which hands off to the build.
@@ -62,8 +65,9 @@ function loadFile(file) {
   return withLock(async () => {
     state.error = ""
     try {
-      const s = await readStructure(await file.arrayBuffer())
-      state.name = file.name.replace(/\.nbt$/, "")
+      const reader = READERS[file.name.split(".").pop().toLowerCase()] ?? readStructure
+      const s = await reader(await file.arrayBuffer())
+      state.name = file.name.replace(/\.(nbt|litematic|schem|mcstructure)$/i, "")
       structures.stateMut.selected = null
       setVanillaParam(null)
       await loadStructure(s, state.name)

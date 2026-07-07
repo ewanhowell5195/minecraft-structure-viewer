@@ -10,7 +10,8 @@ a standalone Vue 3 + Vite app.
   and cached per channel) plus any number of resource packs / data packs / mod
   jars layered on top in an ordered overlay list.
 - Filters: all / standalone / starters (from a scan of the worldgen template
-  pools), text filter, and loading `.nbt` files from disk.
+  pools), text filter, and loading `.nbt`, `.litematic`, `.schem` and
+  `.mcstructure` files from disk (Bedrock blockstates translated best-effort).
 - Renderer: greedy meshing + texture atlases + face culling collapse most
   structures to a handful of draw calls; water/lava/fire stay animated; doors,
   trapdoors and gates stay live and toggleable.

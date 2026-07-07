@@ -82,7 +82,7 @@ function onFile(e) {
       <span class="material-symbols-outlined">upload_file</span>
       Open Structure File
     </button>
-    <input ref="fileInput" type="file" accept=".nbt" hidden @change="onFile">
+    <input ref="fileInput" type="file" accept=".nbt,.litematic,.schem,.mcstructure" hidden @change="onFile">
   </section>
 </template>
 
