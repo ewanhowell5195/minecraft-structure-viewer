@@ -182,8 +182,13 @@ function updateGridLabels() {
   }
 }
 
+// world-space xz extents of the current floor grids (walk mode spawns onto
+// the nearest one when the camera is far away)
+let gridRects = []
+
 // rects: [{ x, z, y, w, d, label? }] with x/z/y in world units, w/d in blocks
 function setGrids(rects) {
+  gridRects = rects.map(r => ({ x0: r.x, z0: r.z, x1: r.x + r.w * 16, z1: r.z + r.d * 16 }))
   if (gridGroup) {
     gridGroup.removeFromParent()
     gridGroup.traverse(o => {
@@ -328,6 +333,7 @@ export function useScene() {
   return {
     view, scene, init, fit, setGrids, sceneBounds, setOrtho, setOrthoManual,
     makeHighlight,
+    getGridRects: () => gridRects,
     contentRoots, animators, perspCam, FOV, updateProjection, setWalkUpdate,
     get camera() { return camera },
     get controls() { return controls },

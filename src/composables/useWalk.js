@@ -92,6 +92,19 @@ function roomToStand() {
 }
 const bumpUp = () => { for (let i = 0; i < 4000 && !roomToStand(); i++) walk.pos.y += 2 }
 
+// drop straight onto the highest standing surface at or below the feet
+// (the ground plane when nothing else is there)
+function snapToGround() {
+  const a = paabb()
+  let top = floorY
+  for (const b of nearby({ ...a, ny: floorY - 1 })) {
+    if (b.px <= a.nx || b.nx >= a.px || b.pz <= a.nz || b.nz >= a.pz) continue
+    if (b.py <= walk.pos.y + 0.01 && b.py > top) top = b.py
+  }
+  walk.pos.y = top
+  walk.onGround = true
+}
+
 // move one axis by d, then snap out of the deepest overlapping box / the floor
 function collideAxis(ax, d) {
   if (!d) return false
@@ -283,19 +296,33 @@ function enter() {
   noclip = false
   sceneApi.controls.enabled = false
   buildCollision()
-  // start from where the camera is now (feet = eye - eye height), looking the
-  // same way
+  // start from where the camera is now (feet = eye - eye height), facing the
+  // same way but level, snapped onto the ground
   const d = new THREE.Vector3()
   perspCam.getWorldDirection(d)
   walk.pos.set(perspCam.position.x, perspCam.position.y - EYE_STAND, perspCam.position.z)
   walk.yaw = Math.atan2(-d.x, -d.z)
-  walk.pitch = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, Math.asin(Math.max(-1, Math.min(1, d.y)))))
+  walk.pitch = 0
   walk.vel.set(0, 0, 0)
   walk.onGround = false
   walk.crouched = false
   walk.h = H_STAND
   walk.eye = EYE_STAND
-  bumpUp() // if that left us buried in a block, lift to the first free space
+  // more than 10 blocks out from every floor grid: come in to the nearest
+  // point on the closest one
+  let best = null
+  for (const r of sceneApi.getGridRects()) {
+    const nx = Math.min(Math.max(walk.pos.x, r.x0), r.x1)
+    const nz = Math.min(Math.max(walk.pos.z, r.z0), r.z1)
+    const d2 = (walk.pos.x - nx) ** 2 + (walk.pos.z - nz) ** 2
+    if (!best || d2 < best.d2) best = { nx, nz, d2 }
+  }
+  if (best && best.d2 > 160 * 160) {
+    walk.pos.x = best.nx
+    walk.pos.z = best.nz
+  }
+  bumpUp() // if we're buried in a block, lift to the first free space
+  snapToGround()
   bob.dist = 0
   bob.val = 0
   bob.px = walk.pos.x
@@ -303,6 +330,16 @@ function enter() {
   stepSmooth = 0
   perspCam.fov = WALK_FOV
   perspCam.updateProjectionMatrix()
+  // nothing in view from here (the edge arrow would show): face the centre
+  perspCam.position.set(walk.pos.x, walk.pos.y + walk.eye, walk.pos.z)
+  perspCam.rotation.set(walk.pitch, walk.yaw, 0, "YXZ")
+  perspCam.updateMatrixWorld(true)
+  const frustum = new THREE.Frustum().setFromProjectionMatrix(
+    new THREE.Matrix4().multiplyMatrices(perspCam.projectionMatrix, perspCam.matrixWorldInverse))
+  if (!frustum.intersectsBox(sceneApi.sceneBounds())) {
+    const c = sceneApi.sceneBounds().getCenter(new THREE.Vector3())
+    walk.yaw = Math.atan2(-(c.x - perspCam.position.x), -(c.z - perspCam.position.z))
+  }
   canvas.requestPointerLock()?.catch?.(() => {})
 }
 
