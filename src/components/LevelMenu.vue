@@ -30,7 +30,8 @@ const open = ref(false)
           <span class="material-symbols-outlined">refresh</span>
           Reload
         </button>
-        <button v-if="s.level > 0" :disabled="locked" @click="session.fullReload()">
+        <!-- at max depth a jigsaw's Full Reload is identical to Reload -->
+        <button v-if="s.level > 0 && (s.kind !== 'jigsaw' || s.level < s.maxDepth)" :disabled="locked" @click="session.fullReload()">
           <span class="material-symbols-outlined">restart_alt</span>
           Full Reload
         </button>
