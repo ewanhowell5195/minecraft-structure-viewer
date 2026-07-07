@@ -145,7 +145,7 @@ export async function readMcstructure(buf) {
   if (!sx || !layers.length) throw new Error("not a .mcstructure file")
   const { stateFor, push, finish } = collector()
   const layer0 = layers[0], layer1 = layers[1]
-  const water = new Set(pal.map((e, i) => /(^|:)(water|flowing_water)$/.test(e?.name || "") ? i : -1))
+  const water = new Set(pal.map((e, i) => /(^|:)(water|flowing_water)$/.test(e?.name || "") ? i : null).filter(i => i !== null))
   for (let x = 0; x < sx; x++) for (let y = 0; y < sy; y++) for (let z = 0; z < sz; z++) {
     const i = (x * sy + y) * sz + z
     const pi = Number(layer0[i])
