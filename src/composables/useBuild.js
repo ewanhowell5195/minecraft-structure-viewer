@@ -110,6 +110,7 @@ async function remapFluidStates(structure, lib, assets) {
 const state = reactive({
   lighting: "world",
   hideStructureBlocks: localStorage.getItem("hideStructureBlocks") !== "false",
+  hasStructureBlocks: false,
   collect: false,
   placedCount: 0,
   building: false,
@@ -401,6 +402,12 @@ async function build(structure = source, refit = true, replace = false) {
       else if (!state.collect) clearPlaced()
     }
     source = structure
+    // whether the show/hide toggle has anything to act on
+    const techStates = new Set()
+    structure.palette.forEach((e, i) => {
+      if (e?.Name && (JIGSAW.test(e.Name) || SB.test(e.Name))) techStates.add(i)
+    })
+    state.hasStructureBlocks = techStates.size > 0 && structure.blocks.some(b => techStates.has(b.state))
     if (state.hideStructureBlocks) structure = stripStructureBlocks(structure)
     current.value = structure
     const lib = await loadLibrary()

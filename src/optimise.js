@@ -330,25 +330,19 @@ export async function optimise(structure, templates, position, { getCullFaces, s
       if (!arr) byPlane.set(k, arr = [])
       arr.push(c)
     }
-    // overlapping coplanar flats: a face strictly contained inside an opaque
-    // one (a fence arm's end flush against the post) is invisible, drop it.
-    // same-material opaque overlaps (interpenetrating fence rails) are fine
-    // to keep: they share one buffer so draw order is stable and the texels
-    // match. only cross-material overlaps (grass side + tinted overlay) must
-    // demote to the ordered atlas path
-    const contains = (f, g) => f.a0 <= g.a0 + 0.01 && f.a0 + f.wa >= g.a0 + g.wa - 0.01 && f.b0 <= g.b0 + 0.01 && f.b0 + f.wb >= g.b0 + g.wb - 0.01
-    const demote = new Set(), drop = new Set()
+    // overlapping coplanar flats: same-material opaque overlaps
+    // (interpenetrating fence rails) are fine to keep merged: they share one
+    // buffer so draw order is stable. cross-material overlaps (grass side +
+    // tinted overlay) demote to the ordered atlas path. face VISIBILITY is
+    // never decided here: that's the culling system's job alone
+    const demote = new Set()
     for (const arr of byPlane.values()) for (let i = 0; i < arr.length; i++) for (let j = i + 1; j < arr.length; j++) {
       const A = arr[i], B = arr[j]
       if (!rectsOverlap(A.flat, B.flat)) continue
-      const areaA = A.flat.wa * A.flat.wb, areaB = B.flat.wa * B.flat.wb
-      if (contains(A.flat, B.flat) && areaB < areaA - 0.01 && isOpaque(A.tex)) drop.add(B)
-      else if (contains(B.flat, A.flat) && areaA < areaB - 0.01 && isOpaque(B.tex)) drop.add(A)
-      else if (A.flat.sig !== B.flat.sig || A.tex !== B.tex || !isOpaque(A.tex) || !isOpaque(B.tex)) { demote.add(A); demote.add(B) }
+      if (A.flat.sig !== B.flat.sig || A.tex !== B.tex || !isOpaque(A.tex) || !isOpaque(B.tex)) { demote.add(A); demote.add(B) }
     }
     const merge = []
     for (const c of flats) {
-      if (drop.has(c)) continue
       if (demote.has(c)) atlasFace(c.o, toAtlas(c.mat, c.tex, { start: c.start, count: c.count, tex: c.tex, cull: c.cull }))
       else merge.push(c.flat)
     }

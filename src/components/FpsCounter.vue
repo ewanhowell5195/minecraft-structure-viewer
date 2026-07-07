@@ -22,8 +22,8 @@ requestAnimationFrame(function tick() {
 <style scoped>
 .fps {
   position: absolute;
-  top: 10px;
-  right: 10px;
+  top: 12px;
+  right: 14px;
   font-size: 11px;
   color: var(--text-dim);
   opacity: 0.5;

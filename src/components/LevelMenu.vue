@@ -48,7 +48,7 @@ const open = ref(false)
         <span class="material-symbols-outlined">casino</span>
         {{ s.level > 0 ? "Regenerate" : "Generate" }}
       </button>
-      <button :disabled="locked" @click="buildState.hideStructureBlocks = !buildState.hideStructureBlocks">
+      <button v-if="buildState.hasStructureBlocks" :disabled="locked" @click="buildState.hideStructureBlocks = !buildState.hideStructureBlocks">
         <span class="material-symbols-outlined">{{ buildState.hideStructureBlocks ? "visibility" : "visibility_off" }}</span>
         {{ buildState.hideStructureBlocks ? "Show" : "Hide" }}
       </button>
@@ -64,8 +64,8 @@ const open = ref(false)
 <style scoped>
 .level-menu {
   position: absolute;
-  right: 10px;
-  bottom: 10px;
+  right: 14px;
+  bottom: 12px;
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -99,7 +99,6 @@ button {
 
 .head {
   justify-content: center;
-  background: #000000a0;
 }
 
 button .material-symbols-outlined { font-size: 18px; }
