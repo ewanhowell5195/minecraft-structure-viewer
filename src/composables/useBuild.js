@@ -298,26 +298,45 @@ function interact(ox, oy, oz, dx, dy, dz) {
   return h?.container ?? false
 }
 
-// state -> local Box3 of its template (door outlines follow the model)
-let stateBoxCache = new Map()
-function boxForState(idx) {
-  if (stateBoxCache.has(idx)) return stateBoxCache.get(idx)
-  const tmpl = templates.get(idx)
-  let box = null
-  if (tmpl) {
-    tmpl.updateMatrixWorld(true)
-    box = new THREE.Box3().setFromObject(tmpl)
+// vanilla interaction shapes for every clickable block, fixed so resource
+// pack remodels can't change them. doors/trapdoors are a 3px panel on the
+// face OPPOSITE the shape direction (DoorBlock/TrapDoorBlock boxZ(16,13,16)):
+// door closed -> facing, open -> hinge-rotated; trapdoor closed -> half,
+// open -> facing. gates are a full-width 4px band (13 tall in a wall),
+// chests the 14-wide body without the knob, the rest a full cube
+const PANEL = {
+  north: [0, 0, 13, 16, 16, 16],
+  south: [0, 0, 0, 16, 16, 3],
+  east: [0, 0, 0, 3, 16, 16],
+  west: [13, 0, 0, 16, 16, 16],
+  up: [0, 0, 0, 16, 3, 16],
+  down: [0, 13, 0, 16, 16, 16]
+}
+const CW = { north: "east", east: "south", south: "west", west: "north" }
+const CCW = { north: "west", west: "south", south: "east", east: "north" }
+
+function shapeFor(e) {
+  const name = (e?.Name || "").replace(/^minecraft:/, "")
+  const p = e?.Properties ?? {}
+  if (/fence_gate$/.test(name)) {
+    const tall = p.in_wall === "true" ? 13 : 16
+    return p.facing === "north" || p.facing === "south" ? [0, 0, 6, 16, tall, 10] : [6, 0, 0, 10, tall, 16]
   }
-  stateBoxCache.set(idx, box)
-  return box
+  if (/trapdoor$/.test(name)) {
+    if (p.open === "true") return PANEL[p.facing] ?? PANEL.north
+    return p.half === "top" ? PANEL.down : PANEL.up
+  }
+  if (/door$/.test(name)) {
+    const dir = p.open === "true" ? (p.hinge === "right" ? CCW[p.facing] : CW[p.facing]) : p.facing
+    return PANEL[dir] ?? PANEL.north
+  }
+  if (/chest$/.test(name)) return [1, 0, 1, 15, 14, 15]
+  return [0, 0, 0, 16, 16, 16]
 }
 
-// vanilla interaction shapes for the container set: chests are the 14-wide
-// body without the knob, everything else in the list is a full cube
 function boxForBlock(b) {
   if (!b || !root) return null
-  const name = (current.value?.palette[b.state]?.Name || "").replace(/^minecraft:/, "")
-  const s = /chest$/.test(name) ? [1, 0, 1, 15, 14, 15] : [0, 0, 0, 16, 16, 16]
+  const s = shapeFor(current.value?.palette[b.state])
   const ox = b.pos[0] * 16 + root.position.x - 8
   const oy = b.pos[1] * 16 + root.position.y - 8
   const oz = b.pos[2] * 16 + root.position.z - 8
@@ -326,32 +345,10 @@ function boxForBlock(b) {
   return _aimBox
 }
 
-// box of the interactable being looked at (in-reach outline). doors and
-// trapdoors follow their model box, which IS the vanilla 3px panel shape;
-// fence gates use the vanilla shape (full width, 4px thick band centred on
-// the facing axis, 13 tall in a wall, same whether open or closed)
-const _aimV = new THREE.Vector3()
+// box of the interactable being looked at (in-reach outline)
 function aimDoor(ox, oy, oz, dx, dy, dz) {
   const h = rayHit(ox, oy, oz, dx, dy, dz)
-  if (!h) return null
-  if (h.container) return boxForBlock(h.container)
-  const b = h.door.b
-  const e = current.value.palette[b.state]
-  if (/fence_gate$/.test((e.Name || "").replace(/^minecraft:/, ""))) {
-    const bx = b.pos[0] * 16 + root.position.x - 8
-    const by = b.pos[1] * 16 + root.position.y - 8
-    const bz = b.pos[2] * 16 + root.position.z - 8
-    const tall = e.Properties?.in_wall === "true" ? 13 : 16
-    const [x0, z0, x1, z1] = e.Properties?.facing === "north" || e.Properties?.facing === "south"
-      ? [0, 6, 16, 10] : [6, 0, 10, 16]
-    _aimBox.min.set(bx + x0, by, bz + z0)
-    _aimBox.max.set(bx + x1, by + tall, bz + z1)
-    return _aimBox
-  }
-  const open = e.Properties.open === "true"
-  const box = boxForState(open ? h.door.openIdx : h.door.closedIdx)
-  if (!box) return null
-  return _aimBox.copy(box).translate(_aimV.set(b.pos[0] * 16, b.pos[1] * 16, b.pos[2] * 16).add(root.position))
+  return h ? boxForBlock(h.door ? h.door.b : h.container) : null
 }
 
 // the raw structure block at a world position (orbit-mode picking)
@@ -427,7 +424,6 @@ async function build(structure = source, refit = true) {
 
     templates = new Map()
     nonSolid = new Set()
-    stateBoxCache = new Map()
     const isPlane = el => el.from[0] === el.to[0] || el.from[1] === el.to[1] || el.from[2] === el.to[2]
     async function template(stateIdx) {
       if (templates.has(stateIdx)) return templates.get(stateIdx)
