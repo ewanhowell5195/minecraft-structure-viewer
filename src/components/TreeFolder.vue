@@ -62,8 +62,8 @@ function onToggle(name, e) {
 watch(() => props.expandToken, v => {
   if (!v) return
   const names = entries.value.map(e => e.name)
-  opened.value = new Set([...opened.value, ...names])
-  mounted.value = new Set([...mounted.value, ...names])
+  opened.value = new Set(Array.from(opened.value).concat(names))
+  mounted.value = new Set(Array.from(mounted.value).concat(names))
   for (const n of names) cascade[n] = (cascade[n] ?? 0) + 1
 }, { immediate: true })
 

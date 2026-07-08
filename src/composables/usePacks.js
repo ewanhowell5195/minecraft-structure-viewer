@@ -42,7 +42,7 @@ function setChannelParam(ch) {
 // `swap`, so nothing still on screen loses its cached textures mid-frame.
 async function rebuildAssets(swap) {
   const lib = await loadLibrary()
-  const sources = [...state.packs.map(p => bytesById.get(p.id)), baseBytes].filter(Boolean)
+  const sources = state.packs.map(p => bytesById.get(p.id)).concat(baseBytes).filter(Boolean)
   const prev = assets.value
   assets.value = sources.length ? await lib.prepareAssets(sources, { cache: true }) : null
   state.assetsVersion++
@@ -145,7 +145,7 @@ async function movePack(id, delta, swap) {
 // Every zip source currently contributing files, highest priority first.
 // Structure discovery scans the union of these (a pack's data/ may add
 // structures the base doesn't have).
-const allSources = () => [...state.packs.map(p => bytesById.get(p.id)), baseBytes].filter(Boolean)
+const allSources = () => state.packs.map(p => bytesById.get(p.id)).concat(baseBytes).filter(Boolean)
 
 export function usePacks() {
   return { state: readonly(state), assets, loadBase, setChannel, addPacks, removePack, movePack, allSources, setSwapHandler }
