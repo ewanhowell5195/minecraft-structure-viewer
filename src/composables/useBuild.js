@@ -6,7 +6,7 @@ import { useScene } from "./useScene.js"
 import { useLock } from "./useLock.js"
 import { optimise } from "../optimise.js"
 import { exportScene } from "../export.js"
-import { makeSignTexts } from "../signs.js"
+import { makeSignTexts, plainText } from "../signs.js"
 import { JIGSAW, parseState } from "../transforms.js"
 import { isInspectable } from "../loot.js"
 import { getFont, measure, drawText } from "../mcfont.js"
@@ -295,6 +295,40 @@ async function entityMarkerTexture(lib, assets, name) {
   return tex
 }
 
+// the in-game nametag: white minecraft-font text on a translucent plate,
+// floating above the entity
+async function nameTagSprite(text) {
+  try {
+    const font = await getFont()
+    const S = 4, pad = S * 2
+    const c = document.createElement("canvas")
+    c.width = Math.ceil(measure(font, text) * S) + pad * 2
+    c.height = font.ch * S + pad * 2
+    const ctx = c.getContext("2d")
+    ctx.fillStyle = "#00000059"
+    ctx.fillRect(0, 0, c.width, c.height)
+    drawText(ctx, font, text, pad, pad, { scale: S })
+    const tex = new THREE.CanvasTexture(c)
+    tex.colorSpace = THREE.SRGBColorSpace
+    tex.magFilter = THREE.NearestFilter
+    markerTextures.push(tex)
+    const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true }))
+    const H = 5
+    spr.scale.set(H * c.width / c.height, H, 1)
+    return spr
+  } catch { return null }
+}
+
+async function attachEntityTag(nbt, wx, topY, wz) {
+  const label = plainText(nbt?.CustomName ?? "")
+  if (!label) return 0
+  const tag = await nameTagSprite(label)
+  if (!tag) return 0
+  tag.position.set(wx, topY + 3 + tag.scale.y / 2, wz)
+  root.add(tag)
+  return 1
+}
+
 async function attachEntities(structure, lib, assets) {
   let draws = 0
   const groupCache = new Map()
@@ -332,6 +366,7 @@ async function attachEntities(structure, lib, assets) {
       g.position.set(wx, wy, wz)
       root.add(g)
       g.traverse(o => { if (o.isMesh) draws++ })
+      draws += await attachEntityTag(e.nbt, wx, new THREE.Box3().setFromObject(g).max.y, wz)
       continue
     }
     if (!texCache.has(name)) texCache.set(name, await entityMarkerTexture(lib, assets, name))
@@ -351,6 +386,7 @@ async function attachEntities(structure, lib, assets) {
     root.add(spr)
     entityMarkers.push(marker)
     draws++
+    draws += await attachEntityTag(e.nbt, wx, wy - 8 + ENTITY_BOX, wz)
   }
   for (const tex of texCache.values()) if (tex) markerTextures.push(tex)
   return draws

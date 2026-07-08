@@ -28,7 +28,7 @@ function flat(j) {
   return s
 }
 
-function plainText(m) {
+export function plainText(m) {
   if (typeof m === "string") {
     try { return flat(JSON.parse(m)) } catch { return m }
   }
