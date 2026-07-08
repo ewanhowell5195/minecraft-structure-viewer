@@ -347,9 +347,17 @@ async function attachEntities(structure, lib, assets) {
     if (template === undefined) {
       template = null
       try {
-        if (await lib.readFile(`assets/${ns}/blockstates/${name}.json`, assets)) {
+        // coloured entity forms (cushions) have no blockstate of their own:
+        // the entity's colour picks the per-colour block, white when unset
+        let blockId = null
+        if (await lib.readFile(`assets/${ns}/blockstates/${name}.json`, assets)) blockId = id
+        else {
+          const coloured = `${typeof data.color === "string" ? data.color : "white"}_${name}`
+          if (await lib.readFile(`assets/${ns}/blockstates/${coloured}.json`, assets)) blockId = `${ns}:${coloured}`
+        }
+        if (blockId) {
           const g = new THREE.Group()
-          for (const model of await lib.parseBlockstate(assets, id, { data, ignoreAtlases: true })) {
+          for (const model of await lib.parseBlockstate(assets, blockId, { data, ignoreAtlases: true })) {
             const data = await lib.resolveModelData(assets, model)
             await lib.loadModel(g, assets, data, { display: {}, lighting: state.lighting, animate: false })
           }
