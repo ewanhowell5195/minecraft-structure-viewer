@@ -385,10 +385,7 @@ button.icon {
 
 .body {
   overflow: auto;
-  min-height: 280px;
 }
-
-.body.compact { min-height: 0; }
 
 .pane.data { gap: 8px; }
 
@@ -635,7 +632,6 @@ button.icon {
 }
 
 .item-row:nth-child(even) { background: #ffffff06; }
-.item-row:hover { background: #ffffff0d; }
 
 .nm {
   flex: 1;
