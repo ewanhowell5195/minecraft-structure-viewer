@@ -196,10 +196,13 @@ watch(() => [state.open, state.stacks, state.gui], () => {
 
           <div v-if="state.dataRows" class="pane data">
             <p v-if="state.blurb" class="blurb">{{ state.blurb }}</p>
-            <div class="facts" v-if="facts.length">
-              <div v-for="r in facts" :key="r.label" class="fact">
+            <div class="facts" :class="{ two: facts.some(f => f.full) }" v-if="facts.length">
+              <div v-for="r in facts" :key="r.label" class="fact" :class="{ full: r.full }">
                 <div class="fl">{{ r.label }}</div>
                 <div class="fv" :class="{ mono: r.mono }">{{ r.value }}</div>
+                <div v-if="r.props" class="fprops">
+                  <span v-for="(v, k) in r.props" :key="k" class="fprop"><span class="fpk">{{ k }}</span>{{ v }}</span>
+                </div>
               </div>
             </div>
             <div v-for="r in wides" :key="r.label" class="wide-card">
@@ -208,12 +211,11 @@ watch(() => [state.open, state.stacks, state.gui], () => {
             </div>
             <div v-if="state.poolId" class="pool-card">
               <div class="ph">
-                <span class="fl phl">
-                  <button v-if="state.poolStack.length" class="pback" title="Back to previous pool" @click="container.poolBack()">
-                    <span class="material-symbols-outlined">arrow_back</span>
-                  </button>
-                  {{ state.poolStack.length ? "Fallback pool" : "Template pool" }}
-                </span>
+                <button v-if="state.poolStack.length" class="fl phl pback" title="Back to previous pool" @click="container.poolBack()">
+                  <span class="material-symbols-outlined">arrow_back</span>
+                  Fallback pool
+                </button>
+                <span v-else class="fl phl">Template pool</span>
                 <span class="pid">{{ state.poolId }}</span>
               </div>
               <div v-for="(p, i) in state.poolEntries ?? []" :key="i" class="pe"
@@ -410,6 +412,10 @@ button.icon {
   gap: 8px;
 }
 
+/* a full-width fact (the jigsaw's Turns into) locks the rest to 2x2 */
+.facts.two { grid-template-columns: 1fr 1fr; }
+.fact.full { grid-column: 1 / -1; }
+
 .fact {
   background: #ffffff05;
   border: 1px solid var(--border);
@@ -425,6 +431,29 @@ button.icon {
 .fact .fv.mono, .mono-nm {
   font-family: ui-monospace, monospace;
   font-size: 12.5px;
+}
+
+.fprops {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.fprop {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: #ffffff08;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 2px 7px;
+  font-family: ui-monospace, monospace;
+  font-size: 11.5px;
+}
+
+.fpk {
+  color: var(--text-dim);
 }
 
 .wide-card {
@@ -451,7 +480,7 @@ button.icon {
 
 .pool-card .ph {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 10px;
   padding: 8px 10px;
@@ -508,6 +537,8 @@ button.icon {
   padding: 0;
   display: flex;
   color: var(--text-dim);
+  font: inherit;
+  font-size: 11px;
 }
 
 .pback:hover { color: var(--text); background: transparent; }

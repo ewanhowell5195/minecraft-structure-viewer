@@ -6,6 +6,7 @@ import { useScene } from "./useScene.js"
 import { useBuild } from "./useBuild.js"
 import { useStructures } from "./useStructures.js"
 import { readLootTable, rollLoot, sampleTable, stackKey, prettyName, isInspectable } from "../loot.js"
+import { parseState } from "../transforms.js"
 
 // Clicking a loot container (chest, barrel, dispenser...) opens a modal with
 // its loot table rules and a rolled inventory rendered in the vanilla GUI.
@@ -90,7 +91,9 @@ function dataRowsFor(name, p, nbt) {
   } else if (name === "jigsaw") {
     add("Name", stripNs(nbt?.name), true)
     add("Target", stripNs(nbt?.target), true)
-    add("Turns into", stripNs(nbt?.final_state), true)
+    // block id + its state as key/value chips, not the raw [k=v,...] string
+    const fin = parseState(typeof nbt?.final_state === "string" ? nbt.final_state : "")
+    rows.push({ label: "Turns into", value: stripNs(fin.Name), mono: true, props: fin.Properties, full: true })
     add("Joint", nbt?.joint)
     add("Orientation", p.orientation, true)
     if (nbt?.selection_priority) add("Selection priority", nbt.selection_priority)
