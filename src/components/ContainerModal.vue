@@ -75,7 +75,12 @@ const facts = computed(() => (state.dataRows ?? []).filter(r => !r.wide))
 const wides = computed(() => (state.dataRows ?? []).filter(r => r.wide))
 
 addEventListener("keydown", e => {
-  if (e.key === "Escape" && state.open) close()
+  if (e.key === "Escape" && state.open) {
+    // resuming now would relock mid-press and the browser would treat the
+    // same Esc as the exit gesture, ending the walk: relock on release
+    container.close()
+    addEventListener("keyup", () => walk.resume(), { once: true })
+  }
 })
 
 const inner = (K, slot) => [K.ox + (slot % K.cols) * 18 + 1, K.oy + (slot / K.cols | 0) * 18 + 1]
