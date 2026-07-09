@@ -121,6 +121,60 @@ async function remapFluidStates(structure, lib, assets) {
   }
 }
 
+// DEV: blocks whose models match a registered custom loader build per
+// placement (connected variants from neighbours, block entity content from
+// nbt); same synthetic-palette trick as fluids. no-op with no loaders
+async function remapLoaderStates(structure, lib, assets) {
+  const loaders = lib.ModelLoader?.list() ?? []
+  if (!loaders.length) return
+  const byPos = new Map()
+  for (const b of structure.blocks) byPos.set(b.pos.join(","), b)
+  const matched = new Map() // stateIdx -> resolved models or null
+  async function matchedModels(stateIdx) {
+    if (matched.has(stateIdx)) return matched.get(stateIdx)
+    let result = null
+    const e = structure.palette[stateIdx]
+    if (e?.Name && !e.__fluidKey) {
+      try {
+        const models = await lib.parseBlockstate(assets, e.Name, { data: e.Properties ?? {}, ignoreAtlases: true })
+        const datas = []
+        for (const m of models) datas.push(await lib.resolveModelData(assets, m))
+        if (datas.some(d => loaders.some(l => l.match?.(d)))) result = datas
+      } catch {}
+    }
+    matched.set(stateIdx, result)
+    return result
+  }
+  const byKey = new Map()
+  structure.palette.forEach((e, i) => { if (e?.__loaderKey) byKey.set(e.__loaderKey, i) })
+  for (const b of structure.blocks) {
+    const datas = await matchedModels(b.state)
+    if (!datas) continue
+    const e = structure.palette[b.state]
+    const [bx, by, bz] = b.pos
+    const neighbors = {}
+    for (const [dir, dx, dy, dz] of [["north", 0, 0, -1], ["south", 0, 0, 1], ["west", -1, 0, 0], ["east", 1, 0, 0], ["up", 0, 1, 0], ["down", 0, -1, 0]]) {
+      const nb = byPos.get((bx + dx) + "," + (by + dy) + "," + (bz + dz))
+      const ne = nb && structure.palette[nb.state]
+      if (ne?.Name) neighbors[dir] = { id: ne.Name, ...(ne.Properties ?? {}) }
+    }
+    const block = { id: e.Name, properties: e.Properties ?? {}, neighbors, nbt: b.nbt ?? null }
+    const variant = datas.map(d => lib.ModelLoader.variantKey(d, block) ?? "").join("/")
+    const key = `${b.state}|${variant}|${JSON.stringify(b.nbt ?? null)}`
+    let idx = byKey.get(key)
+    if (idx === undefined) {
+      idx = structure.palette.length
+      const entry = { Name: e.Name }
+      if (e.Properties) entry.Properties = e.Properties
+      entry.__block = block
+      entry.__loaderKey = key
+      structure.palette.push(entry)
+      byKey.set(key, idx)
+    }
+    b.state = idx
+  }
+}
+
 const state = reactive({
   lighting: "world",
   hideStructureBlocks: localStorage.getItem("hideStructureBlocks") !== "false",
@@ -146,6 +200,7 @@ function sameProps(a, b) {
 const current = shallowRef(null)
 let source = null // the structure as loaded/combined; current may be a display strip of it
 let root = null
+if (typeof window !== "undefined") window.__vroot = () => root
 let animator = null
 let templates = null
 let nonSolid = new Set()
@@ -491,10 +546,10 @@ function collisionBoxes(stateIdx) {
 // ({ container }). the ray is blocked by real collision boxes, not whole
 // cells, so it passes over slabs and through gaps like the game
 const _aimBox = new THREE.Box3()
-function rayHit(ox, oy, oz, dx, dy, dz) {
+function rayHit(ox, oy, oz, dx, dy, dz, REACH = 80) {
   const structure = current.value
   if (!structure || !root) return null
-  const idx = cellIndex(), REACH = 80
+  const idx = cellIndex()
   const rx = root.position.x, ry = root.position.y, rz = root.position.z
   function shapeT(bx, by, bz, e) {
     const s = shapeFor(e)
@@ -716,7 +771,7 @@ async function build(structure = source, refit = true) {
           let any = false, allPlanes = true
           for (const model of await lib.parseBlockstate(assets, name, { data: props ?? {}, ignoreAtlases: true })) {
             const data = await lib.resolveModelData(assets, model)
-            await lib.loadModel(g, assets, data, { display: {}, lighting: state.lighting, animate: false, fluidHeights: entry.__fluidHeights })
+            await lib.loadModel(g, assets, data, { display: {}, lighting: state.lighting, animate: false, fluidHeights: entry.__fluidHeights, block: entry.__block, neighbors: entry.__block?.neighbors })
             for (const el of data?.elements ?? []) { any = true; if (!isPlane(el)) allPlanes = false }
           }
           if (any && allPlanes) nonSolid.add(stateIdx)
@@ -729,6 +784,7 @@ async function build(structure = source, refit = true) {
 
     // fluid surfaces shape themselves from their neighbourhood
     if (lib.fluidHeights) await remapFluidStates(structure, lib, assets)
+    if (lib.ModelLoader) await remapLoaderStates(structure, lib, assets)
 
     // build every template up front (the optimiser reads them all)
     let placedCount = 0
@@ -815,6 +871,7 @@ async function build(structure = source, refit = true) {
       return [renamed, fixLegacyProps(renamed.replace("minecraft:", ""), props)]
     }
     const opt = await optimise(optStruct, templates, position, {
+      lib,
       getCullFaces: opts => {
         const [id, blockstates] = legacyCull(opts.id, opts.blockstates)
         const neighbors = {}
@@ -911,6 +968,6 @@ const getNonSolid = () => nonSolid
 export function useBuild() {
   return {
     state, current, build, cancel, getRoot, getTemplates, getNonSolid,
-    blockAt, blockEntryAt, boxForBlock, boxForEntity, markerUnderRay, interact, aimDoor, currentBoxes, exportCurrent
+    blockAt, blockEntryAt, boxForBlock, boxForEntity, markerUnderRay, rayHit, interact, aimDoor, currentBoxes, exportCurrent
   }
 }
