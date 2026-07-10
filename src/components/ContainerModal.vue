@@ -192,7 +192,14 @@ watch(() => [state.open, state.stacks, state.gui], () => {
           <button v-for="t in TABS" :key="t.id" :class="{ active: state.tab === t.id }"
             @click="container.setTab(t.id)">{{ t.label }}</button>
         </nav>
-        <div class="body" :class="{ compact: state.dataRows }">
+        <div class="body" :class="{ compact: state.dataRows || state.pick }">
+
+          <div v-if="state.pick" class="pane picker">
+            <button v-for="(p, i) in state.pick" :key="i" class="pick-row" @click="container.openEntity(p.e)">
+              <span class="nm">{{ p.label }}</span>
+              <span class="material-symbols-outlined">chevron_right</span>
+            </button>
+          </div>
 
           <div v-if="state.dataRows" class="pane data">
             <p v-if="state.blurb" class="blurb">{{ state.blurb }}</p>
@@ -711,4 +718,24 @@ button.icon {
 
 .entry .nm { flex: 1; }
 .entry .cnt { flex-shrink: 0; }
+
+.picker {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pick-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  text-align: left;
+  padding: 8px 12px;
+}
+
+.pick-row .material-symbols-outlined {
+  font-size: 18px;
+  color: var(--text-dim);
+}
 </style>

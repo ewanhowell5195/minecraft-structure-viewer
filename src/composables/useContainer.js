@@ -38,6 +38,7 @@ function kindOf(name) {
 
 const state = reactive({
   open: false,
+  pick: null,      // overlapping entities: [{ e, label }] chosen before the modal
   blockName: "",
   tableId: "",
   table: null,
@@ -246,6 +247,7 @@ function filterDefaultNbt(nbt) {
 
 function openEntity(e) {
   const id = stripNs(e.nbt?.id ?? "entity")
+  state.pick = null
   state.error = ""
   state.note = ""
   state.blockName = prettyName(id)
@@ -274,9 +276,35 @@ function openEntity(e) {
   state.open = true
 }
 
+// a stacked marker holds several entities: list them first, picking one
+// opens its modal
+function openEntityMarker(m) {
+  const stack = m.stack ?? []
+  if (stack.length <= 1) return openEntity(stack[0] ?? m.e)
+  state.error = ""
+  state.note = ""
+  state.blockName = "Overlapping entities"
+  state.tableId = ""
+  state.tab = ""
+  state.dataRows = null
+  state.blurb = ""
+  state.table = null
+  state.stacks = []
+  state.gui = null
+  state.guiTitle = ""
+  state.poolId = ""
+  state.poolEntries = null
+  state.poolFallback = ""
+  state.poolStack = []
+  state.pick = stack.map(e => ({ e, label: prettyName(stripNs(e.nbt?.id ?? "entity")) }))
+  openSeq++
+  state.open = true
+}
+
 async function open(block) {
   const entry = buildApi.current.value?.palette[block.state]
   const name = entry?.Name ?? "minecraft:chest"
+  state.pick = null
   state.error = ""
   state.note = ""
   state.blockName = prettyName(name)
@@ -419,6 +447,7 @@ async function addRoll(n = 1) {
 
 function close() {
   state.open = false
+  state.pick = null
 }
 
 // orbit-mode picking: a click that didn't drag marches the block grid along
@@ -474,7 +503,7 @@ function initPicking(canvas) {
     const u = inspectableUnder(e, canvas)
     if (u) {
       clearHover(canvas)
-      u.marker ? openEntity(u.marker.e) : open(u.block)
+      u.marker ? openEntityMarker(u.marker) : open(u.block)
     }
   })
   // hover raycasts throttle to one per frame, and skip entirely mid-drag
@@ -492,5 +521,5 @@ function initPicking(canvas) {
 }
 
 export function useContainer() {
-  return { state: readonly(state), open, openEntity, close, reroll, addRoll, setTab, ensureOdds, openFallbackPool, poolBack, initPicking }
+  return { state: readonly(state), open, openEntity, openEntityMarker, close, reroll, addRoll, setTab, ensureOdds, openFallbackPool, poolBack, initPicking }
 }

@@ -634,7 +634,7 @@ addEventListener("mousedown", e => {
   if (r === true) buildCollision()
   else if (r?.entity) {
     suspend()
-    containerApi.openEntity(r.entity)
+    containerApi.openEntityMarker(r.entity)
   } else if (r) {
     suspend()
     containerApi.open(r)

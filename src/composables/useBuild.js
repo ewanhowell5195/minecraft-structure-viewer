@@ -409,6 +409,7 @@ async function attachEntities(structure, lib, assets) {
   let draws = 0
   const groupCache = new Map()
   const texCache = new Map()
+  const sprites = [] // marker entities, deferred so overlapping ones merge
   entityMarkers = []
   for (const e of structure.entities ?? []) {
     const id = e.nbt?.id
@@ -454,8 +455,49 @@ async function attachEntities(structure, lib, assets) {
       draws += await attachEntityTag(e.nbt, wx, new THREE.Box3().setFromObject(g).max.y, wz)
       continue
     }
-    if (!texCache.has(name)) texCache.set(name, await entityMarkerTexture(lib, assets, name))
-    const tex = texCache.get(name)
+    sprites.push({ e, name, wx, wy, wz })
+  }
+
+  // markers whose click hitboxes overlap merge: one marker at the centre of
+  // the group, every icon composited into the same billboard (first in the
+  // middle, each next one a pixel up, left and behind)
+  const clusters = []
+  const touches = (a, b) => Math.abs(a.wx - b.wx) < ENTITY_BOX && Math.abs(a.wy - b.wy) < ENTITY_BOX && Math.abs(a.wz - b.wz) < ENTITY_BOX
+  for (const s of sprites) {
+    const hits = clusters.filter(c => c.some(o => touches(o, s)))
+    if (!hits.length) {
+      clusters.push([s])
+      continue
+    }
+    hits[0].push(s)
+    for (const other of hits.slice(1)) {
+      hits[0].push(...other)
+      clusters.splice(clusters.indexOf(other), 1)
+    }
+  }
+  for (const c of clusters) {
+    for (const s of c) if (!texCache.has(s.name)) texCache.set(s.name, await entityMarkerTexture(lib, assets, s.name))
+    const cx = c.reduce((a, s) => a + s.wx, 0) / c.length
+    const cy = c.reduce((a, s) => a + s.wy, 0) / c.length
+    const cz = c.reduce((a, s) => a + s.wz, 0) / c.length
+    let tex = texCache.get(c[0].name)
+    let px = 64
+    if (c.length > 1) {
+      const off = 4 // one icon pixel at the 64px render scale
+      px = 64 + (c.length - 1) * off
+      const canvas = document.createElement("canvas")
+      canvas.width = canvas.height = px
+      const ctx = canvas.getContext("2d")
+      ctx.imageSmoothingEnabled = false
+      for (let i = c.length - 1; i >= 0; i--) {
+        const t = texCache.get(c[i].name)
+        if (t) ctx.drawImage(t.image, (c.length - 1 - i) * off, (c.length - 1 - i) * off, 64, 64)
+      }
+      tex = new THREE.CanvasTexture(canvas)
+      tex.colorSpace = THREE.SRGBColorSpace
+      tex.magFilter = THREE.NearestFilter
+      markerTextures.push(tex)
+    }
     // opaque pass + alpha test, not transparent: a blended sprite writes
     // depth for its empty pixels (holes in water) and sorts against other
     // transparents by centre distance (pops in front from behind). unlike
@@ -465,22 +507,22 @@ async function attachEntities(structure, lib, assets) {
       ? new THREE.SpriteMaterial({ map: tex, alphaTest: 0.5, transparent: false })
       : new THREE.SpriteMaterial({ color: 0xffffff, opacity: 0.4 })
     const spr = new THREE.Sprite(mat)
-    spr.scale.set(10, 10, 1)
-    spr.position.set(wx, wy - 8 + ENTITY_BOX / 2, wz)
-    const marker = { e, x: wx, y: wy - 8, z: wz }
+    const scale = 10 * px / 64
+    spr.scale.set(scale, scale, 1)
+    spr.position.set(cx, cy - 8 + ENTITY_BOX / 2, cz)
     root.add(spr)
-    entityMarkers.push(marker)
     draws++
-    draws += await attachEntityTag(e.nbt, wx, wy - 8 + ENTITY_BOX, wz)
+    entityMarkers.push({ stack: c.map(s => s.e), x: cx, y: cy - 8, z: cz })
+    for (const s of c) draws += await attachEntityTag(s.e.nbt, s.wx, s.wy - 8 + ENTITY_BOX, s.wz)
   }
   for (const tex of texCache.values()) if (tex) markerTextures.push(tex)
   return draws
 }
 
-// the fixed hitbox anchored at the entity's feet
+// the fixed hitbox anchored at the entity's feet, taller for a stack
 function boxForEntity(m) {
   _aimBox.min.set(m.x - ENTITY_BOX / 2, m.y, m.z - ENTITY_BOX / 2)
-  _aimBox.max.set(m.x + ENTITY_BOX / 2, m.y + ENTITY_BOX, m.z + ENTITY_BOX / 2)
+  _aimBox.max.set(m.x + ENTITY_BOX / 2, m.y + (m.h ?? ENTITY_BOX), m.z + ENTITY_BOX / 2)
   _aimBox.translate(root.position)
   return _aimBox
 }
@@ -612,7 +654,7 @@ function interact(ox, oy, oz, dx, dy, dz) {
     toggleDoor(h.door)
     return true
   }
-  if (h?.entity) return { entity: h.entity.e }
+  if (h?.entity) return { entity: h.entity }
   return h?.container ?? false
 }
 
