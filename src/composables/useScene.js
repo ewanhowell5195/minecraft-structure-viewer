@@ -46,8 +46,8 @@ const wireMat = new THREE.MeshBasicMaterial({ wireframe: true, color: 0x9fd0ff }
 wireMat.clippingPlanes = SLICE_PLANES
 
 // floor grids: one rectangular grid per structure, hugging its footprint.
-// dimensions are even block counts so the brighter centre cross lands on a
-// block boundary
+// the brighter centre cross sits on the nearest block boundary, off-centre
+// on odd sizes
 let gridGroup = null
 const gridVisible = () => view.grid && view.wireframe !== "wire"
 const GRID_LINE = 0x333336
@@ -69,18 +69,19 @@ function makeRectGrid({ x, z, w, d, y }, inCave) {
     if (start !== null) out.push([start, span])
     return out
   }
+  const crossX = Math.floor(w / 2), crossZ = Math.floor(d / 2)
   for (let i = 0; i <= w; i++) {
     const lx = x + i * 16
     for (const [a, b] of runs(d, j => inCave(lx - 8, z + j * 16 + 8) || inCave(lx + 8, z + j * 16 + 8))) {
       P.push(lx, y, z + a * 16, lx, y, z + b * 16)
-      push(i * 2 === w ? cross : line)
+      push(i === crossX ? cross : line)
     }
   }
   for (let j = 0; j <= d; j++) {
     const lz = z + j * 16
     for (const [a, b] of runs(w, i => inCave(x + i * 16 + 8, lz - 8) || inCave(x + i * 16 + 8, lz + 8))) {
       P.push(x + a * 16, y, lz, x + b * 16, y, lz)
-      push(j * 2 === d ? cross : line)
+      push(j === crossZ ? cross : line)
     }
   }
   const geo = new THREE.BufferGeometry()
@@ -107,7 +108,7 @@ function makeCaveWire({ segments, y0, y1 }) {
 // lines so it stays crisp at any zoom. hidden once the camera is far enough
 // that it would just be clutter
 function makeNorth({ x, z, y, w, d }) {
-  const nx = x + w * 8, x0 = nx - 2.5, x1 = nx + 2.5, zb = z - 3, zt = z - 9
+  const nx = x + Math.floor(w / 2) * 16, x0 = nx - 2.5, x1 = nx + 2.5, zb = z - 3, zt = z - 9
   const geo = new THREE.BufferGeometry()
   geo.setAttribute("position", new THREE.Float32BufferAttribute([x0, y, zb, x0, y, zt, x0, y, zt, x1, y, zb, x1, y, zb, x1, y, zt], 3))
   const seg = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: 0x62626a }))
@@ -121,7 +122,7 @@ function makeNorth({ x, z, y, w, d }) {
 function makeNameTag({ x, z, y, w, d, label }) {
   const spr = new THREE.Sprite(new THREE.SpriteMaterial({ transparent: true }))
   spr.visible = false
-  spr.position.set(x + w * 8, y + 6, z - 6)
+  spr.position.set(x + Math.floor(w / 2) * 16, y + 6, z - 6)
   spr.userData = { at: spr.position, showDist: 450, fades: true, ready: false }
   drawNameTag(spr, label)
   return spr
