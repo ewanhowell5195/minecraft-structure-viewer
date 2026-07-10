@@ -121,6 +121,7 @@ public class BuiltinExtract {
     int groundY = Integer.MIN_VALUE;                          // below this the world reads as `ground`
     BlockState ground = Blocks.STONE.defaultBlockState();
     int heightmapY = 0;                                       // heightmap answers
+    int minY = -64;                                           // world floor (the End uses 0)
     CannedRandom random = runA();                             // level.getRandom()
     final Set<String> unknown = new TreeSet<>();
     final ChunkAccess chunk = new DummyChunk();
@@ -174,7 +175,7 @@ public class BuiltinExtract {
             return be != null && be.getType() == a[1] ? Optional.of(be) : Optional.empty();
           }
           case "isEmptyBlock": return get((BlockPos) a[0]).isAir();
-          case "getMinY": return -64;
+          case "getMinY": return minY;
           case "getMaxY": return 319;
           case "getSeaLevel": return 63;
           case "getChunk": return chunk;
@@ -514,6 +515,26 @@ public class BuiltinExtract {
     write("buried_treasure", cap, null, false);
   }
 
+  // a single guarded spike as the tree entry for the end spikes generator;
+  // the crystal (and its bedrock/fire perch) needs a real level, so it is
+  // stamped manually to match placeSpike
+  static void endSpike() throws Exception {
+    Capture cap = new Capture();
+    cap.random = runA();
+    cap.minY = 0;
+    var spike = new net.minecraft.world.level.levelgen.feature.EndSpikeFeature.EndSpike(0, 0, 2, 82, true);
+    var feature = new net.minecraft.world.level.levelgen.feature.EndSpikeFeature(List.of(spike), false, Optional.empty());
+    try {
+      feature.place(cap.level(), null, cap.random, BlockPos.ZERO);
+    } catch (Exception e) {
+      // the EndCrystal entity creation NPEs on the proxy; blocks are done
+    }
+    cap.set(new BlockPos(0, 82, 0), Blocks.BEDROCK.defaultBlockState());
+    cap.set(new BlockPos(0, 83, 0), Blocks.FIRE.defaultBlockState());
+    cap.entities.add(entityTag("minecraft:end_crystal", 0.5, 83, 0.5));
+    write("end_spike", cap, null, false);
+  }
+
   // ---------------------------------------------------------- nether fortress
 
   static final StructurePieceAccessor NO_COLLISION = new StructurePieceAccessor() {
@@ -590,6 +611,7 @@ public class BuiltinExtract {
     dungeon(3, 2);
     dungeon(2, 3);
     dungeon(3, 3);
+    endSpike();
     netherFortress();
     endPlatform();
     endGateway();

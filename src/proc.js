@@ -11,5 +11,6 @@ export const PROC = [
   { prefix: "minecraft/builtin/desert_pyramid", entry: "minecraft/builtin/desert_pyramid", label: "Desert Pyramid", gen: "desert_pyramid", steps: false },
   { prefix: "minecraft/builtin/desert_well", entry: "minecraft/builtin/desert_well", label: "Desert Well", gen: "desert_well", steps: false },
   { prefix: "minecraft/builtin/dungeon/", entry: "minecraft/builtin/dungeon/5x5", label: "Dungeon", gen: "dungeon", steps: false },
-  { prefix: "minecraft/builtin/nether_fortress/", entry: "minecraft/builtin/nether_fortress/bridge_crossing", label: "Nether Fortress", gen: "fortress", steps: true, maxDepth: 30 }
+  { prefix: "minecraft/builtin/nether_fortress/", entry: "minecraft/builtin/nether_fortress/bridge_crossing", label: "Nether Fortress", gen: "fortress", steps: true, maxDepth: 30 },
+  { prefix: "minecraft/builtin/end_spike", entry: "minecraft/builtin/end_spike", label: "End Spikes", gen: "end_spikes", steps: false }
 ]

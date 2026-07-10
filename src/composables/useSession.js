@@ -9,7 +9,7 @@ import { useLock } from "./useLock.js"
 import { readStructure } from "../nbt.js"
 import { AIR, EMPTY, JIGSAW, mix, parseState, poolTemplates } from "../transforms.js"
 import { runJigsaw } from "../jigsaw.js"
-import { runDesertPyramid, runDesertWell, runDungeon, runEndCity, runFortress, runIgloo, runJungleTemple, runMansion } from "../generators/index.js"
+import { runDesertPyramid, runDesertWell, runDungeon, runEndCity, runEndSpikes, runFortress, runIgloo, runJungleTemple, runMansion } from "../generators/index.js"
 import { PROC } from "../proc.js"
 
 // A level session exists for jigsaw structures (any palette block named
@@ -83,7 +83,7 @@ async function loadPool(ref) {
 const generators = {
   igloo: runIgloo, end_city: runEndCity, mansion: runMansion,
   jungle_temple: runJungleTemple, desert_pyramid: runDesertPyramid, desert_well: runDesertWell, dungeon: runDungeon,
-  fortress: runFortress
+  fortress: runFortress, end_spikes: runEndSpikes
 }
 
 async function resolve(level) {
