@@ -558,6 +558,12 @@ document.addEventListener("mousemove", e => {
 })
 addEventListener("keydown", e => {
   if (!state.on || state.suspended) return
+  // without pointer lock the browser never sees Esc as "release the lock",
+  // so it must exit walk mode directly or the mode is inescapable
+  if (e.key === "Escape" && document.pointerLockElement !== sceneApi.canvas) {
+    exit()
+    return
+  }
   e.preventDefault() // fully capture input: no ctrl+s / quick-find / space-scroll while walking
   if (e.code === "Space" && !e.repeat && !noclip) { // double-tap space toggles fly
     const t = performance.now()
@@ -614,7 +620,12 @@ addEventListener("mousedown", e => {
     if (!containerApi.state.open && document.pointerLockElement !== sceneApi.canvas) resume()
     return
   }
-  if (document.pointerLockElement !== sceneApi.canvas) return
+  if (document.pointerLockElement !== sceneApi.canvas) {
+    // walking without the lock (the request failed or was denied): clicking
+    // the canvas retakes it
+    if (e.target === sceneApi.canvas) sceneApi.canvas.requestPointerLock()?.catch?.(() => {})
+    return
+  }
   e.preventDefault()
   const perspCam = sceneApi.perspCam
   const d = new THREE.Vector3()
