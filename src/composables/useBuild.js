@@ -186,8 +186,40 @@ const state = reactive({
   building: false,
   status: "",
   progress: null, // { phase: "build" | "optimise", done, total } while working
-  info: null
+  info: null,
+  warn: null // { seconds } while a slow-build confirmation is showing
 })
+
+// slow-build warning: estimates come from this machine's measured rates
+// (ms per block for the template pass and the optimise pass, EMA over
+// completed builds); with no history yet, the build phase self-samples
+const WARN_MS = 10000
+const PERF_KEY = "buildPerf2" // v2: rates are per non-air block
+
+function loadPerf() {
+  try {
+    const p = JSON.parse(localStorage.getItem(PERF_KEY))
+    return typeof p?.b === "number" && typeof p?.o === "number" ? p : null
+  } catch { return null }
+}
+
+function savePerf(b, o) {
+  const prev = loadPerf()
+  const mix = (a, x) => a == null ? x : a * 0.5 + x * 0.5
+  try { localStorage.setItem(PERF_KEY, JSON.stringify({ b: mix(prev?.b, b), o: mix(prev?.o, o) })) } catch {}
+}
+
+let warnResolve = null
+function askWarn(ms) {
+  state.warn = { seconds: Math.max(Math.round(ms / 1000), 1) }
+  return new Promise(r => { warnResolve = r })
+}
+
+function answerWarn(ok) {
+  state.warn = null
+  warnResolve?.(ok)
+  warnResolve = null
+}
 
 // One live uniform shared by every world-lighting material: seeding it into a
 // template group's userData before loadModel makes the library reuse it (and
@@ -934,12 +966,27 @@ async function build(structure = source, refit = true, slice = false) {
     }
     const total = solid.length
 
+    // slow-build gate: with calibration the whole pipeline is estimable up
+    // front; without it the template pass below self-samples. cancelling
+    // reverts exactly like the cancel button
+    const perfCal = loadPerf()
+    let warnedOnce = false
+    if (perfCal) {
+      const estMs = total * (perfCal.b + perfCal.o)
+      if (estMs > WARN_MS) {
+        warnedOnce = true
+        if (!await askWarn(estMs)) return abort()
+      }
+    }
+    const tBuild = performance.now()
+
     // fluid surfaces shape themselves from their neighbourhood
     if (lib.fluidHeights) await remapFluidStates(structure, lib, assets)
     if (lib.ModelLoader) await remapLoaderStates(structure, lib, assets)
 
     // build every template up front (the optimiser reads them all)
     let placedCount = 0
+    let sampleAt = null, tSample = 0
     state.progress = { phase: "build", done: 0, total }
     for (let i = 0; i < total; i++) {
       if (await template(solid[i].state)) placedCount++
@@ -948,6 +995,29 @@ async function build(structure = source, refit = true, slice = false) {
         state.progress = { phase: "build", done: i + 1, total }
         await new Promise(r => setTimeout(r))
         if (cancelBuild) return abort()
+        if (!warnedOnce && !perfCal) {
+          // sample the marginal rate only after the cold start: template
+          // building is per-state and front-loaded, so a cumulative average
+          // projects absurd totals for palette-heavy scenes
+          if (sampleAt === null) {
+            if (performance.now() - tBuild > 400) {
+              sampleAt = i + 1
+              tSample = performance.now()
+            }
+          } else if (i + 1 - sampleAt >= 4000) {
+            const rate = (i + 1 - sampleAt) / (performance.now() - tSample) // blocks per ms
+            const elapsed = performance.now() - tBuild
+            // the optimise pass usually dominates: assume 3x the template pass
+            const projected = elapsed + (total - (i + 1)) / rate + 3 * total / rate
+            if (projected > WARN_MS) {
+              warnedOnce = true
+              if (!await askWarn(projected)) return abort()
+            } else {
+              // fast enough: stop checking
+              warnedOnce = true
+            }
+          }
+        }
       }
     }
     state.progress = { phase: "build", done: total, total }
@@ -1023,6 +1093,8 @@ async function build(structure = source, refit = true, slice = false) {
       const renamed = LEGACY_RENAMES[name.replace("minecraft:", "")] ?? name
       return [renamed, fixLegacyProps(renamed.replace("minecraft:", ""), props)]
     }
+    const buildMs = performance.now() - tBuild
+    const tOpt = performance.now()
     const opt = await optimise(optStruct, templates, position, {
       lib,
       getCullFaces: opts => {
@@ -1040,6 +1112,9 @@ async function build(structure = source, refit = true, slice = false) {
       shouldCancel: () => cancelBuild
     })
     if (!opt) return abort()
+    // calibrate the estimator from real, completed passes; tiny builds are
+    // all fixed cost and would poison the per-block rates
+    if (total >= 2000) savePerf(buildMs / total, (performance.now() - tOpt) / total)
     const { group: next, atlasTextures: pending, drawCalls, tris } = opt
 
     // atomic swap: show the new group first, then drop the old one + its atlases
@@ -1169,7 +1244,7 @@ const getNonSolid = () => nonSolid
 
 export function useBuild() {
   return {
-    state, current, build, cancel, getRoot, getTemplates, getNonSolid, showFull, restoreFull,
+    state, current, build, cancel, answerWarn, getRoot, getTemplates, getNonSolid, showFull, restoreFull,
     blockAt, blockEntryAt, boxForBlock, boxForEntity, markerUnderRay, rayHit, interact, aimDoor, currentBoxes, exportCurrent
   }
 }

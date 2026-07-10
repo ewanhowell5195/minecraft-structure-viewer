@@ -22,6 +22,7 @@ import FpsCounter from "./components/FpsCounter.vue"
 import ContainerModal from "./components/ContainerModal.vue"
 import ContextMenu from "./components/ContextMenu.vue"
 import BuildProgress from "./components/BuildProgress.vue"
+import BuildWarning from "./components/BuildWarning.vue"
 
 const libError = ref("")
 const canvasEl = ref(null)
@@ -111,6 +112,7 @@ onMounted(async () => {
       <ContainerModal />
       <ContextMenu />
       <BuildProgress />
+      <BuildWarning />
     </main>
   </div>
 </template>
