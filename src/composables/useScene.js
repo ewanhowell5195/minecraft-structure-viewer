@@ -10,7 +10,7 @@ const GRID_COLOR = 0x444448
 
 const view = reactive({
   ortho: false,
-  wireframe: false,
+  wireframe: "off", // "off" | "wire" | "overlay"
   grid: true
 })
 
@@ -37,7 +37,7 @@ const wireMat = new THREE.MeshBasicMaterial({ wireframe: true, color: 0x9fd0ff }
 // dimensions are even block counts so the brighter centre cross lands on a
 // block boundary
 let gridGroup = null
-const gridVisible = () => view.grid && !view.wireframe
+const gridVisible = () => view.grid && view.wireframe !== "wire"
 const GRID_LINE = 0x333336
 
 function makeRectGrid({ x, z, w, d, y }) {
@@ -301,8 +301,7 @@ function init(canvasEl) {
   setGrids([{ x: -128, z: -128, y: -8.01, w: 16, d: 16 }])
   new ResizeObserver(resize).observe(canvas)
 
-  watch(() => view.wireframe, on => {
-    scene.overrideMaterial = on ? wireMat : null
+  watch(() => view.wireframe, () => {
     if (gridGroup) gridGroup.visible = gridVisible()
   })
   watch(() => view.grid, () => { if (gridGroup) gridGroup.visible = gridVisible() })
@@ -319,7 +318,20 @@ function init(canvasEl) {
     updateClips()
     updateGridLabels()
     for (const a of animators) a.update()
+    // overlay renders the scene twice: textures first, then the wireframe
+    // over the same depth buffer, so hidden edges stay hidden
+    scene.overrideMaterial = view.wireframe === "wire" ? wireMat : null
     renderer.render(scene, camera)
+    if (view.wireframe === "overlay") {
+      scene.overrideMaterial = wireMat
+      const gv = gridGroup?.visible
+      if (gridGroup) gridGroup.visible = false
+      renderer.autoClear = false
+      renderer.render(scene, camera)
+      renderer.autoClear = true
+      if (gridGroup) gridGroup.visible = gv
+      scene.overrideMaterial = null
+    }
   })
 }
 

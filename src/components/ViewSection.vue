@@ -28,15 +28,17 @@ const { locked } = useLock()
           </button>
         </div>
       </template>
+      <label for="wireframe">Wireframe</label>
+      <select id="wireframe" v-model="view.wireframe">
+        <option value="off">Off</option>
+        <option value="wire">Wireframe</option>
+        <option value="overlay">Overlay</option>
+      </select>
     </div>
     <div class="checks">
       <label class="check">
         <input type="checkbox" :checked="view.ortho" @change="sceneApi.setOrthoManual($event.target.checked)">
         Orthographic camera
-      </label>
-      <label class="check">
-        <input type="checkbox" v-model="view.wireframe">
-        Wireframe
       </label>
       <label class="check">
         <input type="checkbox" v-model="view.grid">
