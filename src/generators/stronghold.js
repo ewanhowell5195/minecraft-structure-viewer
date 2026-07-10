@@ -359,5 +359,10 @@ export async function runStronghold(loadStruct, { maxDepth = Infinity, seed } = 
     }
   }
 
-  return { structure: combine(placed), maxDepth: naturalMax }
+  // anchor on the start piece's corner (the base nbt's origin), so the
+  // camera stays glued to it across levels
+  const structure = combine(placed)
+  const sb = pieces[0].box
+  structure.anchor = [structure.anchor[0] + sb.minX, structure.anchor[1] + sb.minY, structure.anchor[2] + sb.minZ]
+  return { structure, maxDepth: naturalMax }
 }

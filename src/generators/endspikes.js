@@ -93,8 +93,9 @@ export const makeEndSpikes = active => async (loadStruct, { seed } = {}) => {
 
   // the exit portal at the ring's centre
   const portal = await loadStruct("builtin/end/exit_portal/" + (active ? "active" : "inactive"))
+  let off = [0, 0, 0]
   if (portal) {
-    const off = [-Math.floor(portal.size[0] / 2), PORTAL_Y, -Math.floor(portal.size[2] / 2)]
+    off = [-Math.floor(portal.size[0] / 2), PORTAL_Y, -Math.floor(portal.size[2] / 2)]
     const map = portal.palette.map(e => stateFor(e.Name, e.Properties))
     for (const b of portal.blocks) {
       const block = { state: map[b.state], pos: [b.pos[0] + off[0], b.pos[1] + off[1], b.pos[2] + off[2]] }
@@ -103,7 +104,10 @@ export const makeEndSpikes = active => async (loadStruct, { seed } = {}) => {
     }
   }
 
-  return { structure: normalise(palette, blocks, entities), maxDepth: 1 }
+  // anchor on the portal (the base nbt's origin) so the camera stays with it
+  const structure = normalise(palette, blocks, entities)
+  structure.anchor = [off[0] + structure.anchor[0], off[1], off[2] + structure.anchor[2]]
+  return { structure, maxDepth: 1 }
 }
 
 export const runEndSpikes = makeEndSpikes(false)

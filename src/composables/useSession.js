@@ -265,7 +265,10 @@ async function startSession(structure, name) {
   state.seed = null
   state.active = true
   const root = buildApi.getRoot()
-  if (root) prevAnchorWorld = root.position.clone()
+  if (root) {
+    const a = structure.anchor ?? [0, 0, 0]
+    prevAnchorWorld = new THREE.Vector3(a[0] * 16, a[1] * 16, a[2] * 16).add(root.position)
+  }
 
   if (urlSeed != null) {
     state.seed = urlSeed
