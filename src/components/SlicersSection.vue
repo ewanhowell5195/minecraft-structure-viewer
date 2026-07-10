@@ -1,8 +1,10 @@
 <script setup>
 import { ref } from "vue"
 import { useSlicers } from "../composables/useSlicers.js"
+import { useLock } from "../composables/useLock.js"
 
 const { state } = useSlicers()
+const { locked } = useLock()
 const collapsed = ref(true)
 const AXES = ["x", "y", "z"]
 </script>
@@ -15,16 +17,16 @@ const AXES = ["x", "y", "z"]
     </h2>
     <div v-for="a in AXES" :key="a" class="slicer">
       <label class="check">
-        <input type="checkbox" v-model="state[a].on">
+        <input type="checkbox" v-model="state[a].on" :disabled="locked">
         {{ a.toUpperCase() }} axis
       </label>
       <span class="pos">{{ state[a].on ? state[a].i : "" }}</span>
-      <button class="icon" :disabled="!state[a].on" title="Flip which side is sliced"
+      <button class="icon" :disabled="!state[a].on || locked" title="Flip which side is sliced"
         @click="state[a].flip = !state[a].flip">
         <span class="material-symbols-outlined">{{ a === "y" ? "swap_vert" : "swap_horiz" }}</span>
       </button>
     </div>
-    <div class="hint">Drag a plane in the scene to move it</div>
+    <div class="hint">Drag a plane's corner handles to move it</div>
   </section>
 </template>
 

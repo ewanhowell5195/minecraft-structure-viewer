@@ -221,6 +221,12 @@ let markerTextures = []
 let doorByCell = new Map()
 let blockMap = null, blockMapFor = null
 
+// slice builds keep the full build hidden instead of disposing it, so a
+// slicer drag can reveal blocks instantly (clipped live) and slicers
+// turning off swap it straight back without a rebuild
+let fullBundle = null
+let rootSliced = false
+
 // palette index for the same block with a different `open` value (added if new)
 function stateWithOpen(structure, stateIdx, open) {
   const e = structure.palette[stateIdx], props = { ...e.Properties, open }
@@ -795,6 +801,52 @@ function disposeGroup(g) {
   g.removeFromParent()
 }
 
+function disposeBundle(b) {
+  sceneApi.animators.delete(b.animator)
+  disposeGroup(b.group)
+  for (const t of b.atlasTextures) t.dispose()
+  for (const t of b.markerTextures) t.dispose()
+}
+
+function discardFull() {
+  if (!fullBundle) return
+  disposeBundle(fullBundle)
+  fullBundle = null
+}
+
+// flips between the sliced root and the kept full build (the slicers' drag
+// preview); false when there is no full build to show
+function showFull(on) {
+  if (!fullBundle || !root) return false
+  fullBundle.group.visible = !!on
+  root.visible = !on
+  if (on) sceneApi.animators.add(fullBundle.animator)
+  else sceneApi.animators.delete(fullBundle.animator)
+  return true
+}
+
+// slicers all off: the kept full build becomes the primary again, no rebuild
+function restoreFull() {
+  if (!fullBundle || state.building) return false
+  const old = root, oldTex = atlasTextures, oldMarkerTex = markerTextures, oldAnimator = animator
+  ;({ group: root, atlasTextures, markerTextures, animator, entityMarkers, doorByCell } = fullBundle)
+  current.value = fullBundle.structure
+  state.info = fullBundle.info
+  root.visible = true
+  sceneApi.contentRoots.add(root)
+  sceneApi.animators.add(animator)
+  fullBundle = null
+  rootSliced = false
+  if (old) {
+    sceneApi.contentRoots.delete(old)
+    sceneApi.animators.delete(oldAnimator)
+    disposeGroup(old)
+    for (const t of oldTex) t.dispose()
+    for (const t of oldMarkerTex) t.dispose()
+  }
+  return true
+}
+
 // cancelling reverts to whatever was on screen: the flag is checked at every
 // yield point, and abort() undoes the state build() had already claimed
 let cancelBuild = false
@@ -804,14 +856,15 @@ function cancel() {
   state.status = "cancelling…"
 }
 
-// returns true when a build landed, false when it was cancelled
-async function build(structure = source, refit = true) {
+// returns true when a build landed, false when it was cancelled. slice
+// builds (from the slicers settling) cut the hidden blocks out for real
+async function build(structure = source, refit = true, slice = false) {
   const assets = packs.assets.value
   if (!assets || !structure || state.building) return
   state.building = true
   cancelBuild = false
   lock(true)
-  const prevCurrent = current.value, prevSource = source, prevHasSB = state.hasStructureBlocks
+  const prevCurrent = current.value, prevSource = source, prevHasSB = state.hasStructureBlocks, prevInfo = state.info
   function abort() {
     current.value = prevCurrent
     source = prevSource
@@ -828,6 +881,11 @@ async function build(structure = source, refit = true) {
     })
     state.hasStructureBlocks = techStates.size > 0 && structure.blocks.some(b => techStates.has(b.state))
     if (state.hideStructureBlocks) structure = stripStructureBlocks(structure)
+    // a slice build drops the hidden blocks so the mesher produces solid cut
+    // faces; the size (and so position and grid) stays the full structure's
+    const unsliced = structure
+    if (slice) structure = useSlicers().sliceStructure(structure)
+    const slicedApplied = structure !== unsliced
     current.value = structure
     const lib = await loadLibrary()
     const [sx, sy, sz] = structure.size
@@ -976,7 +1034,8 @@ async function build(structure = source, refit = true) {
     const { group: next, atlasTextures: pending, drawCalls, tris } = opt
 
     // atomic swap: show the new group first, then drop the old one + its atlases
-    const old = root, oldTex = atlasTextures, oldMarkerTex = markerTextures
+    const old = root, oldTex = atlasTextures, oldMarkerTex = markerTextures,
+      oldAnimator = animator, oldMarkers = entityMarkers, oldDoors = doorByCell
     root = next
     atlasTextures = pending
     markerTextures = []
@@ -992,7 +1051,7 @@ async function build(structure = source, refit = true) {
     } catch {}
     animator = lib.createAnimator(root)
     sceneApi.animators.add(animator)
-    useSlicers().onBuild(root, position, [sx, sy, sz])
+    useSlicers().onBuild(root, position, [sx, sy, sz], slicedApplied)
     // one floor grid per structure part, hugging its footprint with a
     // 3-block border on every side
     const parts = structure.__parts ?? [{ off: [0, 0, 0], size: structure.size }]
@@ -1046,9 +1105,27 @@ async function build(structure = source, refit = true) {
       tris
     }
     state.status = ""
-    disposeGroup(old)
-    for (const t of oldTex) t.dispose()
-    for (const t of oldMarkerTex) t.dispose()
+    // a new source invalidates the kept full build, and a full build of the
+    // same source supersedes it
+    if (prevSource !== source || !slicedApplied) discardFull()
+    if (slicedApplied && old && prevSource === source && !rootSliced && !fullBundle) {
+      // the old root is the full build of this source: keep it hidden for
+      // the slicers instead of disposing it
+      old.visible = false
+      fullBundle = {
+        group: old, atlasTextures: oldTex, markerTextures: oldMarkerTex, animator: oldAnimator,
+        structure: prevCurrent, info: prevInfo, entityMarkers: oldMarkers, doorByCell: oldDoors
+      }
+    } else if (old) {
+      disposeGroup(old)
+      for (const t of oldTex) t.dispose()
+      for (const t of oldMarkerTex) t.dispose()
+    }
+    if (fullBundle) {
+      fullBundle.group.visible = false
+      sceneApi.animators.delete(fullBundle.animator)
+    }
+    rootSliced = slicedApplied
     return true
   } finally {
     state.building = false
@@ -1083,7 +1160,7 @@ const getNonSolid = () => nonSolid
 
 export function useBuild() {
   return {
-    state, current, build, cancel, getRoot, getTemplates, getNonSolid,
+    state, current, build, cancel, getRoot, getTemplates, getNonSolid, showFull, restoreFull,
     blockAt, blockEntryAt, boxForBlock, boxForEntity, markerUnderRay, rayHit, interact, aimDoor, currentBoxes, exportCurrent
   }
 }

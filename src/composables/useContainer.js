@@ -522,7 +522,8 @@ function inspectableUnder(e, canvas) {
 
 function clearHover(canvas) {
   hover?.hide()
-  canvas.style.cursor = ""
+  // the slicers own the cursor while a gizmo is hovered or dragged
+  if (!useSlicers().busy()) canvas.style.cursor = ""
 }
 
 function hoverCheck(e, canvas) {
