@@ -46,7 +46,9 @@ import net.minecraft.world.level.levelgen.feature.EndPodiumFeature;
 import net.minecraft.world.level.levelgen.structure.BoundingBox;
 import net.minecraft.world.level.levelgen.structure.ScatteredFeaturePiece;
 import net.minecraft.world.level.levelgen.structure.StructurePiece;
+import net.minecraft.world.level.levelgen.structure.StructurePieceAccessor;
 import net.minecraft.world.level.levelgen.structure.structures.BuriedTreasurePieces;
+import net.minecraft.world.level.levelgen.structure.structures.NetherFortressPieces;
 import net.minecraft.world.level.levelgen.structure.structures.DesertPyramidPiece;
 import net.minecraft.world.level.levelgen.structure.structures.JungleTemplePiece;
 import net.minecraft.world.level.levelgen.structure.structures.SwampHutPiece;
@@ -512,6 +514,43 @@ public class BuiltinExtract {
     write("buried_treasure", cap, null, false);
   }
 
+  // ---------------------------------------------------------- nether fortress
+
+  static final StructurePieceAccessor NO_COLLISION = new StructurePieceAccessor() {
+    public void addPiece(StructurePiece piece) {}
+    public StructurePiece findCollisionPiece(BoundingBox box) { return null; }
+  };
+
+  // every piece extracted at orientation NORTH with its own bounding box, so
+  // nbt local coords equal the game's box-local coords and the JS layout can
+  // paste them at the boxes it computes
+  static void fortressPiece(String name, StructurePiece piece) throws Exception {
+    if (piece == null) throw new IllegalStateException(name + ": createPiece returned null");
+    Capture cap = new Capture();
+    cap.random = runA();
+    cap.groundY = piece.getBoundingBox().minY(); // support pillars stop at the box
+    piece.postProcess(cap.level(), null, null, cap.random, WORLD_BB, new ChunkPos(0, 0), BlockPos.ZERO);
+    write("nether_fortress/" + name, cap, piece.getBoundingBox(), true);
+  }
+
+  static void netherFortress() throws Exception {
+    CannedRandom r = runA();
+    Direction N = Direction.NORTH;
+    fortressPiece("bridge_straight", NetherFortressPieces.BridgeStraight.createPiece(NO_COLLISION, r, 0, 64, 0, N, 0));
+    fortressPiece("bridge_crossing", NetherFortressPieces.BridgeCrossing.createPiece(NO_COLLISION, 0, 64, 0, N, 0));
+    fortressPiece("room_crossing", NetherFortressPieces.RoomCrossing.createPiece(NO_COLLISION, 0, 64, 0, N, 0));
+    fortressPiece("stairs_room", NetherFortressPieces.StairsRoom.createPiece(NO_COLLISION, 0, 64, 0, 0, N));
+    fortressPiece("monster_throne", NetherFortressPieces.MonsterThrone.createPiece(NO_COLLISION, 0, 64, 0, 0, N));
+    fortressPiece("castle_entrance", NetherFortressPieces.CastleEntrance.createPiece(NO_COLLISION, r, 0, 64, 0, N, 0));
+    fortressPiece("castle_small_corridor", NetherFortressPieces.CastleSmallCorridorPiece.createPiece(NO_COLLISION, 0, 64, 0, N, 0));
+    fortressPiece("castle_small_corridor_right_turn", NetherFortressPieces.CastleSmallCorridorRightTurnPiece.createPiece(NO_COLLISION, r, 0, 64, 0, N, 0));
+    fortressPiece("castle_small_corridor_left_turn", NetherFortressPieces.CastleSmallCorridorLeftTurnPiece.createPiece(NO_COLLISION, r, 0, 64, 0, N, 0));
+    fortressPiece("castle_corridor_stairs", NetherFortressPieces.CastleCorridorStairsPiece.createPiece(NO_COLLISION, 0, 64, 0, N, 0));
+    fortressPiece("castle_corridor_t_balcony", NetherFortressPieces.CastleCorridorTBalconyPiece.createPiece(NO_COLLISION, 0, 64, 0, N, 0));
+    fortressPiece("castle_small_corridor_crossing", NetherFortressPieces.CastleSmallCorridorCrossingPiece.createPiece(NO_COLLISION, 0, 64, 0, N, 0));
+    fortressPiece("castle_stalk_room", NetherFortressPieces.CastleStalkRoom.createPiece(NO_COLLISION, 0, 64, 0, N, 0));
+  }
+
   // ------------------------------------------------------------- structures
 
   static void endPlatform() throws Exception {
@@ -551,6 +590,7 @@ public class BuiltinExtract {
     dungeon(3, 2);
     dungeon(2, 3);
     dungeon(3, 3);
+    netherFortress();
     endPlatform();
     endGateway();
     exitPortal(false);
