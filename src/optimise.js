@@ -5,17 +5,25 @@
 // drawCalls, tris }
 const DIRS = { east: [1, 0, 0], west: [-1, 0, 0], up: [0, 1, 0], down: [0, -1, 0], south: [0, 0, 1], north: [0, 0, -1] }
 const DIR_NAMES = Object.keys(DIRS)
+const AIR = /(^|:)(air|cave_air|void_air|structure_void)$/
 
 export async function optimise(structure, templates, position, { lib, getCullFaces, setStatus, setProgress, shouldCancel }) {
   setStatus?.("optimising…")
   setProgress?.(0, structure.blocks.length)
   await new Promise(r => setTimeout(r))
 
+  // explicit air blocks (vanilla nbts fill their bounds with them) count as
+  // absent everywhere: never placed, and a neighbour of air memoises the
+  // same as no neighbour at all
+  const isAir = structure.palette.map(e => AIR.test(e?.Name ?? ""))
   const posState = new Map()
-  for (const b of structure.blocks) posState.set(b.pos.join(","), b.state)
+  for (const b of structure.blocks) {
+    if (!isAir[b.state]) posState.set(b.pos.join(","), b.state)
+  }
   const cullMemo = new Map()
   const placements = []
   for (const b of structure.blocks) {
+    if (isAir[b.state]) continue
     const entry = structure.palette[b.state]
     const tmpl = templates.get(b.state)
     if (!entry?.Name || !tmpl) continue

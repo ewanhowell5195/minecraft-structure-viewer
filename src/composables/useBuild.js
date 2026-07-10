@@ -76,8 +76,9 @@ function fixLegacyProps(name, props) {
 
 // fluid cells: corner heights depend on the neighbourhood, so each distinct
 // surface shape gets a synthetic palette entry carrying its heights; identical
-// cells (open water, full columns) still share one template
-const FLUID_RE = /(^|:)(water|flowing_water|lava|flowing_lava)$/
+// cells (open water, full columns) still share one template. the library
+// decides what counts as a fluid cell (fluids, waterlogged states, and
+// inherently water-filled blocks like kelp or bubble columns)
 async function remapFluidStates(structure, lib, assets) {
   const byPos = new Map()
   for (const b of structure.blocks) byPos.set(b.pos.join(","), b)
@@ -86,8 +87,7 @@ async function remapFluidStates(structure, lib, assets) {
   for (const b of structure.blocks) {
     const e = structure.palette[b.state]
     if (!e?.Name) continue
-    const type = FLUID_RE.test(e.Name) ? (/lava/.test(e.Name) ? "lava" : "water")
-      : e.Properties?.waterlogged === "true" ? "water" : null
+    const type = lib.fluidTypeOf?.(e.Name, e.Properties) ?? null
     if (!type) continue
     const [bx, by, bz] = b.pos
     const neighbors = {}
@@ -925,23 +925,32 @@ async function build(structure = source, refit = true, slice = false) {
       return tmpl
     }
 
+    // everything from here iterates real blocks only: air renders nothing,
+    // and yielding across millions of air entries is genuinely slow
+    const isAirState = structure.palette.map(e => !e?.Name || AIR.test(e.Name))
+    const solid = []
+    for (const b of structure.blocks) {
+      if (!isAirState[b.state]) solid.push(b)
+    }
+    const total = solid.length
+
     // fluid surfaces shape themselves from their neighbourhood
     if (lib.fluidHeights) await remapFluidStates(structure, lib, assets)
     if (lib.ModelLoader) await remapLoaderStates(structure, lib, assets)
 
     // build every template up front (the optimiser reads them all)
     let placedCount = 0
-    state.progress = { phase: "build", done: 0, total: structure.blocks.length }
-    for (let i = 0; i < structure.blocks.length; i++) {
-      if (await template(structure.blocks[i].state)) placedCount++
+    state.progress = { phase: "build", done: 0, total }
+    for (let i = 0; i < total; i++) {
+      if (await template(solid[i].state)) placedCount++
       if (i % 400 === 399) {
-        state.status = `building… ${i + 1}/${structure.blocks.length}`
-        state.progress = { phase: "build", done: i + 1, total: structure.blocks.length }
+        state.status = `building… ${i + 1}/${total}`
+        state.progress = { phase: "build", done: i + 1, total }
         await new Promise(r => setTimeout(r))
         if (cancelBuild) return abort()
       }
     }
-    state.progress = { phase: "build", done: structure.blocks.length, total: structure.blocks.length }
+    state.progress = { phase: "build", done: total, total }
     if (cancelBuild) return abort()
 
     // centre, snapped so every block fills a whole grid cell: templates are

@@ -12,6 +12,7 @@ import { fixBuiltin, GENERATED } from "../generators/builtin.js"
 import { makeDebug } from "../debug.js"
 
 const READERS = { nbt: readStructure, litematic: readLitematic, schem: readSchem, mcstructure: readMcstructure }
+const COMBINE_AIR = /(^|:)(air|cave_air|void_air|structure_void)$/
 
 // What is loaded: one structure behaves as before (sessions, levels), while
 // shift/ctrl-clicking more structures packs them all into one combined scene.
@@ -145,7 +146,11 @@ function packLoaded() {
   let mx = 1, my = 1, mz = 1
   for (const p of parts) {
     const map = p.s.palette.map(e => e?.Name ? stateFor(e) : 0)
+    // air never renders and air-beside-me culls like nothing-beside-me, so
+    // a combination drops it: all-structure loads are mostly air entries
+    const drop = p.s.palette.map(e => !e?.Name || COMBINE_AIR.test(e.Name))
     for (const b of p.s.blocks) {
+      if (drop[b.state]) continue
       const block = { state: map[b.state], pos: [b.pos[0] + p.off[0], b.pos[1] + p.off[1], b.pos[2] + p.off[2]] }
       if (b.nbt) block.nbt = b.nbt
       blocks.push(block)
