@@ -419,7 +419,7 @@ public class BuiltinExtract {
       return localY == 0 ? "collapsed_roof" : localY == -1 ? "stair_variant" : null;
     });
     masks.put("suspicious_sand", new ArrayList<>(keep[0].getPotentialSuspiciousSandWorldPositions()));
-    write("desert_pyramid", cap, null, true, masks);
+    write("desert_pyramid", cap, null, false, masks);
   }
 
   static void jungleTemple() throws Exception {
@@ -431,7 +431,7 @@ public class BuiltinExtract {
       piece.postProcess(c.level(), null, null, rand, WORLD_BB, new ChunkPos(0, 0), BlockPos.ZERO);
       return piece;
     }, masks, p -> "moss");
-    write("jungle_temple", cap, null, true, masks);
+    write("jungle_temple", cap, null, false, masks);
   }
 
   static void swampHut() throws Exception {
@@ -451,7 +451,7 @@ public class BuiltinExtract {
     BlockPos wp = northWorldPos(bb, 2, 2, 5);
     cap.entities.add(entityTag("minecraft:witch", wp.getX() + 0.5, wp.getY(), wp.getZ() + 0.5));
     cap.entities.add(entityTag("minecraft:cat", wp.getX() + 0.5, wp.getY(), wp.getZ() + 0.5));
-    write("swamp_hut", cap, null, true);
+    write("swamp_hut", cap, null, false);
   }
 
   static void desertWell() throws Exception {
@@ -557,7 +557,7 @@ public class BuiltinExtract {
     cap.random = runA();
     cap.groundY = piece.getBoundingBox().minY(); // support pillars stop at the box
     piece.postProcess(cap.level(), null, null, cap.random, WORLD_BB, new ChunkPos(0, 0), BlockPos.ZERO);
-    write("nether_fortress/" + name, cap, piece.getBoundingBox(), true);
+    write("nether_fortress/" + name, cap, piece.getBoundingBox(), false);
   }
 
   static void netherFortress() throws Exception {
@@ -627,7 +627,7 @@ public class BuiltinExtract {
     CannedRandom rand = new CannedRandom(0.9f, false);
     rand.script(script);
     StructurePiece piece = make.make(rand);
-    write("stronghold/" + name, cap, piece.getBoundingBox(), true, masks);
+    write("stronghold/" + name, cap, piece.getBoundingBox(), false, masks);
   }
 
   static void stronghold() throws Exception {

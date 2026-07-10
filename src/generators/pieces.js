@@ -2,13 +2,14 @@ import { mirrorState, rotateState } from "../transforms.js"
 
 // Shared machinery for the extracted hardcoded pieces (nether fortress,
 // stronghold): the game's StructurePiece orientation model. Pieces are
-// extracted at orientation NORTH, which stores the authored local blocks
-// (coords x right, y up, z forward; no state transform). Placing one at a
-// Direction reproduces getWorldX/Y/Z plus setOrientation's mirror+rotation:
-//   north: (x, y, maxZ - z)             no state change
-//   south: (x, y, minZ + z)             mirror left-right
-//   west:  (maxX - z, y, minZ + x)      mirror left-right + rotate cw
-//   east:  (minX + z, y, minZ + x)      rotate cw
+// extracted at orientation NORTH and stored exactly as they land in the
+// world (states untransformed, geometry z-flipped by getWorldZ), so a raw
+// nbt is self-consistent on its own. Placing one at a Direction converts
+// from that north-placement space to the game's other placements:
+//   north: identity
+//   south: (x, y, D-1-z)      mirror left-right
+//   west:  (z, y, x)          mirror left-right + rotate cw
+//   east:  (D-1-z, y, x)      rotate cw
 // The result is in box-local coords, pasted at the box min corner.
 
 // BoundingBox.orientBox: the box a piece occupies for a given foot position,
@@ -28,12 +29,7 @@ export const boxesIntersect = (a, b) =>
 // transform an extracted piece structure to box-local coords for a direction
 export function orientStruct(struct, dir) {
   const [w, h, d] = struct.size
-  if (dir === "north") {
-    return {
-      ...struct,
-      blocks: struct.blocks.map(b => ({ ...b, pos: [b.pos[0], b.pos[1], d - 1 - b.pos[2]] }))
-    }
-  }
+  if (dir === "north") return struct
   const mir = dir === "south" || dir === "west" ? "lr" : null
   const rot = dir === "west" || dir === "east" ? 1 : 0
   const palette = struct.palette.map(e => {
@@ -42,9 +38,9 @@ export function orientStruct(struct, dir) {
     if (props && rot) props = rotateState(props, rot)
     return props ? { Name: e.Name, Properties: props } : { Name: e.Name }
   })
-  const pos = dir === "south" ? ([x, y, z]) => [x, y, z]
-    : dir === "west" ? ([x, y, z]) => [d - 1 - z, y, x]
-    : ([x, y, z]) => [z, y, x] // east
+  const pos = dir === "south" ? ([x, y, z]) => [x, y, d - 1 - z]
+    : dir === "west" ? ([x, y, z]) => [z, y, x]
+    : ([x, y, z]) => [d - 1 - z, y, x] // east
   return {
     ...struct,
     size: rot ? [d, h, w] : struct.size,

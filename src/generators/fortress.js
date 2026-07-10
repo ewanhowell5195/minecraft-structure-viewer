@@ -52,12 +52,13 @@ function makeBox(x, y, z, dir, w, h, d) {
 }
 
 // the jagged broken bridge end: rows of nether bricks with random lengths,
-// in the exact roll order of BridgeEndFiller.postProcess
+// in the exact roll order of BridgeEndFiller.postProcess. rows run from the
+// attachment face, which sits at z 7 in north-placement nbt space
 function endFillerStruct(selfSeed) {
   const r = rnd(selfSeed)
   const ni = n => Math.floor(r() * n)
   const blocks = []
-  const row = (x, y, z1) => { for (let z = 0; z <= z1; z++) blocks.push({ state: 0, pos: [x, y, z] }) }
+  const row = (x, y, z1) => { for (let z = 0; z <= z1; z++) blocks.push({ state: 0, pos: [x, y, 7 - z] }) }
   for (let x = 0; x <= 4; x++) for (let y = 3; y <= 4; y++) row(x, y, ni(8))
   row(0, 5, ni(8))
   row(4, 5, ni(8))
@@ -189,7 +190,8 @@ export async function runFortress(loadStruct, { maxDepth = Infinity, seed } = {}
     let struct = p.name === "bridge_end_filler" ? endFillerStruct(p.selfSeed) : tpl[p.name]
     const chest = P[p.name].chest
     if (chest && !p.hasChest) {
-      const [cx, cy, cz] = chest
+      // chest coords are authored; the nbt is in north-placement space
+      const [cx, cy] = chest, cz = P[p.name].size[2] - 1 - chest[2]
       struct = { ...struct, blocks: struct.blocks.filter(b => b.pos[0] !== cx || b.pos[1] !== cy || b.pos[2] !== cz) }
     }
     return placePiece(struct, p.dir, p.box)

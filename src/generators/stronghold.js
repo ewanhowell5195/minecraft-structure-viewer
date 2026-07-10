@@ -49,8 +49,13 @@ function makeBox(x, y, z, dir, w, h, d) {
 const STONES = "minecraft:stone_bricks"
 const rollStone = r => r < 0.2 ? "minecraft:cracked_stone_bricks" : r < 0.5 ? "minecraft:mossy_stone_bricks" : r < 0.55 ? "minecraft:infested_stone_bricks" : STONES
 
-// a stamp is a mini piece sharing the parent's authored size, so it goes
-// through the same orientation transform and box placement
+// spec coordinates are in the game's authored space; the nbts (and stamps,
+// which ride the same transform) are stored in north-placement space, which
+// flips z
+const flipCells = (cells, depth) => cells.map(([p, ...rest]) => [[p[0], p[1], depth - 1 - p[2]], ...rest])
+
+// a stamp is a mini piece sharing the parent's size, so it goes through the
+// same orientation transform and box placement
 function stamp(size, cells) {
   const palette = [], palIdx = new Map(), blocks = []
   for (const [pos, Name, Properties, nbt] of cells) {
@@ -298,8 +303,11 @@ export async function runStronghold(loadStruct, { maxDepth = Infinity, seed } = 
     const size = p.name === "library" && !p.tall ? [14, 6, 15] : P[p.name].size
     placed.push(placePiece(tpl[nbtName], p.dir, p.box))
 
+    // mask cells are already in nbt space; everything below is authored
+    // spec coordinates and gets flipped when stamped
+    const maskCells = []
+    for (const [x, y, z] of masks[nbtName]) maskCells.push([[x, y, z], rollStone(rand())])
     const cells = []
-    for (const [x, y, z] of masks[nbtName]) cells.push([[x, y, z], rollStone(rand())])
     if (p.name === "straight") {
       for (const [pos, facing] of [[[1, 2, 1], "east"], [[3, 2, 1], "west"], [[1, 2, 5], "east"], [[3, 2, 5], "west"]]) {
         if (rand() < 0.1) cells.push([pos, "minecraft:wall_torch", { facing }])
@@ -342,11 +350,12 @@ export async function runStronghold(loadStruct, { maxDepth = Infinity, seed } = 
         for (let x = 4; x <= 6; x++) for (let z = 9; z <= 11; z++) cells.push([[x, 3, z], "minecraft:end_portal"])
       }
     }
-    if (cells.length) placed.push(placePiece(stamp(size, cells), p.dir, p.box))
+    const stamped = maskCells.concat(flipCells(cells, size[2]))
+    if (stamped.length) placed.push(placePiece(stamp(size, stamped), p.dir, p.box))
 
     if (p.door && p.door !== "opening") {
       const dc = doorCells(p.door, P[p.name].door)
-      if (dc) placed.push(placePiece(stamp(size, dc), p.dir, p.box))
+      if (dc) placed.push(placePiece(stamp(size, flipCells(dc, size[2])), p.dir, p.box))
     }
   }
 
