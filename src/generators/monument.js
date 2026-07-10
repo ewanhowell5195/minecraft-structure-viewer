@@ -1182,11 +1182,14 @@ export async function runMonument(loadStruct, { maxDepth = Infinity, seed } = {}
     if (child.kind === "penthouse") spawnElder(child, 6, 1, 6)
   }
 
-  // ---- normalise to a structure
+  // ---- normalise to a structure. the water only exists so generation
+  // carves like the game (doorways are water boxes); it stays out of the
+  // output so the monument shows dry
 
+  const dropped = c => palette[c.state].Name === AIR || palette[c.state].Name === WATER
   const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity]
   for (const c of cells.values()) {
-    if (palette[c.state].Name === AIR) continue
+    if (dropped(c)) continue
     for (let i = 0; i < 3; i++) {
       lo[i] = Math.min(lo[i], c.pos[i])
       hi[i] = Math.max(hi[i], c.pos[i])
@@ -1194,7 +1197,7 @@ export async function runMonument(loadStruct, { maxDepth = Infinity, seed } = {}
   }
   const blocks = []
   for (const c of cells.values()) {
-    if (palette[c.state].Name === AIR) continue
+    if (dropped(c)) continue
     blocks.push({ state: c.state, pos: [c.pos[0] - lo[0], c.pos[1] - lo[1], c.pos[2] - lo[2]] })
   }
   for (const e of entities) e.pos = [e.pos[0] - lo[0], e.pos[1] - lo[1], e.pos[2] - lo[2]]
