@@ -4,6 +4,7 @@ import { loadLibrary } from "../lib.js"
 import { usePacks } from "./usePacks.js"
 import { useScene } from "./useScene.js"
 import { useBuild } from "./useBuild.js"
+import { useSlicers } from "./useSlicers.js"
 import { useStructures } from "./useStructures.js"
 import { readLootTable, rollLoot, sampleTable, stackKey, prettyName, isInspectable } from "../loot.js"
 import { parseState } from "../transforms.js"
@@ -449,7 +450,7 @@ function clearHover(canvas) {
 }
 
 function hoverCheck(e, canvas) {
-  if (document.pointerLockElement || state.open || e.buttons) return clearHover(canvas)
+  if (document.pointerLockElement || state.open || e.buttons || useSlicers().busy()) return clearHover(canvas)
   const u = inspectableUnder(e, canvas)
   const box = u?.marker ? buildApi.boxForEntity(u.marker) : u?.block ? buildApi.boxForBlock(u.block) : null
   if (box) {
@@ -467,7 +468,7 @@ function initPicking(canvas) {
     downT = performance.now()
   })
   canvas.addEventListener("pointerup", e => {
-    if (document.pointerLockElement || e.button !== 0) return
+    if (document.pointerLockElement || e.button !== 0 || useSlicers().busy()) return
     if (Math.hypot(e.clientX - downX, e.clientY - downY) > 4 || performance.now() - downT > 400) return
     if (state.open) return
     const u = inspectableUnder(e, canvas)

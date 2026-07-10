@@ -3,6 +3,7 @@ import * as THREE from "three"
 import { loadLibrary } from "../lib.js"
 import { usePacks } from "./usePacks.js"
 import { useScene } from "./useScene.js"
+import { useSlicers } from "./useSlicers.js"
 import { useLock } from "./useLock.js"
 import { optimise } from "../optimise.js"
 import { exportScene } from "../export.js"
@@ -922,6 +923,7 @@ async function build(structure = source, refit = true) {
     } catch {}
     animator = lib.createAnimator(root)
     sceneApi.animators.add(animator)
+    useSlicers().onBuild(root, position, [sx, sy, sz])
     // one floor grid per structure part, hugging its footprint with a 3-block
     // border (4 on one side when needed to keep the size even, so the centre
     // cross lands on a block boundary)

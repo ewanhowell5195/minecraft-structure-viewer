@@ -9,9 +9,11 @@ import { useScene } from "./composables/useScene.js"
 import { useLock } from "./composables/useLock.js"
 import { useWalk } from "./composables/useWalk.js"
 import { useContainer } from "./composables/useContainer.js"
+import { useSlicers } from "./composables/useSlicers.js"
 import PacksSection from "./components/PacksSection.vue"
 import StructuresSection from "./components/StructuresSection.vue"
 import ViewSection from "./components/ViewSection.vue"
+import SlicersSection from "./components/SlicersSection.vue"
 import SceneSection from "./components/SceneSection.vue"
 import LevelMenu from "./components/LevelMenu.vue"
 import WalkOverlay from "./components/WalkOverlay.vue"
@@ -48,6 +50,7 @@ onMounted(async () => {
     return
   }
   sceneApi.init(canvasEl.value)
+  useSlicers().init()
   useContainer().initPicking(canvasEl.value)
   // load the requested structure (?debug = the generated mesher test scene),
   // or a default so the page never starts empty
@@ -80,6 +83,7 @@ onMounted(async () => {
         <PacksSection />
         <StructuresSection />
         <ViewSection />
+        <SlicersSection />
         <SceneSection />
       </template>
     </aside>

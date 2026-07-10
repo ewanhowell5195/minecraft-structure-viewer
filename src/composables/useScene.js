@@ -16,6 +16,9 @@ const view = reactive({
 
 let renderer = null, canvas = null
 const scene = new THREE.Scene()
+// drawn over the finished frame against its depth buffer: wireframe modes
+// and the override material never touch it (the slicer planes live here)
+const overlayScene = new THREE.Scene()
 // near 2 (1/8 block): depth precision scales with the near plane, and 0.1
 // left far surfaces quantising to the same depth value (distant z-fighting,
 // faces poking through each other). walking can't get closer than ~4 units
@@ -31,7 +34,16 @@ let orthoManual = false
 const contentRoots = new Set()
 const animators = new Set()
 
+// the slicers' clipping planes (useSlicers drives them): always three so
+// materials compile once, disabled ones pushed out to infinity
+export const SLICE_PLANES = [
+  new THREE.Plane(new THREE.Vector3(0, 1, 0), 1e9),
+  new THREE.Plane(new THREE.Vector3(0, 1, 0), 1e9),
+  new THREE.Plane(new THREE.Vector3(0, 1, 0), 1e9)
+]
+
 const wireMat = new THREE.MeshBasicMaterial({ wireframe: true, color: 0x9fd0ff })
+wireMat.clippingPlanes = SLICE_PLANES
 
 // floor grids: one rectangular grid per structure, hugging its footprint.
 // dimensions are even block counts so the brighter centre cross lands on a
@@ -330,6 +342,7 @@ function init(canvasEl) {
   canvas = canvasEl
   renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: false })
   renderer.setPixelRatio(Math.min(window.devicePixelRatio * 2, 4))
+  renderer.localClippingEnabled = true
   controls = new OrbitControls(camera, canvas)
   controls.enableDamping = true
   // a camera move reverts auto-enabled ortho; a manual toggle sticks
@@ -368,6 +381,11 @@ function init(canvasEl) {
       if (gridGroup) gridGroup.visible = gv
       scene.overrideMaterial = null
     }
+    if (overlayScene.children.length) {
+      renderer.autoClear = false
+      renderer.render(overlayScene, camera)
+      renderer.autoClear = true
+    }
   })
 }
 
@@ -382,7 +400,7 @@ function setOrthoManual(on) {
 
 export function useScene() {
   return {
-    view, scene, init, fit, setGrids, sceneBounds, setOrtho, setOrthoManual,
+    view, scene, overlayScene, init, fit, setGrids, sceneBounds, setOrtho, setOrthoManual,
     makeHighlight,
     getGridRects: () => gridRects,
     contentRoots, animators, perspCam, FOV, updateProjection, setWalkUpdate,
