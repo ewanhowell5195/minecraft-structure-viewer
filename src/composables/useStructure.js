@@ -7,6 +7,7 @@ import { useSession } from "./useSession.js"
 import { useLock } from "./useLock.js"
 import { readStructure } from "../nbt.js"
 import { readLitematic, readMcstructure, readSchem } from "../formats.js"
+import { useWorld } from "./useWorld.js"
 import { fixBuiltin, GENERATED } from "../generators/builtin.js"
 import { makeDebug } from "../debug.js"
 
@@ -199,6 +200,9 @@ async function apply(refit = true) {
 }
 
 async function readVanilla(rel) {
+  // an opened world's structure-block saves resolve from the world zip
+  const w = useWorld()
+  if (w.hasStructure(rel)) return readStructure(await w.readStructureBytes(rel))
   const zp = structures.zipPathOf(rel)
   if (!zp) {
     // nbt-less builtin structures generate on load
@@ -351,6 +355,22 @@ function loadFile(file) {
   })
 }
 
+// a structure assembled in memory (world chunk selections)
+function loadObject(structure, name) {
+  if (!structure || locked.value) return
+  return withLock(async () => {
+    state.error = ""
+    const snap = snapshot()
+    try {
+      setVanillaParam(null)
+      loaded = [{ structure, name }]
+      if (await apply() === false) restore(snap)
+    } catch (err) {
+      state.error = `couldn't load ${name}: ${err}`
+    }
+  })
+}
+
 // pack change: vanilla structures re-read from the new assets (their blocks
 // may differ per jar); anything else rebuilds in place
 async function onAssetsSwapped() {
@@ -380,5 +400,5 @@ async function onAssetsSwapped() {
 packs.setSwapHandler(onAssetsSwapped)
 
 export function useStructure() {
-  return { state: readonly(state), structure, loadVanilla, loadMany, loadFile, loadDebug }
+  return { state: readonly(state), structure, loadVanilla, loadMany, loadFile, loadObject, loadDebug }
 }

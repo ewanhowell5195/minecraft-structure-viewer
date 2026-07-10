@@ -2,6 +2,7 @@
 import { computed, nextTick, ref, watch } from "vue"
 import { useStructures } from "../composables/useStructures.js"
 import { useStructure } from "../composables/useStructure.js"
+import { useWorld } from "../composables/useWorld.js"
 import { useContextMenu } from "../composables/useContextMenu.js"
 import { useLock } from "../composables/useLock.js"
 import TreeFolder from "./TreeFolder.vue"
@@ -85,8 +86,12 @@ async function onMode(e) {
 }
 
 function onFile(e) {
-  loadFile(e.target.files[0])
+  const file = e.target.files[0]
   e.target.value = ""
+  if (!file) return
+  // a world save zip or a bare region file opens the chunk picker instead
+  if (/\.(zip|mca)$/i.test(file.name)) useWorld().openWorld(file)
+  else loadFile(file)
 }
 </script>
 
@@ -126,7 +131,7 @@ function onFile(e) {
       <span class="material-symbols-outlined">upload_file</span>
       Open Structure File
     </button>
-    <input ref="fileInput" type="file" accept=".nbt,.litematic,.schem,.mcstructure" hidden @change="onFile">
+    <input ref="fileInput" type="file" accept=".nbt,.litematic,.schem,.mcstructure,.zip,.mca" hidden @change="onFile">
   </section>
 </template>
 

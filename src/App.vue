@@ -12,6 +12,7 @@ import { useContainer } from "./composables/useContainer.js"
 import { useSlicers } from "./composables/useSlicers.js"
 import PacksSection from "./components/PacksSection.vue"
 import StructuresSection from "./components/StructuresSection.vue"
+import WorldSection from "./components/WorldSection.vue"
 import ViewSection from "./components/ViewSection.vue"
 import SlicersSection from "./components/SlicersSection.vue"
 import SceneSection from "./components/SceneSection.vue"
@@ -82,6 +83,7 @@ onMounted(async () => {
       <template v-else>
         <PacksSection />
         <StructuresSection />
+        <WorldSection />
         <ViewSection />
         <SlicersSection />
         <SceneSection />

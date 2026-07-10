@@ -26,6 +26,20 @@ let structPath = new Map()
 let starterSet = null, standaloneSet = null, structDepth = null, structRadius = null
 let worldgenPromise = null
 
+// structure-block saves from an opened world sit under their own root in
+// the tree instead of merging into the vanilla namespaces
+let worldNames = []
+
+function refreshNames() {
+  state.names = Array.from(structPath.keys()).concat(Object.keys(GENERATED), worldNames).sort()
+  if (state.selected.length) state.selected = state.selected.filter(rel => has(rel))
+}
+
+function setWorldStructures(names) {
+  worldNames = names
+  refreshNames()
+}
+
 async function populate() {
   const lib = await loadLibrary()
   structPath = new Map()
@@ -36,8 +50,7 @@ async function populate() {
       if (m) structPath.set(m[1] + "/" + m[2], k)
     }
   }
-  state.names = Array.from(structPath.keys()).concat(Object.keys(GENERATED)).sort()
-  if (state.selected.length) state.selected = state.selected.filter(rel => has(rel))
+  refreshNames()
 }
 
 async function allZipKeys() {
@@ -149,10 +162,10 @@ function visibleNames() {
 }
 
 const zipPathOf = name => structPath.get(name)
-const has = name => structPath.has(name) || name in GENERATED
+const has = name => structPath.has(name) || name in GENERATED || worldNames.includes(name)
 const getStructDepth = name => structDepth?.get(name)
 const getStructRadius = name => structRadius?.get(name)
 
 export function useStructures() {
-  return { state: readonly(state), stateMut: state, refresh, computeWorldgen, filteredNames, visibleNames, zipPathOf, has, getStructDepth, getStructRadius }
+  return { state: readonly(state), stateMut: state, refresh, computeWorldgen, filteredNames, visibleNames, zipPathOf, has, getStructDepth, getStructRadius, setWorldStructures }
 }
