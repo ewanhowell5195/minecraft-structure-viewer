@@ -131,7 +131,7 @@ function onFile(e) {
 <style scoped>
 .structures {
   flex: 1;
-  min-height: 0;
+  min-height: 270px;
 }
 
 h2 {

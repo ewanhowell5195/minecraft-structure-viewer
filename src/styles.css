@@ -80,13 +80,15 @@ input:focus-visible, select:focus-visible, button:focus-visible {
   outline-offset: 1px;
 }
 
-/* sidebar sections */
+/* sidebar sections: rigid, so a short window scrolls the sidebar instead
+   of squashing sections into each other */
 aside section {
   display: flex;
   flex-direction: column;
   gap: 8px;
   padding: 12px 14px;
   border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
 }
 
 aside section h2 {

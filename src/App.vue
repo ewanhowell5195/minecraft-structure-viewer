@@ -123,6 +123,7 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  overflow-y: auto;
 }
 
 .app-head {
@@ -131,6 +132,7 @@ onMounted(async () => {
   gap: 8px;
   padding: 12px 14px;
   border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
 }
 
 .app-head h1 {
