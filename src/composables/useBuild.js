@@ -765,13 +765,16 @@ async function build(structure = source, refit = true) {
         try {
           const name = LEGACY_RENAMES[entry.Name.replace("minecraft:", "")] ?? entry.Name
           const props = fixLegacyProps(name.replace("minecraft:", ""), entry.Properties)
+          // __block only exists on loader-variant entries; plain blocks still
+          // need one so the library can apply their in-game light emission
+          const block = entry.__block ?? { id: name, properties: props ?? {} }
           // ignoreAtlases: real blocks, skip the per-texture atlas membership reads.
           // a model built only from flat planes (cross plants, vines, ladders,
           // rails) has no collision in game, so it shouldn't block the walker
           let any = false, allPlanes = true
           for (const model of await lib.parseBlockstate(assets, name, { data: props ?? {}, ignoreAtlases: true })) {
             const data = await lib.resolveModelData(assets, model)
-            await lib.loadModel(g, assets, data, { display: {}, lighting: state.lighting, animate: false, fluidHeights: entry.__fluidHeights, block: entry.__block, neighbors: entry.__block?.neighbors })
+            await lib.loadModel(g, assets, data, { display: {}, lighting: state.lighting, animate: false, fluidHeights: entry.__fluidHeights, block, neighbors: block.neighbors })
             for (const el of data?.elements ?? []) { any = true; if (!isPlane(el)) allPlanes = false }
           }
           if (any && allPlanes) nonSolid.add(stateIdx)
