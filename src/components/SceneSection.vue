@@ -1,4 +1,5 @@
 <script setup>
+import { ref } from "vue"
 import { useBuild } from "../composables/useBuild.js"
 import { useStructure } from "../composables/useStructure.js"
 import { useLock } from "../composables/useLock.js"
@@ -6,6 +7,7 @@ import { useLock } from "../composables/useLock.js"
 const { state: buildState, exportCurrent } = useBuild()
 const { state: structureState } = useStructure()
 const { locked } = useLock()
+const collapsed = ref(true)
 
 function onExport(ev) {
   const v = ev.target.value
@@ -15,8 +17,11 @@ function onExport(ev) {
 </script>
 
 <template>
-  <section>
-    <h2>Scene</h2>
+  <section :class="{ collapsed }">
+    <h2 @click="collapsed = !collapsed">
+      <span class="material-symbols-outlined chev">{{ collapsed ? "chevron_right" : "expand_more" }}</span>
+      Scene
+    </h2>
     <div class="fields">
       <label for="export">Export</label>
       <select id="export" :disabled="locked || !buildState.info" @change="onExport">

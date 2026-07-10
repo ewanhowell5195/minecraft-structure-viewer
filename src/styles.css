@@ -98,4 +98,18 @@ aside section h2 {
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  user-select: none;
 }
+
+aside section h2:hover { color: var(--text); }
+
+aside section h2 .chev {
+  font-size: 16px;
+  margin: -2px 0 -2px -4px;
+}
+
+aside section.collapsed > :not(h2) { display: none !important; }

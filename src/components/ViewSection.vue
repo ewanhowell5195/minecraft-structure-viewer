@@ -1,4 +1,5 @@
 <script setup>
+import { ref } from "vue"
 import { useScene } from "../composables/useScene.js"
 import { useBuild, NOON } from "../composables/useBuild.js"
 import { useLock } from "../composables/useLock.js"
@@ -7,11 +8,15 @@ const sceneApi = useScene()
 const { view } = sceneApi
 const { state: buildState } = useBuild()
 const { locked } = useLock()
+const collapsed = ref(true)
 </script>
 
 <template>
-  <section>
-    <h2>View</h2>
+  <section :class="{ collapsed }">
+    <h2 @click="collapsed = !collapsed">
+      <span class="material-symbols-outlined chev">{{ collapsed ? "chevron_right" : "expand_more" }}</span>
+      View
+    </h2>
     <div class="fields">
       <label for="lighting">Lighting</label>
       <select id="lighting" v-model="buildState.lighting" :disabled="locked">

@@ -13,6 +13,7 @@ const ctx = useContextMenu()
 const { locked } = useLock()
 const fileInput = ref(null)
 const treeEl = ref(null)
+const collapsed = ref(false)
 
 // page load: once the selection lands (and TreeFolder has expanded the path
 // to it), bring the first selected row into view
@@ -90,8 +91,9 @@ function onFile(e) {
 </script>
 
 <template>
-  <section class="structures">
-    <h2>
+  <section class="structures" :class="{ collapsed }">
+    <h2 @click="collapsed = !collapsed">
+      <span class="material-symbols-outlined chev">{{ collapsed ? "chevron_right" : "expand_more" }}</span>
       Structures
       <span class="count">{{ names.length === state.names.length ? state.names.length : `${names.length}/${state.names.length}` }}</span>
     </h2>
@@ -134,13 +136,13 @@ function onFile(e) {
   min-height: 270px;
 }
 
-h2 {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
+.structures.collapsed {
+  flex: none;
+  min-height: 0;
 }
 
 .count {
+  margin-left: auto;
   font-weight: 400;
   letter-spacing: normal;
   text-transform: none;

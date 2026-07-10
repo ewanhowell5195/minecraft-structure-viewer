@@ -7,6 +7,7 @@ const { state, setChannel, addPacks, removePack, movePack } = usePacks()
 const { locked } = useLock()
 const busy = computed(() => state.busy || locked.value)
 const fileInput = ref(null)
+const collapsed = ref(false)
 
 function onFiles(e) {
   addPacks(Array.from(e.target.files))
@@ -15,8 +16,11 @@ function onFiles(e) {
 </script>
 
 <template>
-  <section>
-    <h2>Packs</h2>
+  <section :class="{ collapsed }">
+    <h2 @click="collapsed = !collapsed">
+      <span class="material-symbols-outlined chev">{{ collapsed ? "chevron_right" : "expand_more" }}</span>
+      Packs
+    </h2>
     <div class="channel">
       <button :class="{ active: !state.version && state.channel === 'release' }" :disabled="busy"
         @click="setChannel('release')">Release</button>
