@@ -88,8 +88,13 @@ const boxFromCorners = (a, b) => ({
   maxX: Math.max(a[0], b[0]), maxY: Math.max(a[1], b[1]), maxZ: Math.max(a[2], b[2])
 })
 
-export async function runMonument(loadStruct, { maxDepth = Infinity, seed } = {}) {
-  const rand = rnd(seed ?? (Math.random() * 0x100000000) >>> 0)
+// the default (seed 0) load aliases to a hand-picked layout: all three entry
+// doorways open and every elder guardian room a short unblocked path away.
+// seed 0 itself walls the entry off on two sides and buries one wing
+const DEFAULT_SEED = 154
+
+export async function runMonument(loadStruct, { maxDepth = Infinity, seed, stats } = {}) {
+  const rand = rnd(seed === 0 ? DEFAULT_SEED : seed ?? (Math.random() * 0x100000000) >>> 0)
   const ni = n => Math.floor(rand() * n)
 
   const direction = HORIZ[ni(4)]
@@ -229,6 +234,25 @@ export async function runMonument(loadStruct, { maxDepth = Infinity, seed } = {}
   }
 
   const { roomDefs, sourceRoom, coreRoom } = generateRoomGraph()
+  if (stats) {
+    stats.sourceSides = [NORTH, WEST, EAST].filter(d => sourceRoom.hasOpening[d]).length
+    stats.total = roomDefs.reduce((a, d) => a + d.hasOpening.filter(Boolean).length, 0)
+    // breadth-first distances from the entry to the elder rooms (both wings
+    // and the penthouse), through open doorways
+    const dist = new Map([[sourceRoom, 0]])
+    const queue = [sourceRoom]
+    while (queue.length) {
+      const def = queue.shift()
+      for (let d = 0; d < 6; d++) {
+        const next = def.connections[d]
+        if (def.hasOpening[d] && next && !dist.has(next)) {
+          dist.set(next, dist.get(def) + 1)
+          queue.push(next)
+        }
+      }
+    }
+    stats.elders = roomDefs.filter(d => d.index >= 1001).map(d => dist.get(d) ?? Infinity)
+  }
   sourceRoom.claimed = true
 
   const fitters = [
@@ -1157,9 +1181,11 @@ export async function runMonument(loadStruct, { maxDepth = Infinity, seed } = {}
       if (pillarZ === 0 && pillarX === 3) pillarZ = 6
       const bx = pillarX * 9
       const bz = pillarZ * 9
-      // fillColumnDown below each base is capped at the piece floor, so only
-      // the y 0 layer is placed
-      for (let w = 0; w < 4; w++) for (let d = 0; d < 4; d++) placeBlock(b, BASE_LIGHT, bx + w, 0, bz + d)
+      // fillColumnDown grows these bases toward the sea floor in game; with
+      // no terrain they become 4-block legs the monument stands on
+      for (let w = 0; w < 4; w++) for (let d = 0; d < 4; d++) {
+        for (let y = 0; y >= -4; y--) placeBlock(b, BASE_LIGHT, bx + w, y, bz + d)
+      }
       if (pillarX !== 0 && pillarX !== 6) pillarZ += 6
       else pillarZ++
     }
