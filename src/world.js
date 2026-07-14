@@ -1,11 +1,6 @@
 import { loadLibrary } from "./lib.js"
 import { readNBT } from "./nbt.js"
 
-// Anvil world reading: list a world zip's chunks from the region headers,
-// then turn a selection of them into the internal structure format. Modern
-// chunks only (1.18+, sections with block_states); older worlds get a clear
-// error instead of garbage.
-
 const AIR = /(^|:)(air|cave_air|void_air)$/
 
 async function inflate(data, format) {
@@ -18,8 +13,6 @@ export const unzipEntry = entry => entry.method === 8 ? inflate(entry.data, "def
 export async function readWorldZip(buf) {
   const lib = await loadLibrary()
   const files = lib.parseZip(new Uint8Array(buf))
-  // the world may sit at the zip root or nested one folder down; prefer the
-  // overworld's region folder over DIM-1/DIM1
   const prefixes = new Set()
   for (const p of files.keys()) {
     const m = p.match(/^(.*?)region\/r\.-?\d+\.-?\d+\.mca$/)
@@ -34,7 +27,6 @@ export async function readWorldZip(buf) {
     try { name = (await readNBT(await unzipEntry(levelEntry))).Data?.LevelName ?? "" } catch {}
   }
 
-  // chunk presence straight from the 8KB region headers, no chunk decoding
   const regionBufs = new Map()
   const chunks = []
   for (const [p, entry] of files) {
@@ -48,8 +40,6 @@ export async function readWorldZip(buf) {
   }
   if (!chunks.length) throw new Error("the region files contain no chunks")
 
-  // structure-block saves live in generated/<ns>/structures: list them under
-  // the world's own tree root, keeping any custom namespace
   const structures = new Map()
   for (const [p, entry] of files) {
     const m = p.match(/^(.*?)generated\/([^/]+)\/structures\/(.+)\.nbt$/)
@@ -59,6 +49,7 @@ export async function readWorldZip(buf) {
   return { name, regionBufs, chunks, structures }
 }
 
+// the 8KB region header holds 1024 chunk location entries
 function scanRegion(bytes, rx, rz, key, chunks) {
   const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
   for (let i = 0; i < 1024; i++) {
@@ -67,7 +58,6 @@ function scanRegion(bytes, rx, rz, key, chunks) {
   }
 }
 
-// a bare region file: coordinates come from the r.X.Z.mca name when present
 export function readRegionFile(buf, fileName) {
   const bytes = new Uint8Array(buf)
   if (bytes.length < 8192) throw new Error("not a region file")
@@ -93,8 +83,7 @@ async function readChunk(world, chunk) {
   throw new Error(`unsupported chunk compression ${method}`)
 }
 
-// block entity nbt reaches the modal's JSON dump: BigInts and typed arrays
-// don't survive that, so flatten to plain data
+// the modal's JSON dump can't take BigInts or typed arrays
 function plain(v) {
   if (typeof v === "bigint") return Number(v)
   if (v instanceof Uint8Array) return Array.from(v)
@@ -122,8 +111,6 @@ export async function buildSelection(world, selected, { yMin = -Infinity, yMax =
     minCx = Math.min(minCx, c.cx); maxCx = Math.max(maxCx, c.cx)
     minCz = Math.min(minCz, c.cz); maxCz = Math.max(maxCz, c.cz)
   }
-  // the vertical span only covers sections that hold any non-air blocks and
-  // survive the y cutoffs
   const inRange = s => s.Y * 16 + 15 >= yMin && s.Y * 16 <= yMax
   let minSec = Infinity, maxSec = -Infinity
   for (const { nbt } of parsed) {
@@ -151,7 +138,6 @@ export async function buildSelection(world, selected, { yMin = -Infinity, yMax =
     return i
   }
 
-  // block entities first, so blocks can pick their nbt up in one pass
   const beMap = new Map()
   for (const { nbt } of parsed) {
     for (const be of nbt.block_entities ?? []) {

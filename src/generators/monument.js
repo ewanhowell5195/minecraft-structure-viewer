@@ -1,15 +1,6 @@
 import { HORIZ, rnd, shuffle } from "../transforms.js"
 
-// ocean monument (OceanMonumentPieces): a full code port, one-shot. the
-// building rolls a room graph on a 5x5(x3) grid, prunes connections while
-// keeping everything reachable from the source room, then fits double/simple
-// rooms over the unclaimed cells. postProcess order is the game's: building
-// shell first, then child pieces in creation order, last write wins.
-// generateWaterBox floods cells below sea level with water and carves air at
-// or above it; there is no pre-existing ocean here so every flooded cell is
-// emitted as a water block. fillColumnDown is capped at the piece floor (no
-// terrain). the three elder guardians the wings and penthouse spawn ride
-// along as entities.
+// ocean monument (OceanMonumentPieces): postProcess order is the game's, shell then children, last write wins
 
 // direction indices match Direction.get3DDataValue; opposite is i ^ 1
 const DOWN = 0, UP = 1, NORTH = 2, SOUTH = 3, WEST = 4, EAST = 5
@@ -88,17 +79,14 @@ const boxFromCorners = (a, b) => ({
   maxX: Math.max(a[0], b[0]), maxY: Math.max(a[1], b[1]), maxZ: Math.max(a[2], b[2])
 })
 
-// the default (seed 0) load aliases to a hand-picked layout: all three entry
-// doorways open and every elder guardian room a short unblocked path away.
-// seed 0 itself walls the entry off on two sides and buries one wing
+// seed 0 aliases to a hand-picked layout with an open entry and reachable elders
 const DEFAULT_SEED = 154
 
 export async function runMonument(loadStruct, { maxDepth = Infinity, seed, stats } = {}) {
   const rand = rnd(seed === 0 ? DEFAULT_SEED : seed ?? (Math.random() * 0x100000000) >>> 0)
   const ni = n => Math.floor(rand() * n)
 
-  // the tree's default load always faces the entrance north ("south" piece
-  // orientation): the roll is still consumed so the layout stays the same
+  // seed 0 forces the entrance north; the roll is still consumed
   const rolled = HORIZ[ni(4)]
   const direction = seed === 0 ? "south" : rolled
   const building = { dir: direction, box: makeBox(0, 39, 0, direction, 58, 23, 58) }
@@ -116,8 +104,7 @@ export async function runMonument(loadStruct, { maxDepth = Infinity, seed, stats
   const cells = new Map()
   const key = (x, y, z) => x + "," + y + "," + z
 
-  // StructurePiece local -> world (setOrientation mirror/rotation only affects
-  // block states, and every monument block is stateless, so positions suffice)
+  // setOrientation only affects block states, and every monument block is stateless
   const worldX = (p, x, z) => p.dir === "west" ? p.box.maxX - z : p.dir === "east" ? p.box.minX + z : p.box.minX + x
   const worldY = (p, y) => p.box.minY + y
   const worldZ = (p, x, z) => p.dir === "north" ? p.box.maxZ - z : p.dir === "south" ? p.box.minZ + z : p.box.minZ + x
@@ -181,8 +168,7 @@ export async function runMonument(loadStruct, { maxDepth = Infinity, seed, stats
         if (nx < 0 || nx >= 5 || nz < 0 || nz >= 5 || ny < 0 || ny >= 3) continue
         const neigh = roomGrid[getRoomIndex(nx, ny, nz)]
         if (!neigh) continue
-        // the game flips the direction for z-axis neighbours, so "north"
-        // connections point to grid z + 1
+        // the game flips the direction for z-axis neighbours ("north" points to z + 1)
         if (nz === z) setConnection(roomGrid[pos], dir, neigh)
         else setConnection(roomGrid[pos], dir ^ 1, neigh)
       }
@@ -240,8 +226,6 @@ export async function runMonument(loadStruct, { maxDepth = Infinity, seed, stats
   if (stats) {
     stats.sourceSides = [NORTH, WEST, EAST].filter(d => sourceRoom.hasOpening[d]).length
     stats.total = roomDefs.reduce((a, d) => a + d.hasOpening.filter(Boolean).length, 0)
-    // breadth-first distances from the entry to the elder rooms (both wings
-    // and the penthouse), through open doorways
     const dist = new Map([[sourceRoom, 0]])
     const queue = [sourceRoom]
     while (queue.length) {
@@ -1184,8 +1168,7 @@ export async function runMonument(loadStruct, { maxDepth = Infinity, seed, stats
       if (pillarZ === 0 && pillarX === 3) pillarZ = 6
       const bx = pillarX * 9
       const bz = pillarZ * 9
-      // fillColumnDown grows these bases toward the sea floor in game; with
-      // no terrain they become 4-block legs the monument stands on
+      // fillColumnDown bases; with no terrain they become 4-block legs
       for (let w = 0; w < 4; w++) for (let d = 0; d < 4; d++) {
         for (let y = 0; y >= -4; y--) placeBlock(b, BASE_LIGHT, bx + w, y, bz + d)
       }
@@ -1206,14 +1189,11 @@ export async function runMonument(loadStruct, { maxDepth = Infinity, seed, stats
   }
   for (const child of childPieces) {
     childPost[child.kind](child)
-    // the wing rooms and penthouse spawn their elder guardians directly
     if (child.kind === "wing") spawnElder(child, 11, child.mainDesign === 0 ? 2 : 5, child.mainDesign === 0 ? 16 : 13)
     if (child.kind === "penthouse") spawnElder(child, 6, 1, 6)
   }
 
-  // ---- normalise to a structure. the water only exists so generation
-  // carves like the game (doorways are water boxes); it stays out of the
-  // output so the monument shows dry
+  // ---- normalise; the water only exists to carve like the game, dropped from output
 
   const dropped = c => palette[c.state].Name === AIR || palette[c.state].Name === WATER
   const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity]

@@ -1,14 +1,9 @@
-// Shared plumbing for the game-code extractors (tools/builtin, tools/features):
-// version resolution, the download cache, server-bundler classpath extraction,
-// the javac/java pipeline helpers, and the bundle dirs the public zips pack
-// from (loose files under bundled/ so git tracks the actual contents).
 import fs from "node:fs"
 import path from "node:path"
 import { readZip, unzipEntry, writeZip } from "./zip.js"
 
 const MANIFEST = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json"
 
-// replace a bundle dir with the given rel -> bytes map
 export function writeBundle(dir, files) {
   fs.rmSync(dir, { recursive: true, force: true })
   for (const [rel, bytes] of files) {
@@ -18,8 +13,7 @@ export function writeBundle(dir, files) {
   }
 }
 
-// pack a bundle dir into a zip; sorted entries and a timestamp-free writer
-// keep the bytes stable, so the committed zip only churns with real changes
+// sorted entries + timestamp-free writer keep the zip bytes stable, so it only churns with real changes
 export function packBundle(dir, zipPath) {
   const files = new Map()
   for (const rel of walk(dir).sort()) files.set(rel, fs.readFileSync(path.join(dir, rel)))
@@ -77,7 +71,6 @@ export function walk(dir, base = dir, out = []) {
   return out
 }
 
-// resolve the version (downloading if uncached) and assemble the classpath
 export async function prepareVersion(cache, requestedId, log) {
   let id = requestedId
   if (!id || !fs.existsSync(path.join(cache, id, "server.jar"))) {

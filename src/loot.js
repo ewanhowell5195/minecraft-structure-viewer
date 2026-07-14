@@ -1,28 +1,18 @@
 import { loadLibrary } from "./lib.js"
 import { usePacks } from "./composables/usePacks.js"
 
-// Loot tables: read from the pack data, roll them client-side, and describe
-// their rules for display. The roller covers what chest tables actually use
-// (constant/uniform/binomial numbers, weighted entries, nested tables,
-// set_count and the flavour functions); anything unknown passes through as
-// a plain item.
 const packs = usePacks()
 
 const strip = s => typeof s === "string" ? s.replace(/^minecraft:/, "") : s
 
-// every block whose contents the container modal can show
 export const isContainer = name =>
   /(^|_)(chest|barrel|shulker_box|dispenser|dropper|hopper)$/.test((name || "").replace(/^minecraft:/, ""))
 
-// blocks the modal can inspect: containers plus the technical blocks whose
-// nbt is worth reading
 export const isInspectable = name =>
   isContainer(name) || /(^|_)(command_block|structure_block|jigsaw)$/.test((name || "").replace(/^minecraft:/, ""))
 
 export const prettyName = n => strip(n).replace(/_/g, " ").replace(/(^|\s)[a-z]/g, c => c.toUpperCase())
 
-// tables are static per pack set, so cache the parsed JSON (sampling opens a
-// table thousands of times); the cache drops whenever the packs change
 const tableCache = new Map()
 let tableCacheVersion = -1
 
@@ -47,8 +37,7 @@ async function readLootTableRaw(id) {
   return null
 }
 
-// trial spawner configs live in the trial_spawner datapack registry; block
-// entities usually hold just the reference id, but inline objects are legal
+// block entities usually hold the registry id, but inline config objects are legal
 export async function readTrialSpawnerConfig(ref) {
   if (!ref) return null
   if (typeof ref === "object") return ref
@@ -61,7 +50,6 @@ export async function readTrialSpawnerConfig(ref) {
   } catch { return null }
 }
 
-// number providers: plain number, {min,max} (uniform), constant, binomial
 function rollNum(n, int = false) {
   if (n == null) return 1
   if (typeof n === "number") return n
@@ -135,7 +123,6 @@ async function rollInto(table, out) {
   }
 }
 
-// -> [{ id, count, enchanted?, components? }]
 export async function rollLoot(table) {
   const out = []
   await rollInto(table, out)
@@ -144,10 +131,6 @@ export async function rollLoot(table) {
 
 export const stackKey = s => s.id + "|" + JSON.stringify(s.components ?? null)
 
-// what can this table drop, and how often? measured by opening it `opens`
-// times with the real roller, so nested tables, alternatives, binomial
-// rolls and conditions all count for exactly what they do in a real roll.
-// -> [{ id, components, chance, avg, min, max }] sorted most common first
 export async function sampleTable(table, opens = 10000) {
   const tally = new Map()
   const perOpen = new Map()
@@ -169,8 +152,8 @@ export async function sampleTable(table, opens = 10000) {
   return Array.from(tally.values()).map(t => ({
     id: t.id,
     components: t.components,
-    chance: t.hits / opens,   // odds an open contains it at all
-    avg: t.total / t.hits,    // how many you get when it drops
+    chance: t.hits / opens,
+    avg: t.total / t.hits,
     min: t.min,
     max: t.max
   })).sort((a, b) => b.chance - a.chance || strip(a.id).localeCompare(strip(b.id)))
@@ -186,7 +169,6 @@ function fmtNum(n) {
   return String(n.value ?? 1)
 }
 
-// rules view for the modal: per pool, the rolls and each entry's odds
 export function describeTable(table) {
   return (table.pools ?? []).map(pool => {
     const entries = pool.entries ?? []

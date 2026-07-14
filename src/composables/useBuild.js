@@ -19,8 +19,6 @@ const { lock } = useLock()
 
 const AIR = /(^|:)(air|cave_air|void_air|structure_void)$/
 
-// structures saved in older versions use block names that were later renamed;
-// the pack only has the current names. exact-id lookups, common cases only
 const LEGACY_RENAMES = {
   grass: "short_grass",
   grass_path: "dirt_path",
@@ -29,8 +27,6 @@ const LEGACY_RENAMES = {
   wall_sign: "oak_wall_sign"
 }
 
-// display option: technical blocks resolved away, like the game after
-// generation: jigsaws become their final_state, structure blocks disappear
 const SB = /(^|:)structure_block$/
 function stripStructureBlocks(structure) {
   function isTech(b) {
@@ -75,18 +71,12 @@ function fixLegacyProps(name, props) {
   return props
 }
 
-// fluid cells: corner heights depend on the neighbourhood, so each distinct
-// surface shape gets a synthetic palette entry carrying its heights; identical
-// cells (open water, full columns) still share one template. the library
-// decides what counts as a fluid cell (fluids, waterlogged states, and
-// inherently water-filled blocks like kelp or bubble columns)
 async function remapFluidStates(structure, lib, assets) {
   const byPos = new Map()
   for (const b of structure.blocks) byPos.set(b.pos.join(","), b)
   const byKey = new Map()
   structure.palette.forEach((e, i) => { if (e?.__fluidKey) byKey.set(e.__fluidKey, i) })
-  // hot caches resolve every await as a microtask, which never yields the
-  // event loop: force real yields so water-heavy loads don't freeze the page
+  // hot caches resolve awaits as microtasks: force real yields or heavy loads freeze the page
   let seen = 0
   for (const b of structure.blocks) {
     if (++seen % 2000 === 0) {
@@ -133,9 +123,6 @@ async function remapFluidStates(structure, lib, assets) {
   }
 }
 
-// DEV: blocks whose models match a registered custom loader build per
-// placement (connected variants from neighbours, block entity content from
-// nbt); same synthetic-palette trick as fluids. no-op with no loaders
 async function remapLoaderStates(structure, lib, assets) {
   const loaders = lib.ModelLoader?.list() ?? []
   if (!loaders.length) return
@@ -191,8 +178,6 @@ export const NOON = 6000
 
 const state = reactive({
   lighting: "world",
-  // world lighting without the flood-filled volume: everything renders at
-  // full light (daytime has nothing to modulate, so its slider hides)
   fullbright: false,
   daytime: NOON,
   hideStructureBlocks: localStorage.getItem("hideStructureBlocks") !== "false",
@@ -204,9 +189,6 @@ const state = reactive({
   warn: null // { seconds } while a slow-build confirmation is showing
 })
 
-// slow-build warning: estimates come from this machine's measured rates
-// (ms per block for the template pass and the optimise pass, EMA over
-// completed builds); with no history yet, the build phase self-samples
 const WARN_MS = 10000
 const PERF_KEY = "buildPerf2" // v2: rates are per non-air block
 
@@ -235,15 +217,10 @@ function answerWarn(ok) {
   warnResolve = null
 }
 
-// One live uniform shared by every world-lighting material: seeding it into a
-// template group's userData before loadModel makes the library reuse it (and
-// optimizeScene re-shares it onto atlas materials), so changing state.daytime
-// re-lights the whole scene with no rebuild.
+// seeded into template userData so the library shares one live uniform: daytime changes re-light with no rebuild
 const daytimeUniform = { value: NOON }
 watch(() => state.daytime, v => { daytimeUniform.value = v })
 
-// fullbright parks daytime at noon and hands the chosen time back when it
-// turns off (the slider is hidden while it holds the value)
 let savedDaytime = NOON
 watch(() => state.fullbright, on => {
   if (on) {
@@ -254,9 +231,6 @@ watch(() => state.fullbright, on => {
   }
 })
 
-// ---- openable blocks (doors/trapdoors/gates): never baked into the merged
-// mesh. both open + closed models are pre-built and a toggle just flips which
-// clone is visible, so no rebuild is needed.
 const OPENABLE = /(^|:)([a-z_]+_)?(door|trapdoor|fence_gate)$/
 const isDoorName = name => /(^|:)([a-z_]+_)?door$/.test(name) && !/trapdoor$/.test(name)
 const isOpenable = e => !!(e?.Properties && "open" in e.Properties && OPENABLE.test(e.Name || ""))
@@ -273,20 +247,17 @@ if (typeof window !== "undefined") window.__vroot = () => root
 let animator = null
 let templates = null
 let nonSolid = new Set()
-let atlasTextures = [] // the displayed atlases; swapped + disposed on rebuild
-let sceneLight = null // the displayed build's light volume; swapped + disposed like the atlases
-let entityMarkers = [] // billboarded entities: { e, x, y, z } in root-local coords
+let atlasTextures = []
+let sceneLight = null
+let entityMarkers = [] // root-local coords
 let markerTextures = []
 let doorByCell = new Map()
 let blockMap = null, blockMapFor = null
 
-// slice builds keep the full build hidden instead of disposing it, so a
-// slicer drag can reveal blocks instantly (clipped live) and slicers
-// turning off swap it straight back without a rebuild
+// the full build kept hidden during slice display, so slicers can swap back without a rebuild
 let fullBundle = null
 let rootSliced = false
 
-// palette index for the same block with a different `open` value (added if new)
 function stateWithOpen(structure, stateIdx, open) {
   const e = structure.palette[stateIdx], props = { ...e.Properties, open }
   let idx = structure.palette.findIndex(pe => pe.Name === e.Name && sameProps(pe.Properties, props))
@@ -297,8 +268,6 @@ function stateWithOpen(structure, stateIdx, open) {
   return idx
 }
 
-// cell -> block index, lazily rebuilt per structure (walk mode asks what
-// block is at a world point: ladders, and which door is being looked at)
 function cellIndex() {
   const structure = current.value
   if (blockMapFor !== structure) {
@@ -309,8 +278,7 @@ function cellIndex() {
   return blockMap
 }
 
-// block geometry is centred on i*16, so the cell is the NEAREST multiple of
-// 16: round, not floor, else every block straddles two cells
+// geometry is centred on i*16: round, not floor, else every block straddles two cells
 const cellOf = (wx, wy, wz) => [Math.round((wx - root.position.x) / 16), Math.round((wy - root.position.y) / 16), Math.round((wz - root.position.z) / 16)]
 
 function blockAt(wx, wy, wz) {
@@ -321,13 +289,8 @@ function blockAt(wx, wy, wz) {
   return i == null ? null : structure.palette[structure.blocks[i].state]
 }
 
-// openable blocks render as ONE InstancedMesh per unique MODEL per template
-// mesh, not per-block clone groups: a build with hundreds of trapdoors was
-// thousands of draw calls. states that differ only by blockstate rotation
-// (facing etc.) share one canonical unrotated template, with the rotation
-// folded into each instance matrix (the shader lights from instance-space
-// normals, so shading stays correct). a hidden instance is collapsed to zero
-// scale, so toggling stays a matrix write with no rebuild
+// rotation-only state variants share one unrotated template, the rotation folded
+// into each instance matrix; hidden instances collapse to zero scale
 let doorSlots = new Map() // canonKey -> { count, meshes: InstancedMesh[] }
 let stateRender = new Map() // stateIdx -> { key, rot: Matrix4 }
 let canonDoorTmpl = new Map() // canonKey -> template Group
@@ -352,8 +315,6 @@ function attachDoors(entries) {
   doorByCell = new Map()
   doorSlots = new Map()
   if (!entries.length) return 0
-  // an instance slot per placement of each open/closed state, in the state's
-  // canonical group
   function slotFor(stateIdx) {
     const key = stateRender.get(stateIdx).key
     let s = doorSlots.get(key)
@@ -375,8 +336,7 @@ function attachDoors(entries) {
       const im = new THREE.InstancedMesh(o.geometry, o.material, s.count)
       im.userData.baseMatrix = o.matrixWorld.clone()
       im.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
-      // instances spread across the structure; the geometry's own bounds
-      // would frustum-cull them all wrongly
+      // geometry bounds would frustum-cull the spread instances wrongly
       im.frustumCulled = false
       for (let i = 0; i < s.count; i++) im.setMatrixAt(i, _dzero)
       root.add(im)
@@ -398,12 +358,7 @@ function attachDoors(entries) {
   return draws
 }
 
-// structure entities whose id also resolves as a block (the cushion
-// overrides, straw-bed-style blocks) render as live models at the entity's
-// exact position: no cull faces, never a neighbour to anything, no collision.
-// yaw snaps to the nearest cardinal like the game's Direction.fromYRot.
-// everything else gets a billboarded spawn-egg marker inside a fixed
-// 14x14x14 hitbox so its existence and nbt are visible/clickable
+// yaw snaps to the nearest cardinal like the game's Direction.fromYRot
 const ENTITY_BOX = 14
 
 async function entityMarkerTexture(lib, assets, name) {
@@ -436,8 +391,6 @@ async function entityMarkerTexture(lib, assets, name) {
   return tex
 }
 
-// the in-game nametag: white minecraft-font text on a translucent plate,
-// floating above the entity
 async function nameTagSprite(text) {
   try {
     const font = await getFont()
@@ -474,7 +427,7 @@ async function attachEntities(structure, lib, assets) {
   let draws = 0
   const groupCache = new Map()
   const texCache = new Map()
-  const sprites = [] // marker entities, deferred so overlapping ones merge
+  const sprites = []
   entityMarkers = []
   for (const e of structure.entities ?? []) {
     const id = e.nbt?.id
@@ -489,8 +442,6 @@ async function attachEntities(structure, lib, assets) {
     if (template === undefined) {
       template = null
       try {
-        // coloured entity forms (cushions) have no blockstate of their own:
-        // the entity's colour picks the per-colour block, white when unset
         let blockId = null
         if (await lib.readFile(`assets/${ns}/blockstates/${name}.json`, assets)) blockId = id
         else {
@@ -509,8 +460,7 @@ async function attachEntities(structure, lib, assets) {
       } catch {}
       groupCache.set(key, template)
     }
-    // block units -> world: cell centres sit at pos*16, cells span +-8, so a
-    // point maps to pos*16 - 8; the template's bottom is -8, hence y stays
+    // cells centre at pos*16 and span +-8, so a point maps to pos*16 - 8; templates bottom at -8, so y stays
     const wx = e.pos[0] * 16 - 8, wy = e.pos[1] * 16, wz = e.pos[2] * 16 - 8
     if (template) {
       const g = groupCache.get(key).clone()
@@ -523,9 +473,6 @@ async function attachEntities(structure, lib, assets) {
     sprites.push({ e, name, wx, wy, wz })
   }
 
-  // markers whose click hitboxes overlap merge: one marker at the centre of
-  // the group, every icon composited into the same billboard (first in the
-  // middle, each next one a pixel up, left and behind)
   const clusters = []
   const touches = (a, b) => Math.abs(a.wx - b.wx) < ENTITY_BOX && Math.abs(a.wy - b.wy) < ENTITY_BOX && Math.abs(a.wz - b.wz) < ENTITY_BOX
   for (const s of sprites) {
@@ -563,11 +510,8 @@ async function attachEntities(structure, lib, assets) {
       tex.magFilter = THREE.NearestFilter
       markerTextures.push(tex)
     }
-    // opaque pass + alpha test, not transparent: a blended sprite writes
-    // depth for its empty pixels (holes in water) and sorts against other
-    // transparents by centre distance (pops in front from behind). unlike
-    // every other material, SpriteMaterial defaults transparent to TRUE, so
-    // it must be forced off explicitly
+    // alpha test, not blending: a blended sprite writes depth for empty pixels and
+    // mis-sorts; SpriteMaterial defaults transparent to TRUE, so force it off
     const mat = tex
       ? new THREE.SpriteMaterial({ map: tex, alphaTest: 0.5, transparent: false })
       : new THREE.SpriteMaterial({ color: 0xffffff, opacity: 0.4 })
@@ -584,7 +528,6 @@ async function attachEntities(structure, lib, assets) {
   return draws
 }
 
-// mob spawners show their entity's spawn egg floating inside the cage
 async function attachSpawnerEggs(structure, lib, assets) {
   let draws = 0
   const texCache = new Map()
@@ -610,7 +553,6 @@ async function attachSpawnerEggs(structure, lib, assets) {
   return draws
 }
 
-// the fixed hitbox anchored at the entity's feet, taller for a stack
 function boxForEntity(m) {
   _aimBox.min.set(m.x - ENTITY_BOX / 2, m.y, m.z - ENTITY_BOX / 2)
   _aimBox.max.set(m.x + ENTITY_BOX / 2, m.y + (m.h ?? ENTITY_BOX), m.z + ENTITY_BOX / 2)
@@ -618,8 +560,6 @@ function boxForEntity(m) {
   return _aimBox
 }
 
-// nearest entity hitbox along a picking ray, ignoring anything past maxDist
-// (a mesh hit in front). the sprite quad itself never decides the hit
 const _markerV = new THREE.Vector3()
 function markerUnderRay(ray, maxDist) {
   let best = null, bestD = maxDist
@@ -635,8 +575,6 @@ function markerUnderRay(ray, maxDist) {
   return best
 }
 
-// flip an openable block (and the other door half): swap the instance
-// matrices and repoint its state so collision boxes follow
 function toggleDoor(reg) {
   const structure = current.value
   const open = structure.palette[reg.b.state].Properties.open !== "true"
@@ -649,7 +587,6 @@ function toggleDoor(reg) {
   return regs.map(r => r.b)
 }
 
-// ray vs axis-aligned box: entry t, or null when it misses
 function rayBoxT(ox, oy, oz, dx, dy, dz, x0, y0, z0, x1, y1, z1) {
   let tmin = 0, tmax = Infinity
   for (const [o, d, a, b] of [[ox, dx, x0, x1], [oy, dy, y0, y1], [oz, dz, z0, z1]]) {
@@ -666,12 +603,8 @@ function rayBoxT(ox, oy, oz, dx, dy, dz, x0, y0, z0, x1, y1, z1) {
   return tmin
 }
 
-// per-state collision AABBs (template mesh boxes, block-centred local
-// coords), the same shapes the walker collides with. flat-plane models
-// (plants, rails...) have none, so they never block the ray. the library
-// merges multi-element models into one mesh per material, so merged groups
-// carry the per-element boxes in userData.collision (a stair keeps its
-// stepped boxes instead of collapsing into a full cube)
+// block-centred local coords; merged meshes carry per-element boxes in
+// userData.collision, so a stair keeps its stepped boxes
 let collBoxCache = new Map()
 const _cb = new THREE.Box3()
 function templateBoxes(tmpl, arr) {
@@ -708,11 +641,8 @@ const GATE = /_fence_gate$/
 const gateOpen = e => !!(e?.Name && GATE.test(e.Name) && e.Properties?.open === "true")
 
 
-// march the look ray; return the first interactable whose vanilla shape the
-// ray actually crosses: an openable ({ door }) or a loot container
-// ({ container }). the ray is blocked by real collision boxes, not whole
-// cells, so it passes over slabs and through gaps like the game; a plain
-// blocker comes back as { block } for the aim readout
+// returns { door }, { container }, { entity } or a plain { block }; blocked by
+// real collision boxes, not whole cells, so it passes gaps like the game
 const _aimBox = new THREE.Box3()
 function rayHit(ox, oy, oz, dx, dy, dz, REACH = 80) {
   const structure = current.value
@@ -761,9 +691,7 @@ function rayHit(ox, oy, oz, dx, dy, dz, REACH = 80) {
   return entM ? { entity: entM } : null
 }
 
-// act on the thing being looked at: toggles a door ({ toggled: blocks }),
-// hands back a loot container block or { entity }, or false when nothing
-// is in reach
+// { toggled: blocks }, { entity }, a container block, or false
 function interact(ox, oy, oz, dx, dy, dz) {
   const h = rayHit(ox, oy, oz, dx, dy, dz)
   if (h?.door) return { toggled: toggleDoor(h.door) }
@@ -771,12 +699,8 @@ function interact(ox, oy, oz, dx, dy, dz) {
   return h?.container ?? false
 }
 
-// vanilla interaction shapes for every clickable block, fixed so resource
-// pack remodels can't change them. doors/trapdoors are a 3px panel on the
-// face OPPOSITE the shape direction (DoorBlock/TrapDoorBlock boxZ(16,13,16)):
-// door closed -> facing, open -> hinge-rotated; trapdoor closed -> half,
-// open -> facing. gates are a full-width 4px band (13 tall in a wall),
-// chests the 14-wide body without the knob, the rest a full cube
+// vanilla interaction shapes, fixed so pack remodels can't change them; the 3px
+// panel sits on the face OPPOSITE the shape direction (DoorBlock boxZ(16,13,16))
 const PANEL = {
   north: [0, 0, 13, 16, 16, 16],
   south: [0, 0, 0, 16, 16, 3],
@@ -818,7 +742,6 @@ function boxForBlock(b) {
   return _aimBox
 }
 
-// box of the interactable being looked at (in-reach outline)
 function aimDoor(ox, oy, oz, dx, dy, dz) {
   const h = rayHit(ox, oy, oz, dx, dy, dz)
   if (!h) return null
@@ -826,7 +749,6 @@ function aimDoor(ox, oy, oz, dx, dy, dz) {
   return boxForBlock(h.door ? h.door.b : h.container)
 }
 
-// the raw structure block at a world position (orbit-mode picking)
 function blockEntryAt(wx, wy, wz) {
   const structure = current.value
   if (!structure || !root) return null
@@ -835,10 +757,7 @@ function blockEntryAt(wx, wy, wz) {
   return i == null ? null : structure.blocks[i]
 }
 
-// real world-space collision AABBs of the current structure: one per model
-// element (a stair yields its stepped boxes, a slab a half box), per block.
-// each box carries its block's cell key so a door toggle can swap just that
-// cell's boxes in the walker's spatial hash
+// each box carries its cell key so a door toggle can swap one cell in the walker's hash
 function blockBoxes(b) {
   const structure = current.value
   const out = []
@@ -866,8 +785,7 @@ function disposeGroup(g) {
     if (!o.isMesh || o.userData.shared) return
     if (o.isInstancedMesh) o.dispose()
     o.geometry?.dispose()
-    // only textures created for this mesh (sign text canvases): atlas and
-    // library-cached textures are managed elsewhere
+    // ownsMap: sign canvases only; atlas and library textures are managed elsewhere
     if (o.userData.ownsMap) o.material?.map?.dispose?.()
     for (const m of [].concat(o.material)) m?.dispose?.()
   })
@@ -888,8 +806,6 @@ function discardFull() {
   fullBundle = null
 }
 
-// flips between the sliced root and the kept full build (the slicers' drag
-// preview); false when there is no full build to show
 function showFull(on) {
   if (!fullBundle || !root) return false
   fullBundle.group.visible = !!on
@@ -899,7 +815,6 @@ function showFull(on) {
   return true
 }
 
-// slicers all off: the kept full build becomes the primary again, no rebuild
 function restoreFull() {
   if (!fullBundle || state.building) return false
   const old = root, oldTex = atlasTextures, oldMarkerTex = markerTextures, oldAnimator = animator, oldLight = sceneLight
@@ -923,8 +838,6 @@ function restoreFull() {
   return true
 }
 
-// cancelling reverts to whatever was on screen: the flag is checked at every
-// yield point, and abort() undoes the state build() had already claimed
 let cancelBuild = false
 function cancel() {
   if (!state.building) return
@@ -932,8 +845,7 @@ function cancel() {
   state.status = "cancelling…"
 }
 
-// returns true when a build landed, false when it was cancelled. slice
-// builds (from the slicers settling) cut the hidden blocks out for real
+// true when a build landed, false when cancelled
 async function build(structure = source, refit = true, slice = false) {
   const assets = packs.assets.value
   if (!assets || !structure || state.building) return
@@ -952,15 +864,13 @@ async function build(structure = source, refit = true, slice = false) {
   }
   try {
     source = structure
-    // whether the show/hide toggle has anything to act on
     const techStates = new Set()
     structure.palette.forEach((e, i) => {
       if (e?.Name && (JIGSAW.test(e.Name) || SB.test(e.Name))) techStates.add(i)
     })
     state.hasStructureBlocks = techStates.size > 0 && structure.blocks.some(b => techStates.has(b.state))
     if (state.hideStructureBlocks) structure = stripStructureBlocks(structure)
-    // a slice build drops the hidden blocks so the mesher produces solid cut
-    // faces; the size (and so position and grid) stays the full structure's
+    // sliced blocks are dropped for real (solid cut faces); size and position stay the full structure's
     const unsliced = structure
     if (slice) structure = useSlicers().sliceStructure(structure)
     const slicedApplied = structure !== unsliced
@@ -969,9 +879,7 @@ async function build(structure = source, refit = true, slice = false) {
     const [sx, sy, sz] = structure.size
     state.status = "building…"
 
-    // per-block light: flood filled over what actually builds, so a slice
-    // relights the cutaway (sky pours into the cut, sliced-away torches go
-    // out). oversized scenes skip it rather than allocating a huge volume
+    // flood filled over what actually builds, so a slice relights; oversized scenes skip it
     if (state.lighting === "world" && !state.fullbright && lib.computeSceneLight && (sx + 2) * (sy + 2) * (sz + 2) <= 48000000) {
       const lightBlocks = []
       for (const b of structure.blocks) {
@@ -1005,12 +913,9 @@ async function build(structure = source, refit = true, slice = false) {
         try {
           const name = LEGACY_RENAMES[entry.Name.replace("minecraft:", "")] ?? entry.Name
           const props = fixLegacyProps(name.replace("minecraft:", ""), entry.Properties)
-          // __block only exists on loader-variant entries; plain blocks still
-          // need one so the library can apply their in-game light emission
+          // plain blocks need a block too, for the library's light emission
           const block = entry.__block ?? { id: name, properties: props ?? {} }
-          // ignoreAtlases: real blocks, skip the per-texture atlas membership reads.
-          // a model built only from flat planes (cross plants, vines, ladders,
-          // rails) has no collision in game, so it shouldn't block the walker
+          // all-plane models (plants, vines, rails) have no collision in game
           let any = false, allPlanes = true
           for (const model of await lib.parseBlockstate(assets, name, { data: props ?? {}, ignoreAtlases: true })) {
             const data = await lib.resolveModelData(assets, model)
@@ -1025,8 +930,6 @@ async function build(structure = source, refit = true, slice = false) {
       return tmpl
     }
 
-    // everything from here iterates real blocks only: air renders nothing,
-    // and yielding across millions of air entries is genuinely slow
     const isAirState = structure.palette.map(e => !e?.Name || AIR.test(e.Name))
     const solid = []
     for (const b of structure.blocks) {
@@ -1034,9 +937,6 @@ async function build(structure = source, refit = true, slice = false) {
     }
     const total = solid.length
 
-    // slow-build gate: with calibration the whole pipeline is estimable up
-    // front; without it the template pass below self-samples. cancelling
-    // reverts exactly like the cancel button
     const perfCal = loadPerf()
     let warnedOnce = false
     if (perfCal) {
@@ -1048,11 +948,9 @@ async function build(structure = source, refit = true, slice = false) {
     }
     const tBuild = performance.now()
 
-    // fluid surfaces shape themselves from their neighbourhood
     if (lib.fluidHeights) await remapFluidStates(structure, lib, assets)
     if (lib.ModelLoader) await remapLoaderStates(structure, lib, assets)
 
-    // build every template up front (the optimiser reads them all)
     let placedCount = 0
     let sampleAt = null, tSample = 0
     state.progress = { phase: "build", done: 1500, total: 10000 }
@@ -1064,9 +962,7 @@ async function build(structure = source, refit = true, slice = false) {
         await yieldTask()
         if (cancelBuild) return abort()
         if (!warnedOnce && !perfCal) {
-          // sample the marginal rate only after the cold start: template
-          // building is per-state and front-loaded, so a cumulative average
-          // projects absurd totals for palette-heavy scenes
+          // marginal rate after the cold start: a cumulative average projects absurd totals
           if (sampleAt === null) {
             if (performance.now() - tBuild > 400) {
               sampleAt = i + 1
@@ -1081,7 +977,6 @@ async function build(structure = source, refit = true, slice = false) {
               warnedOnce = true
               if (!await askWarn(projected)) return abort()
             } else {
-              // fast enough: stop checking
               warnedOnce = true
             }
           }
@@ -1091,14 +986,11 @@ async function build(structure = source, refit = true, slice = false) {
     state.progress = { phase: "build", done: 10000, total: 10000 }
     if (cancelBuild) return abort()
 
-    // centre, snapped so every block fills a whole grid cell: templates are
-    // block-centred, so a centre ≡ 8 (mod 16) keeps blocks on the lattice
+    // a centre ≡ 8 (mod 16) keeps block-centred templates on the grid lattice
     const gridCentre = v => Math.round((v - 8) / 16) * 16 + 8
     const position = new THREE.Vector3(gridCentre(-(sx - 1) * 8), gridCentre(-(sy - 1) * 8), gridCentre(-(sz - 1) * 8))
     newLight?.setOffset(position)
 
-    // openable blocks render live (both models pre-built): keep them out of
-    // the optimised static mesh
     const doorEntries = []
     for (const b of structure.blocks) {
       if (!isOpenable(structure.palette[b.state])) continue
@@ -1110,10 +1002,7 @@ async function build(structure = source, refit = true, slice = false) {
       if (cancelBuild) return abort()
     }
 
-    // canonical grouping: states whose single variant differs only by
-    // blockstate rotation share an unrotated template; anything else (missing
-    // model, multiple parts like waterlogged, uvlock rotation that bakes UVs)
-    // falls back to its own per-state template with an identity rotation
+    // multi-part states and uvlock rotations (baked UVs) can't share: per-state fallback
     stateRender = new Map()
     canonDoorTmpl = new Map()
     for (const e of doorEntries) {
@@ -1155,9 +1044,7 @@ async function build(structure = source, refit = true, slice = false) {
 
     const optStruct = doorEntries.length ? { ...structure, blocks: structure.blocks.filter(b => !isOpenable(structure.palette[b.state])) } : structure
 
-    // culling must see the same renamed blocks that render: a legacy name
-    // (grass_path) has no blockstate in modern packs, and the missing-model
-    // fallback would occlude like a full cube
+    // culling must see the renamed blocks: a legacy name's missing-model fallback occludes like a full cube
     function legacyCull(name, props) {
       const renamed = LEGACY_RENAMES[name.replace("minecraft:", "")] ?? name
       return [renamed, fixLegacyProps(renamed.replace("minecraft:", ""), props)]
@@ -1181,12 +1068,10 @@ async function build(structure = source, refit = true, slice = false) {
       shouldCancel: () => cancelBuild
     })
     if (!opt) return abort()
-    // calibrate the estimator from real, completed passes; tiny builds are
-    // all fixed cost and would poison the per-block rates
+    // tiny builds are all fixed cost and would poison the per-block rates
     if (total >= 2000) savePerf(buildMs / total, (performance.now() - tOpt) / total)
     const { group: next, atlasTextures: pending, drawCalls, tris } = opt
 
-    // atomic swap: show the new group first, then drop the old one + its atlases
     const old = root, oldTex = atlasTextures, oldMarkerTex = markerTextures,
       oldAnimator = animator, oldMarkers = entityMarkers, oldDoors = doorByCell, oldLight = sceneLight
     root = next
@@ -1207,13 +1092,8 @@ async function build(structure = source, refit = true, slice = false) {
     animator = lib.createAnimator(root)
     sceneApi.animators.add(animator)
     useSlicers().onBuild(root, position, [sx, sy, sz], slicedApplied)
-    // one floor grid per structure part, hugging its footprint with a
-    // 3-block border on every side
     const parts = structure.__parts ?? [{ off: [0, 0, 0], size: structure.size }]
-    // a structure carrying a cave (mineshafts) gets a wireframe of the cave
-    // volume, and the floor grid hides where it falls into the cave. the
-    // cells are clipped to the grid footprint first so the outline closes
-    // along the grid edge
+    // cave cells are clipped to the grid footprint so the outline closes along the grid edge
     let caveWire = null
     if (structure.cave) {
       const c = structure.cave
@@ -1260,12 +1140,9 @@ async function build(structure = source, refit = true, slice = false) {
       tris
     }
     state.status = ""
-    // a new source invalidates the kept full build, and a full build of the
-    // same source supersedes it
+    // a new source (or a full build of the same one) invalidates the kept full build
     if (prevSource !== source || !slicedApplied) discardFull()
     if (slicedApplied && old && prevSource === source && !rootSliced && !fullBundle) {
-      // the old root is the full build of this source: keep it hidden for
-      // the slicers instead of disposing it
       old.visible = false
       fullBundle = {
         group: old, atlasTextures: oldTex, markerTextures: oldMarkerTex, animator: oldAnimator,

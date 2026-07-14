@@ -18,9 +18,6 @@ import { mix, rand32, rnd } from "../transforms.js"
 const READERS = { nbt: readStructure, litematic: readLitematic, schem: readSchem, mcstructure: readMcstructure }
 const COMBINE_AIR = /(^|:)(air|cave_air|void_air|structure_void)$/
 
-// What is loaded: one structure behaves as before (sessions, levels), while
-// shift/ctrl-clicking more structures packs them all into one combined scene.
-// Every loader funnels into apply(), which hands off to the build.
 const packs = usePacks()
 const structures = useStructures()
 const buildApi = useBuild()
@@ -28,16 +25,10 @@ const session = useSession()
 const { locked, withLock } = useLock()
 
 const structure = buildApi.current
-// field: { rel, base } while a variant field is on screen (drives the url,
-// the label, and what Re-roll means)
 const state = reactive({ name: "", error: "", reading: null, field: null })
 
-// [{ structure, name, rel?, feature?, seed? }]: rel present when it came
-// from a sidebar tree; feature entries carry the seed they generated with
 let loaded = []
 
-// reading hundreds of nbts takes seconds: surface progress and let the
-// cancel button abort before anything is committed. returns null on cancel
 let cancelRead = false
 function cancelReading() { cancelRead = true }
 async function readMany(rels, reuse, mk) {
@@ -63,9 +54,7 @@ async function readMany(rels, reuse, mk) {
   }
 }
 
-// multi-structure lists are deflate + base64url encoded ("!<data>") to keep
-// the url short: the shared path prefixes compress well. structure names
-// never start with "!", so the marker is unambiguous
+// structure names never start with "!", so the marker is unambiguous
 async function encodeRels(rels) {
   const stream = new Blob([rels.join(",")]).stream().pipeThrough(new CompressionStream("deflate-raw"))
   const bytes = new Uint8Array(await new Response(stream).arrayBuffer())
@@ -74,7 +63,6 @@ async function encodeRels(rels) {
   return "!" + btoa(s).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "")
 }
 
-// accepts either form: plain single/comma names or the encoded list
 export async function decodeVanillaParam(param) {
   if (!param) return []
   if (!param.startsWith("!")) return param.split(",")
@@ -88,16 +76,13 @@ export async function decodeVanillaParam(param) {
   }
 }
 
-// seeds in urls are hex, matching the session's ?seed; undefined when the
-// param is absent or malformed so loads fall back to the default seed
 export function parseSeedParam(param) {
   if (param == null || !/^[0-9a-f]{1,8}$/i.test(param)) return undefined
   return parseInt(param, 16) >>> 0
 }
 
-// switching structures pushes a history entry so the browser back button
-// walks through what you viewed. the first load and popstate-driven loads
-// replace instead, so history never gains duplicate or looping entries
+// the first load and popstate-driven loads replace instead of pushing, so
+// history never gains duplicate or looping entries
 let seededHistory = false
 let navigatingHistory = false
 
@@ -144,17 +129,8 @@ addEventListener("popstate", async () => {
   }
 })
 
-// pack the loaded structures into a compact grid. each cell is the
-// structure's floor grid (footprint + 3-block border, padded even) and
-// neighbouring grids sit 3 blocks apart. bottom-left packing in tree order:
-// each grid takes the frontmost (then leftmost) pocket it fits in, so small
-// grids fill the space beside big ones. returns one combined structure with
-// __parts describing where each one landed
 async function packLoaded() {
   const GAP = 3
-  // labels drop the folder prefix every loaded structure shares, keeping
-  // whatever distinguishes them (leaf only when siblings, longer paths when
-  // they diverge higher up)
   const paths = loaded.map(e => e.name.split("/"))
   let common = 0
   while (paths.every(p => p.length - 1 > common && p[common] === paths[0][common])) common++
@@ -166,8 +142,6 @@ async function packLoaded() {
   }))
   const W = Math.max(Math.ceil(Math.sqrt(cells.reduce((a, c) => a + (c.gw + GAP) * (c.gd + GAP), 0))), ...cells.map(c => c.gw))
   const placed = []
-  // placed rects live in coarse spatial buckets so each fits() only tests
-  // nearby cells instead of re-scanning everything placed so far
   const B = 128
   const buckets = new Map()
   function addRect(p) {
@@ -206,8 +180,6 @@ async function packLoaded() {
     for (const p of placed) candidates.push([p.x + p.w + GAP, p.z], [p.x, p.z + p.d + GAP])
     let best = null
     for (const [x, z] of candidates) {
-      // fits() only filters, so candidates that can't beat the current best
-      // are skipped before the (comparatively expensive) overlap test
       if (best && (z > best[1] || (z === best[1] && x >= best[0]))) continue
       if (!fits(x, z, c.gw, c.gd)) continue
       best = [x, z]
@@ -221,17 +193,12 @@ async function packLoaded() {
   return mergeParts(parts)
 }
 
-// a field's cells are all roughly the same size, so a plain row/column grid
-// reads better than pocket packing; every cell is the largest footprint and
-// each roll centres in its cell
 async function packField() {
   const GAP = 3
   const innerW = Math.max(...loaded.map(e => e.structure.size[0]))
   const innerD = Math.max(...loaded.map(e => e.structure.size[2]))
   const cellW = innerW + 6, cellD = innerD + 6
   const cols = Math.ceil(Math.sqrt(loaded.length))
-  // no per-cell labels: a field is one feature repeated, the cells speak
-  // for themselves
   const parts = loaded.map((e, i) => ({
     s: e.structure,
     off: [
@@ -261,12 +228,9 @@ async function mergeParts(parts) {
   let mx = 1, my = 1, mz = 1
   let merged = 0
   for (const p of parts) {
-    // the merge is a long synchronous stretch on big combinations: yield
-    // periodically so the page stays responsive
     if (++merged % 40 === 0) await yieldTask()
     const map = p.s.palette.map(e => e?.Name ? stateFor(e) : 0)
-    // air never renders and air-beside-me culls like nothing-beside-me, so
-    // a combination drops it: all-structure loads are mostly air entries
+    // air culls like absence, so dropping it is lossless and shrinks all-structure loads
     const drop = p.s.palette.map(e => !e?.Name || COMBINE_AIR.test(e.Name))
     for (const b of p.s.blocks) {
       if (drop[b.state]) continue
@@ -288,8 +252,6 @@ async function mergeParts(parts) {
   }
 }
 
-// a cancelled build leaves the previous scene up, so the list selection,
-// name and url roll back with it
 function snapshot() {
   return {
     loaded, anchor, name: state.name, field: state.field, url: location.href,
@@ -307,10 +269,6 @@ function restore(snap) {
   history.replaceState(null, "", snap.url)
 }
 
-// rebuild whatever is loaded: one structure gets its session back, several
-// become a packed combination (no sessions, url lists them all). features
-// and structures share the pipeline; entries are told apart by e.feature.
-// returns false when the build was cancelled
 async function apply(refit = true) {
   if (!loaded.length) return
   const features = useFeatures()
@@ -350,27 +308,21 @@ async function apply(refit = true) {
 }
 
 async function readVanilla(rel) {
-  // an opened world's structure-block saves resolve from the world zip
   const w = useWorld()
   if (w.hasStructure(rel)) return readStructure(await w.readStructureBytes(rel))
   const zp = structures.zipPathOf(rel)
   if (!zp) {
-    // nbt-less builtin structures generate on load
     const gen = GENERATED[rel]
     if (!gen) return null
     return (await gen(undefined, { seed: 0 })).structure
   }
   const lib = await loadLibrary()
   const s = await readStructure(await lib.readFile(zp, packs.assets.value))
-  // randomised builtin structures load deterministically at seed 0; the
-  // session's Re-roll picks a fresh seed (and puts it in the url)
+  // randomised builtins load deterministically at seed 0; Re-roll picks a fresh seed
   return fixBuiltin(rel, s, 0)
 }
 
-// the sidebar's visual order: with a search active it is the flat result
-// list, otherwise the tree (folders before files at every level, same as
-// TreeFolder renders). loads always sort into this order, and shift ranges
-// span it, across folder boundaries
+// must match TreeFolder's render order (folders before files); shift ranges span it
 function visualOrder() {
   const names = structures.visibleNames()
   if (structures.state.filterText.trim()) return new Map(names.map((n, i) => [n, i]))
@@ -397,15 +349,9 @@ function sortLoaded(order) {
   loaded.sort((a, b) => (order.get(a.rel) ?? Infinity) - (order.get(b.rel) ?? Infinity))
 }
 
-// plain click loads one; ctrl-click toggles membership; shift-click loads the
-// whole tree range between the last plain/ctrl click and here. one shared
-// implementation for both sidebars: a catalog says how a rel becomes an
-// entry and what the visual order is, so combinations can even mix tabs
 let anchor = null
 function clickLoad(cat, rel, ev) {
   if (locked.value) return
-  // file/debug structures (no rel) never combine, and neither does a field
-  // (its entries repeat one rel): an additive click just replaces them
   const canCombine = loaded.length > 0 && loaded.every(e => e.rel) && !state.field
   const shift = !!ev?.shiftKey && canCombine, ctrl = !!(ev?.ctrlKey || ev?.metaKey) && canCombine
   return withLock(async () => {
@@ -478,7 +424,6 @@ async function featureEntry(rel, seed) {
   return s.blocks.length ? { structure: s, name: rel, rel, feature: true, seed: useSeed } : null
 }
 
-// startup with an encoded ?vanilla list: load the whole set in one build
 function loadMany(rels) {
   if (locked.value) return
   return withLock(async () => {
@@ -498,8 +443,6 @@ function loadMany(rels) {
   })
 }
 
-// a worldgen feature by name: default loads are the bundled median-size
-// seed with a clean url; Re-roll passes a fresh seed that rides in ?fseed
 function loadFeature(rel, seed) {
   if (locked.value) return
   return withLock(async () => {
@@ -518,7 +461,6 @@ function loadFeature(rel, seed) {
   })
 }
 
-// several features in one packed build (?feature=a,b,c or a multi Re-roll)
 function loadFeatures(rels, reroll = false) {
   if (locked.value) return
   return withLock(async () => {
@@ -538,10 +480,6 @@ function loadFeatures(rels, reroll = false) {
   })
 }
 
-// A field of one feature's variants: up to FIELD_N rolls derived
-// deterministically from the base seed (index 0 IS the base roll), deduped
-// by shape and packed small to large, each cell labelled with its seed.
-// The base defaults to the roll on screen so the field grows out of it.
 const FIELD_N = 256
 
 function shapeKey(s) {
@@ -596,8 +534,6 @@ function loadFeatureField(rel, baseSeed) {
   })
 }
 
-// ?debug: the generated mesher test scene (src/debug.js), no files needed.
-// a value picks a sub-scene, e.g. ?debug=fluid
 function loadDebug(kind) {
   if (locked.value) return
   kind = kind && kind !== "1" ? kind : ""
@@ -633,7 +569,6 @@ function loadFile(file) {
   })
 }
 
-// a structure assembled in memory (world chunk selections)
 function loadObject(structure, name) {
   if (!structure || locked.value) return
   return withLock(async () => {
@@ -650,8 +585,6 @@ function loadObject(structure, name) {
   })
 }
 
-// pack change: vanilla structures re-read from the new assets (their blocks
-// may differ per jar); anything else rebuilds in place
 async function onAssetsSwapped() {
   if (loaded.length === 1 && loaded[0].rel && structures.has(loaded[0].rel)) {
     try {

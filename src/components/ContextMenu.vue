@@ -6,7 +6,6 @@ const { state, close } = useContextMenu()
 const el = ref(null)
 const pos = ref({ left: 0, top: 0 })
 
-// place at the pointer, then nudge inside the viewport once measured
 watch(() => [state.open, state.x, state.y], async () => {
   if (!state.open) return
   pos.value = { left: state.x, top: state.y }
@@ -19,7 +18,6 @@ watch(() => [state.open, state.x, state.y], async () => {
   }
 })
 
-// dismiss on any press outside, escape, scroll or leaving the window
 addEventListener("pointerdown", e => {
   if (state.open && !el.value?.contains(e.target)) close()
 }, true)

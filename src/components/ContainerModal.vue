@@ -31,7 +31,6 @@ const TABS = computed(() => state.dataRows ? [] : state.table
 
 const rules = computed(() => state.table ? describeTable(state.table) : [])
 
-// the list tab mirrors the chest contents as text, biggest stacks first
 const listStacks = computed(() => Array.from(state.stacks).sort((a, b) =>
   b.count - a.count || stackName(a).localeCompare(stackName(b))))
 
@@ -51,16 +50,13 @@ function fmtPct(c) {
 
 const fmtAvg = v => String(Math.round(v * 10) / 10)
 
-// "how many you'd get" column: exact count, or the range with its average
 const fmtCount = o => o.min === o.max ? "×" + o.min : `×${o.min}-${o.max} · avg ${fmtAvg(o.avg)}`
 
 function close() {
   container.close()
-  walk.resume() // no-op unless a walk session is waiting behind the modal
+  walk.resume()
 }
 
-// clicking a pool entry loads that structure (leaving any walk session,
-// since the scene it belonged to is being replaced)
 const structureApi = useStructure()
 function loadPoolStructure(rel) {
   container.close()
@@ -68,7 +64,6 @@ function loadPoolStructure(rel) {
   structureApi.loadVanilla(rel)
 }
 
-// entries usually live inside the pool's folder: show just what differs
 const poolLeaf = label => label.startsWith(state.poolId + "/") ? label.slice(state.poolId.length + 1) : label
 
 const facts = computed(() => (state.dataRows ?? []).filter(r => !r.wide))
@@ -76,8 +71,7 @@ const wides = computed(() => (state.dataRows ?? []).filter(r => r.wide))
 
 addEventListener("keydown", e => {
   if (e.key === "Escape" && state.open) {
-    // resuming now would relock mid-press and the browser would treat the
-    // same Esc as the exit gesture, ending the walk: relock on release
+    // relock on keyup: relocking mid-press lets the browser treat the same Esc as the exit gesture
     container.close()
     addEventListener("keyup", () => walk.resume(), { once: true })
   }
@@ -85,11 +79,7 @@ addEventListener("keydown", e => {
 
 const inner = (K, slot) => [K.ox + (slot % K.cols) * 18 + 1, K.oy + (slot / K.cols | 0) * 18 + 1]
 
-// two stacked canvases: the gui texture + title draw immediately when the
-// modal opens, items render on the overlay as they finish, so a re-roll
-// never flashes the background away
-// container section height: tiled guis are header + n slot rows, the rest
-// use their fixed crop
+// items render on a second stacked canvas so a re-roll never flashes the gui background away
 const bodyH = K => K.tile ? 17 + K.rows * 18 : K.cropH
 
 let bgSeq = 0
@@ -416,7 +406,6 @@ button.icon {
   gap: 8px;
 }
 
-/* a full-width fact (the jigsaw's Turns into) locks the rest to 2x2 */
 .facts.two { grid-template-columns: 1fr 1fr; }
 .fact.full { grid-column: 1 / -1; }
 
@@ -616,7 +605,6 @@ button.icon {
   text-align: center;
 }
 
-/* shared item rows (odds + simulate) */
 .cols {
   display: flex;
   gap: 10px;
@@ -690,7 +678,6 @@ button.icon {
   color: var(--text);
 }
 
-/* rules */
 .rules { gap: 10px; }
 
 .pool {

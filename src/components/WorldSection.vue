@@ -10,17 +10,15 @@ const collapsed = ref(false)
 const mapEl = ref(null)
 const hoverTxt = ref("")
 
-// vertical cutoff slider bounds (the modern world height range)
+// the modern world height range
 const Y_LO = -64, Y_HI = 320
 const fillStyle = computed(() => ({
   left: ((state.yMin - Y_LO) / (Y_HI - Y_LO) * 100) + "%",
   width: ((state.yMax - state.yMin) / (Y_HI - Y_LO) * 100) + "%"
 }))
 
-// fixed-size viewport over chunk space: worlds can span thousands of chunks,
-// so the map pans (right-drag) and zooms (wheel) instead of growing
 const VIEW = 272
-let view = null // px per chunk + the chunk coord at the top-left corner
+let view = null
 let bounds = null
 let boundsFor = null
 
@@ -71,7 +69,6 @@ function draw() {
     ctx.fillRect(x, y, cell, cell)
   }
   if (marquee) {
-    // holding any selected chunks makes the box a remove (red)
     const on = !world.rectHasSelected(marquee.aCx, marquee.aCz, marquee.bCx, marquee.bCz)
     const x = (Math.min(marquee.aCx, marquee.bCx) - cx0) * px
     const y = (Math.min(marquee.aCz, marquee.bCz) - cz0) * px
@@ -104,7 +101,6 @@ function chunkAt(e) {
   return bounds.present.has(key) ? key : null
 }
 
-// left drags a box selection, right/middle pans, wheel zooms at the cursor
 let marquee = null, panning = null
 function onDown(e) {
   if (e.button === 0) {

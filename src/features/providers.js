@@ -1,6 +1,5 @@
-// Int providers and block-state providers as the game's worldgen data uses
-// them. Noise-driven providers can't be reproduced without the world's noise
-// stack, so they degrade to random picks over the same state pool.
+// noise-driven providers can't run without the world's noise stack; they
+// degrade to random picks over the same state pool
 
 export const nextInt = (rand, n) => Math.floor(rand() * n)
 
@@ -58,8 +57,7 @@ export function sampleFloat(p, rand) {
   return typeof p.value === "number" ? p.value : 0
 }
 
-// tag-backed providers can't resolve real tag data; known vanilla tags get a
-// hand-kept pool, anything else falls back to nothing
+// tags can't be resolved; known vanilla tags get a hand-kept pool
 const TAG_POOLS = {
   "minecraft:corals": ["tube_coral", "brain_coral", "bubble_coral", "fire_coral", "horn_coral"],
   "minecraft:coral_plants": ["tube_coral", "brain_coral", "bubble_coral", "fire_coral", "horn_coral"],

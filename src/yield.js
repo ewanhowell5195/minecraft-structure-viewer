@@ -1,6 +1,4 @@
-// setTimeout-based yields get throttled hard in background tabs, stalling
-// builds whenever the tab loses focus. scheduler.yield (or a MessageChannel
-// task where unsupported) yields the event loop without timer throttling.
+// setTimeout is throttled in background tabs; scheduler.yield / MessageChannel tasks are not
 export const yieldTask = globalThis.scheduler?.yield
   ? () => scheduler.yield()
   : () => new Promise(r => {

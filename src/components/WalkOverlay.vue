@@ -9,8 +9,7 @@ const { state } = useWalk()
 const pos = ref({ left: "50%", top: "50%" })
 const arrow = ref(null)
 
-// the crosshair marks the camera's forward, which is the CANVAS centre, not
-// the viewport centre (the sidebar offsets the canvas)
+// camera forward is the CANVAS centre, not the viewport centre (the sidebar offsets the canvas)
 function place() {
   const c = document.getElementById("view")
   if (!c) return
@@ -20,11 +19,6 @@ function place() {
 watch(() => state.on, on => { if (on) place() })
 addEventListener("resize", () => { if (state.on) place() })
 
-// when no part of the structure is in the camera frustum (walked past it, or
-// orbit-dragged it away), point an arrow at the canvas edge toward it. the
-// direction is the yaw/pitch DELTAS needed to face the bounds centre, not the
-// camera-space offset: pitch clamps at +-90, so a target behind you must read
-// as "turn around" (horizontal), never as "pitch further" past the clamp
 const _frustum = new THREE.Frustum(), _m = new THREE.Matrix4(), _v = new THREE.Vector3(), _look = new THREE.Vector3()
 const wrapPi = a => ((a + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI
 const asin1 = v => Math.asin(Math.max(-1, Math.min(1, v)))
@@ -47,11 +41,8 @@ function tick() {
   box.getCenter(_v)
   let dx, dy
   if (state.on) {
-    // walking: the yaw/pitch DELTAS needed to face the structure. pitch clamps
-    // at +-90, so a target behind you reads as "turn around" (horizontal),
-    // never as "pitch further" past the clamp. aims at the nearest matching
-    // height: while your head is within the model's Y span the arrow stays
-    // level instead of suggesting it sits higher or lower
+    // pitch clamps at +-90, so a target behind you must read as turn-around,
+    // never pitch-further; clamping target y to the box span keeps the arrow level within it
     _v.y = Math.max(box.min.y, Math.min(box.max.y, cam.position.y))
     _v.sub(cam.position).normalize()
     cam.getWorldDirection(_look)
@@ -60,8 +51,7 @@ function tick() {
     dx = -dyaw
     dy = -dpitch
   } else {
-    // orbiting: the plain screen-space direction toward the centre ("drag it
-    // back this way"); angular deltas overshoot vertically at steep angles
+    // screen-space direction: angular deltas overshoot vertically at steep angles
     const behind = _v.applyMatrix4(cam.matrixWorldInverse).z > 0
     _v.applyMatrix4(cam.projectionMatrix)
     dx = _v.x * r.width
@@ -93,8 +83,7 @@ requestAnimationFrame(tick)
 </template>
 
 <style scoped>
-/* single element (two gradient bars) with one difference blend, so the bars
-   merge to white before inverting the canvas: no self-blended black centre */
+/* one difference-blended element so the bars merge to white first: no self-blended black centre */
 .crosshair {
   position: fixed;
   width: 18px;

@@ -2,15 +2,10 @@ import { HORIZ, rnd } from "../transforms.js"
 import { combine } from "../combine.js"
 import { boxesIntersect, orientBox, placePiece } from "./pieces.js"
 
-// nether fortress (NetherFortressPieces): a weighted piece graph grown by a
-// random-order BFS over pendingChildren, faithful to the game including its
-// quirks: a failed placement cascades down the weight list within the same
-// attempt, and a piece past the 112 distance cutoff is created but never
-// added. blocks come from the extracted piece nbts; only the jagged
-// bridge end filler is shaped in code (its geometry is per-instance random).
+// nether fortress (NetherFortressPieces): weighted piece graph, random-order BFS.
+// vanilla quirk kept: a failed placement cascades down the weight list in-attempt.
 
-// pillars: the authored x/z cells each piece fillColumnDowns below itself,
-// grown into support legs down to the lava at assembly time
+// pillars: the cells each piece fillColumnDowns below itself
 const rect = (x0, x1, z0, z1) => {
   const out = []
   for (let x = x0; x <= x1; x++) for (let z = z0; z <= z1; z++) out.push([x, z])
@@ -61,9 +56,7 @@ function makeBox(x, y, z, dir, w, h, d) {
     : { minX: x, minY: y, minZ: z, maxX: x + w - 1, maxY: y + h - 1, maxZ: z + d - 1 }
 }
 
-// the jagged broken bridge end: rows of nether bricks with random lengths,
-// in the exact roll order of BridgeEndFiller.postProcess. rows run from the
-// attachment face, which sits at z 7 in north-placement nbt space
+// BridgeEndFiller.postProcess roll order; rows run from the attachment face (z 7)
 function endFillerStruct(selfSeed) {
   const r = rnd(selfSeed)
   const ni = n => Math.floor(r() * n)
@@ -98,8 +91,7 @@ export async function runFortress(loadStruct, { maxDepth = Infinity, seed } = {}
   start.box = makeBox(0, 64, 0, start.dir, 19, 10, 19)
   pieces.push(start)
 
-  // NetherBridgePiece.createPiece: oriented box, y floor, collision check,
-  // then the constructor's own rolls
+  // NetherBridgePiece.createPiece
   function create(name, fx, fy, fz, dir, depth) {
     const p = P[name]
     const box = orientBox(fx, fy, fz, p.off[0], p.off[1], p.off[2], p.size[0], p.size[1], p.size[2], dir)
@@ -194,9 +186,7 @@ export async function runFortress(loadStruct, { maxDepth = Infinity, seed } = {}
     CHILDREN[piece.name]?.(piece)
   }
 
-  // the assembly keeps its in-game height band above the lava sea:
-  // moveInsideHeights picks a y in [48, 70] and the lava surface sits at 31,
-  // which becomes the viewer's grid plane once combine normalises
+  // moveInsideHeights picks y in [48, 70]; the lava surface sits at 31
   const minY = Math.min(...pieces.map(p => p.box.minY))
   const span = Math.max(...pieces.map(p => p.box.maxY)) - minY + 1
   const range = 70 - 48 + 1 - span
@@ -216,8 +206,7 @@ export async function runFortress(loadStruct, { maxDepth = Infinity, seed } = {}
     return placePiece(struct, p.dir, p.box)
   })
 
-  // fillColumnDown legs: each piece's pillar cells grow from under its box
-  // down to the lava, stopping when they land on an earlier block
+  // fillColumnDown legs
   const occupied = new Set()
   const AIRRE = /(^|:)(cave_)?air$/
   for (const entry of placed) {
@@ -245,8 +234,7 @@ export async function runFortress(loadStruct, { maxDepth = Infinity, seed } = {}
   }
   if (legs.length) placed.push({ struct: { size: [1, 1, 1], palette: [{ Name: "minecraft:nether_bricks" }], blocks: legs }, rot: 0, off: [0, 0, 0], ow: false })
 
-  // anchor on the start piece's corner (the base nbt's origin), so the
-  // camera stays glued to it across levels
+  // anchor on the start piece so the camera stays put across levels
   const structure = combine(placed)
   structure.anchor = [structure.anchor[0] + start.box.minX, structure.anchor[1] + start.box.minY, structure.anchor[2] + start.box.minZ]
   return { structure, maxDepth: naturalMax }

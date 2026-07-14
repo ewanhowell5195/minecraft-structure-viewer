@@ -1,10 +1,6 @@
 import { rand32, rnd, shuffle, statePicker } from "../transforms.js"
 
-// end spikes (EndSpikeFeature): obsidian pillars, radius 2 + size/3, height
-// 76 + size*3, iron bar cages on the two smallest guarded sizes (1 and 2),
-// bedrock + fire + an end crystal on top. built in code: the shapes are
-// parametric. the full ring puts the ten shuffled sizes around the exit
-// portal; the single spike entries roll one size of their kind.
+// end spikes (EndSpikeFeature): parametric, so built in code
 
 // the podium's portal ring sits at the End's surface height
 const PORTAL_Y = 62
@@ -76,7 +72,6 @@ export const makeEndSpikes = active => async (loadStruct, { seed } = {}) => {
     buildSpike(stateFor, blocks, entities, cx, cz, sizes[i])
   }
 
-  // the exit portal at the ring's centre
   const portal = await loadStruct("builtin/end/exit_portal/" + (active ? "active" : "inactive"))
   let off = [0, 0, 0]
   if (portal) {
@@ -98,8 +93,7 @@ export const makeEndSpikes = active => async (loadStruct, { seed } = {}) => {
 export const runEndSpikes = makeEndSpikes(false)
 export const runEndSpikesActive = makeEndSpikes(true)
 
-// a single spike is deterministic given its size, so each size is its own
-// entry; the random pick survives only for the end_spike feature type
+// a single spike is deterministic per size, so each size is its own entry
 const OPEN_SIZES = [0, 3, 4, 5, 6, 7, 8, 9]
 
 export const makeEndSpikeSize = size => async () => {

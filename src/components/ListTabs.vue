@@ -10,8 +10,7 @@ import { tab } from "../composables/useTab.js"
 </template>
 
 <style scoped>
-/* sits flush on the tree below: the negative margin cancels the section
-   gap so the open button bottoms merge with the tree border */
+/* the negative margin cancels the section gap so the buttons sit flush on the tree border */
 .tabs {
   display: flex;
   gap: 4px;

@@ -3,8 +3,6 @@ import { readWorldZip, readRegionFile, buildSelection, unzipEntry } from "../wor
 import { useStructure } from "./useStructure.js"
 import { useStructures } from "./useStructures.js"
 
-// An uploaded world zip: the panel lists its chunks on a map and a selection
-// of them loads as one structure through the normal pipeline.
 const state = reactive({
   active: false,
   name: "",
@@ -12,8 +10,8 @@ const state = reactive({
   selCount: 0,
   error: "",
   busy: false,
-  rev: 0, // bumps whenever the map needs a redraw
-  yMin: 60, // vertical cutoffs applied when loading
+  rev: 0,
+  yMin: 60,
   yMax: 100
 })
 
@@ -59,8 +57,6 @@ function clearSelection() {
   state.rev++
 }
 
-// a rectangle holding any selected chunks only removes those; an all-clear
-// rectangle selects everything inside it
 function rectHasSelected(aCx, aCz, bCx, bCz) {
   const x0 = Math.min(aCx, bCx), x1 = Math.max(aCx, bCx)
   const z0 = Math.min(aCz, bCz), z1 = Math.max(aCz, bCz)

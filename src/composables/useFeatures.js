@@ -3,10 +3,6 @@ import { loadLibrary } from "../lib.js"
 import { usePacks } from "./usePacks.js"
 import { numeric } from "../transforms.js"
 
-// Discovery: every data/<ns>/worldgen/feature/*.json across the union of all
-// pack sources: the bundled features.zip carries vanilla's registry (dumped
-// by tools/features, vanilla builds them in code), and datapacks override or
-// extend by name through normal source priority.
 const FEATURE_RE = /^data\/([^/]+)\/worldgen\/feature\/(.+)\.json$/
 
 const packs = usePacks()
@@ -32,19 +28,15 @@ async function populate() {
       if (m) featurePath.set(m[1] + "/" + m[2], k)
     }
   }
-  // precomputed by tools/features: the just-a-block hide list (for a future
-  // filter; everything lists for now), the median-size default seed per
-  // feature (seed 0 often rolls a tiny output), and the ref-only selectors
-  // (delisted: they only pick between features the list already shows, but
-  // stay loadable so references resolve)
+  // default seeds are tools/features' median-size picks (seed 0 often rolls
+  // tiny); delisted selectors stay loadable so references still resolve
   const dbuf = await lib.readFile("viewer/default_seeds.json", packs.assets.value)
   defaultSeeds = dbuf ? JSON.parse(textDecoder.decode(dbuf)) : {}
   // features whose 256-seed sample never changed shape: no Re-roll, no Field
   const stbuf = await lib.readFile("viewer/static_features.json", packs.assets.value)
   staticSet = new Set(stbuf ? JSON.parse(textDecoder.decode(stbuf)) : [])
-  // delisting is by name, not by zip membership: snapshot jars ship the
-  // worldgen/feature JSONs as data, so the vanilla jar re-adds anything
-  // that was only deleted from features.zip
+  // delist by name, not zip membership: snapshot jars ship these JSONs, so the
+  // vanilla jar re-adds anything only deleted from features.zip
   const delisted = new Set()
   for (const f of ["viewer/redundant_selectors.json", "viewer/structure_dupes.json"]) {
     const buf = await lib.readFile(f, packs.assets.value)
@@ -71,7 +63,6 @@ async function readJson(zipPath) {
   return buf ? JSON.parse(textDecoder.decode(buf)) : null
 }
 
-// a feature name: "ns/path" into the feature registry
 async function readFeature(rel) {
   const zp = featurePath.get(rel)
   if (zp) return readJson(zp)
@@ -81,12 +72,8 @@ async function readFeature(rel) {
 
 const nsPath = ref => ref.includes(":") ? ref.replace(":", "/") : "minecraft/" + ref
 
-// Selector entries hold either an inline placed feature ({feature, placement}),
-// a placed-feature id, or a bare feature id. Placement modifiers don't apply
-// to a single showcase placement, so only the feature inside matters. A
-// placed feature's inner reference points at the FEATURE registry: ids often
-// collide across the two registries (birch_bees_0002 is both), so following
-// it back through the placed lookup would loop forever.
+// a placed feature's inner ref targets the FEATURE registry; ids collide across
+// registries (birch_bees_0002 is both), so the placed lookup would loop forever
 async function resolvePlaced(ref) {
   if (ref == null) return null
   if (typeof ref === "object") {

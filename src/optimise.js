@@ -1,8 +1,3 @@
-// Thin wrapper over the library's optimizeScene: computes per-block cull sets
-// (memoised on neighbour states, structures are repetitive) and hands the
-// template groups over as placements. optimise(structure, templates,
-// position, { lib, getCullFaces, setStatus }) -> { group, atlasTextures,
-// drawCalls, tris }
 import { yieldTask } from "./yield.js"
 
 const DIRS = { east: [1, 0, 0], west: [-1, 0, 0], up: [0, 1, 0], down: [0, -1, 0], south: [0, 0, 1], north: [0, 0, -1] }
@@ -11,14 +6,11 @@ const AIR = /(^|:)(air|cave_air|void_air|structure_void)$/
 
 export async function optimise(structure, templates, position, { lib, getCullFaces, setStatus, setProgress, shouldCancel }) {
   setStatus?.("optimising…")
-  // one monotonic 0..10000 sweep across both passes (culling, then the
-  // library's optimizeScene), so the bar never animates backwards between them
+  // one 0..10000 sweep across both passes so the bar never animates backwards
   setProgress?.(0, 10000)
   await yieldTask()
 
-  // explicit air blocks (vanilla nbts fill their bounds with them) count as
-  // absent everywhere: never placed, and a neighbour of air memoises the
-  // same as no neighbour at all
+  // vanilla nbts fill their bounds with explicit air blocks; treat them as absent
   const isAir = structure.palette.map(e => AIR.test(e?.Name ?? ""))
   const posState = new Map()
   for (const b of structure.blocks) {
@@ -31,8 +23,7 @@ export async function optimise(structure, templates, position, { lib, getCullFac
   let seen = 0
   for (const b of structure.blocks) {
     if (isAir[b.state]) continue
-    // cached cull lookups resolve as microtasks, so this loop needs real
-    // yields (and cancel checks) to keep the page alive on huge scenes
+    // cached cull lookups resolve as microtasks; the loop needs real yields
     if (++seen % 2000 === 0) {
       setStatus?.(`optimising… culling ${seen}/${nonAirTotal}`)
       setProgress?.(Math.round(seen / nonAirTotal * 1000), 10000)
@@ -61,7 +52,6 @@ export async function optimise(structure, templates, position, { lib, getCullFac
   }
 
   const result = await lib.optimizeScene(placements, {
-    // the library reports weighted stage progress on a fixed 0..10000 scale
     onProgress: (done, total) => {
       const f = done / total
       setStatus?.(`optimising… ${Math.round(f * 100)}%`)
@@ -69,7 +59,7 @@ export async function optimise(structure, templates, position, { lib, getCullFac
     },
     shouldCancel
   })
-  if (!result) return null // cancelled; caller reverts, nothing GPU-side exists yet
+  if (!result) return null
   result.group.position.copy(position)
   return { group: result.group, atlasTextures: result.atlasTextures, drawCalls: result.drawCalls, tris: result.tris }
 }

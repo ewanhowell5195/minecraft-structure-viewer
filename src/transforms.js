@@ -1,6 +1,4 @@
-// Positions, directions and block states under rotation/mirror, seeded rng,
-// and jigsaw geometry helpers. Rotation is k clockwise 90 degree steps about
-// +Y with pivot ZERO, matching StructureTemplate.transform (CLOCKWISE_90 = 1).
+// rotation = k clockwise 90deg steps about +Y with pivot ZERO, matching StructureTemplate.transform
 
 export const DIR = {
   north: [0, 0, -1], south: [0, 0, 1], east: [1, 0, 0], west: [-1, 0, 0],
@@ -47,10 +45,8 @@ export function shuffle(arr, rand) {
 
 export const rand32 = () => (Math.random() * 0x100000000) >>> 0
 
-// name sort with numbers compared as numbers (spike_76 before spike_103)
 export const numeric = new Intl.Collator("en", { numeric: true }).compare
 
-// a growing palette with entry dedup, the shape structures use
 export function statePicker() {
   const palette = [], palIdx = new Map()
   const stateFor = (Name, Properties) => {
@@ -66,7 +62,6 @@ export function statePicker() {
   return { palette, stateFor }
 }
 
-// per-level seed derivation: one level can re-roll independently
 export function mix(a, b) {
   let h = Math.imul(a ^ Math.imul(b + 1, 0x9E3779B1), 0x85EBCA6B)
   h ^= h >>> 13
@@ -75,7 +70,6 @@ export function mix(a, b) {
 
 export const strip = s => s.replace(/^minecraft:/, "")
 
-// "ns:block[k=v,...]" -> { Name, Properties? }; bare names get minecraft:
 export function parseState(str) {
   const m = typeof str === "string" && str.trim().match(/^([\w./-]+(?::[\w./-]+)?)(?:\[(.*)\])?$/)
   if (!m) return { Name: "minecraft:air" }
@@ -104,8 +98,7 @@ export function rotateState(props, k) {
     else if (p.axis === "z") p.axis = "x"
   }
   if (p.rotation !== undefined) p.rotation = String((parseInt(p.rotation) + 4 * k) & 15)
-  // connection sides remap as a set: read all old values first so chains
-  // don't clobber
+  // read all old connection values first so chained remaps don't clobber
   const conn = SIDES.filter(s => s in props)
   if (conn.length) {
     for (const s of conn) delete p[s]
@@ -114,8 +107,7 @@ export function rotateState(props, k) {
   return p
 }
 
-// mirror (mansion only). MC applies mirror BEFORE rotation for both positions
-// and states. "lr" (LEFT_RIGHT) flips Z, "fb" (FRONT_BACK) flips X.
+// MC applies mirror BEFORE rotation; "lr" (LEFT_RIGHT) flips Z, "fb" (FRONT_BACK) flips X
 export function mirrorPos([x, y, z], mir) {
   if (mir === "lr") return [x, y, -z]
   if (mir === "fb") return [-x, y, z]
@@ -136,8 +128,6 @@ export function mirrorState(props, mir) {
     const i = p.orientation.lastIndexOf("_")
     if (i > 0) p.orientation = mirrorDir(p.orientation.slice(0, i), mir) + "_" + mirrorDir(p.orientation.slice(i + 1), mir)
   }
-  // stairs: inner/outer left/right swap only when the facing axis equals the
-  // flipped axis
   if (p.shape && /left|right/.test(p.shape)) {
     const fAxis = props.facing === "north" || props.facing === "south" ? "z"
       : props.facing === "east" || props.facing === "west" ? "x" : null
@@ -151,8 +141,6 @@ export function mirrorState(props, mir) {
     const c = r > 8 ? r - 16 : r
     p.rotation = String(mir === "lr" ? (8 - c + 16) % 16 : (16 - c) % 16)
   }
-  // connection sides: swap the pair on the flipped axis (a single present key
-  // moves, it doesn't write undefined)
   const [a, b] = mir === "lr" ? ["north", "south"] : ["east", "west"]
   const hasA = a in props, hasB = b in props
   if (hasA || hasB) {
@@ -164,14 +152,11 @@ export function mirrorState(props, mir) {
   return p
 }
 
-// what a template treats as "not a block" / never placed / carves-if-overwrite
 export const AIR = /(^|:)(air|cave_air|void_air|structure_void)$/
 export const STRUCT_VOID = /(^|:)structure_void$/
 export const REAL_AIR = /(^|:)(air|cave_air|void_air)$/
 export const JIGSAW = /(^|:)jigsaw$/
 
-// jigsaw blocks of a structure, positions LOCAL. orientation is
-// "<front>_<top>" split on the LAST underscore
 export function jigsawsOf(struct) {
   const out = []
   for (const b of struct.blocks) {
@@ -203,7 +188,6 @@ export function worldJigsaw(j, piece) {
   }
 }
 
-// bounding box of a rotated piece, max-exclusive
 export function pieceBox(struct, k, off) {
   const [sx, sy, sz] = struct.size
   const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity]
@@ -220,8 +204,7 @@ export function pieceBox(struct, k, off) {
   }
 }
 
-// interpenetration by MORE than 0.25 on all three axes: abutting pieces touch
-// faces and must NOT count as a hit
+// vanilla: overlap must exceed 0.25 on every axis, so abutting faces don't count as a hit
 export const boxHit = (a, b) =>
   Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0) > 0.25 &&
   Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0) > 0.25 &&
@@ -232,8 +215,7 @@ export const inBox = (p, b) =>
 
 export const EMPTY = Symbol("empty_pool_element")
 
-// flat weighted candidate list; list_pool_element approximated by its first
-// entry; locations stripped of minecraft:
+// list_pool_element approximated by its first entry
 export function poolTemplates(pool) {
   const out = []
   for (const e of pool?.elements ?? []) {

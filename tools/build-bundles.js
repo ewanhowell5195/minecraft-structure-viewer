@@ -1,7 +1,5 @@
-// Repacks the tracked bundle sources under bundled/ into the public zips,
-// the same way BlockModelRenderer's build-assets.js packs assets.zip. The
-// extractors regenerate bundled/ and run this packing themselves; run this
-// directly after hand editing anything under bundled/.
+// Usage:  node tools/build-bundles.js
+//   repacks bundled/ into the public zips; run after hand editing anything under bundled/
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { packBundle } from "./builtin/common.js"

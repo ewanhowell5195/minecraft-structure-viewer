@@ -1,9 +1,5 @@
-// Vanilla client jar from Mojang: the "release" or "snapshot" channel's
-// latest, or an exact version id when one is pinned (?version=). Mojang's
-// hosts send no CORS headers, so everything goes through the proxy.
-// Each channel's jar is cached in Cache Storage under its own key (pinned
-// versions get their own bucket), so they never evict each other; stale
-// versions within a bucket are cleaned up.
+// Mojang's hosts send no CORS headers, so everything goes through the proxy.
+// each channel caches its jar under its own bucket so channels never evict each other
 const CORS = "https://cors.ewanhowell.com/"
 const MANIFEST = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json"
 const KEY = "https://mc-jar.cache/"

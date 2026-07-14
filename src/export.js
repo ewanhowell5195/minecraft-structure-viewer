@@ -2,10 +2,8 @@ import * as THREE from "three"
 import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js"
 import { OBJExporter } from "three/addons/exporters/OBJExporter.js"
 
-// Export the current scene to .glb or .obj. Live shader materials and
-// OffscreenCanvas-backed atlas textures aren't portable, so every exported
-// mesh is cloned with a MeshStandardMaterial + real-canvas texture and baked
-// to world space.
+// shader materials and OffscreenCanvas atlas textures aren't portable, so
+// everything is rebaked onto MeshStandardMaterial + real-canvas textures
 
 const matMap = m => m.uniforms?.map?.value ?? m.map
 
@@ -35,7 +33,7 @@ function portableMaterial(mat, caches) {
   out = new THREE.MeshStandardMaterial({
     map: tex ? portableTexture(tex, caches.tex) : null,
     transparent: mat.transparent === true,
-    alphaTest: mat.transparent ? 0 : 0.5, // cutout leaves/glass panes
+    alphaTest: mat.transparent ? 0 : 0.5,
     roughness: 1,
     metalness: 0,
     side: mat.side
@@ -44,9 +42,8 @@ function portableMaterial(mat, caches) {
   return out
 }
 
-// add one source mesh to the export scene at an explicit world matrix.
-// invisible material groups have no exporter representation, so a mesh that
-// carries any is exploded into one mesh per visible group
+// exporters can't represent invisible material groups, so those meshes
+// explode into one mesh per visible group
 function bakeMesh(scene, o, matrix, caches) {
   const mats = [].concat(o.material)
   const groups = o.geometry.groups
@@ -70,9 +67,7 @@ function bakeMesh(scene, o, matrix, caches) {
   scene.add(mesh)
 }
 
-// bake a live group: world transforms applied, hidden subtrees (the
-// non-showing door half) skipped. instanced doors bake one mesh per shown
-// instance; zero-scale instances are the hidden state
+// zero-scale instances are the hidden door state
 const _inst = new THREE.Matrix4(), _instFull = new THREE.Matrix4()
 function bakeGroup(scene, group, caches) {
   group.updateMatrixWorld(true)

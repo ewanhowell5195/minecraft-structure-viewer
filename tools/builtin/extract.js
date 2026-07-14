@@ -1,9 +1,3 @@
-// Extracts the game's hardcoded structures into .nbt files under
-// bundled/builtin (tracked loose, so git diffs show real content changes)
-// and packs them as public/builtin.zip. Mirrors the library's tools/generate
-// pipeline: the unobfuscated server jar is downloaded, BuiltinExtract.java
-// is compiled with javac against it and run with a capturing world.
-//
 // Usage:  node tools/builtin/extract.js [version]
 //   version defaults to the latest snapshot from Mojang's manifest.
 //   Requires a JDK (javac/java on PATH or via JAVA_HOME).
@@ -19,7 +13,6 @@ const log = (...a) => console.log("[builtin]", ...a)
 
 async function main() {
   const positional = process.argv.slice(2).filter(a => !a.startsWith("--"))
-  // an already-cached version can run offline
   const { id, verDir, cp } = await prepareVersion(cache, positional[0], log)
   log("version:", id)
 

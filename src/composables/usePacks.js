@@ -3,20 +3,16 @@ import { loadLibrary } from "../lib.js"
 import { loadMojangJar } from "../mojang.js"
 import { useLock } from "./useLock.js"
 
-// Ordered pack overlay: user packs (index 0 = highest priority) over the
-// vanilla base jar. Maps directly onto prepareAssets source order (first wins).
-// Pack bytes live outside the reactive state (no proxying of large buffers).
-
+// index 0 = highest priority (prepareAssets first-wins order); pack bytes
+// stay outside the reactive state so large buffers aren't proxied
 const bytesById = new Map()
 let baseBytes = null
 let builtinBytes = null
 let featureBytes = null
 let nextId = 1
 
-// The game's hardcoded structures, extracted to .nbt by tools/builtin, and
-// its worldgen features, dumped to JSON by tools/features. Both bundle as
-// lowest-priority sources (they only add data/ entries vanilla doesn't ship,
-// so packs and the vanilla jar always win a conflict)
+// the game's hardcoded structures (tools/builtin) and code-built features
+// (tools/features); lowest priority, they only add entries vanilla doesn't ship
 async function loadBuiltin() {
   if (!builtinBytes) {
     try {
@@ -34,7 +30,7 @@ async function loadBuiltin() {
 
 const state = reactive({
   channel: new URLSearchParams(location.search).get("channel") === "snapshot" ? "snapshot" : "release",
-  version: new URLSearchParams(location.search).get("version") || "", // exact id pin, beats the channel
+  version: new URLSearchParams(location.search).get("version") || "",
   baseId: "",
   baseStatus: "loading…",
   baseFailed: false,
@@ -46,8 +42,6 @@ const state = reactive({
 const assets = shallowRef(null)
 const { lock, locked } = useLock()
 
-// default swap used when an action isn't given one explicitly: the app
-// registers "rebuild the current scene with the new assets" here
 let swapHandler = null
 const setSwapHandler = fn => { swapHandler = fn }
 
@@ -58,9 +52,8 @@ function setChannelParam(ch) {
   history.replaceState(null, "", u)
 }
 
-// Rebuild the asset bundle from the current pack list. The previous bundle is
-// disposed only AFTER `swap` resolves: the caller rebuilds its scene inside
-// `swap`, so nothing still on screen loses its cached textures mid-frame.
+// dispose the previous bundle only after `swap` resolves, so the on-screen
+// scene keeps its cached textures until the rebuild lands
 async function rebuildAssets(swap) {
   const lib = await loadLibrary()
   let sources = state.packs.map(p => bytesById.get(p.id)).concat(baseBytes).filter(Boolean)
@@ -75,8 +68,6 @@ async function rebuildAssets(swap) {
   }
 }
 
-// pack ops hold the global lock too: nothing else may start a load while the
-// asset bundle is being replaced
 async function loadBase(swap) {
   state.busy = true
   lock(true)
@@ -165,9 +156,6 @@ async function movePack(id, delta, swap) {
   }
 }
 
-// Every zip source currently contributing files, highest priority first.
-// Structure discovery scans the union of these (a pack's data/ may add
-// structures the base doesn't have).
 const allSources = () => state.packs.map(p => bytesById.get(p.id)).concat(baseBytes, builtinBytes, featureBytes).filter(Boolean)
 
 export function usePacks() {

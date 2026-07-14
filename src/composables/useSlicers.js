@@ -5,26 +5,16 @@ import { useBuild } from "./useBuild.js"
 import { useStructure } from "./useStructure.js"
 import { useLock } from "./useLock.js"
 
-// Scene slicers: one per axis, each a plane slid along corner-rail handles
-// snapping to block boundaries, hiding everything on one side. Dragging
-// previews live with clipping planes over the kept full build; once a
-// position settles the cut is rebuilt as real geometry and the clip drops,
-// so nothing straddling the boundary is falsely shaved.
 const AXES = ["x", "y", "z"]
 const DIRS = { x: new THREE.Vector3(1, 0, 0), y: new THREE.Vector3(0, 1, 0), z: new THREE.Vector3(0, 0, 1) }
-// blockbench's axis colours, green softened a touch. lines get lightened
-// variants (red the most) so they read against the dark scene, and the red
-// plane fill lifts slightly too
+// blockbench's axis colours; lightened line variants so they read on the dark scene
 const COLORS = { x: 0xff1242, y: 0x3fc35f, z: 0x0894ed }
 const LINE_COLORS = { x: 0xff6b82, y: 0x6cd186, z: 0x45b1f4 }
 const FILL_COLORS = { x: 0xff4059, y: 0x3fc35f, z: 0x0894ed }
-// the clip sits this far into the hidden side, so faces lying exactly on
-// the boundary stay solidly visible instead of speckling against the clip
-// test's float jitter
+// into the hidden side, so boundary faces don't speckle against clip-test float jitter
 const BIAS = 0.002
 
-// per axis: enabled, boundary index (0..blocks along that axis), and which
-// side hides (false hides the +axis side: "above" for y)
+// i: boundary index 0..blocks along the axis; flip false hides the +axis side
 const state = reactive({
   x: { on: false, i: null, flip: false },
   y: { on: false, i: null, flip: false },
@@ -33,12 +23,11 @@ const state = reactive({
 
 const sceneApi = useScene()
 const { locked } = useLock()
-let box = null // { min: Vector3 (world corner), blocks: [nx, ny, nz] }
+let box = null
 let added = false
 const group = new THREE.Group()
 
-// the polygon offset settles coplanar block faces in front of the quad, so
-// it draws just behind whatever it clips instead of z-fighting it
+// polygon offset keeps the quad just behind coplanar block faces instead of z-fighting them
 const quads = {}
 for (const a of AXES) {
   const mesh = new THREE.Mesh(
@@ -60,8 +49,6 @@ for (const a of AXES) {
   quads[a] = mesh
 }
 
-// rails along the plane's four corners, spanning its whole travel, so the
-// track it slides on is visible
 const rails = {}
 for (const a of AXES) {
   const seg = new THREE.LineSegments(
@@ -73,8 +60,6 @@ for (const a of AXES) {
   rails[a] = seg
 }
 
-// the drag gizmos: one handle riding each rail at the plane's position. the
-// raycast target is an invisible box comfortably bigger than the cube
 const handles = {}
 for (const a of AXES) {
   handles[a] = []
@@ -93,9 +78,8 @@ for (const a of AXES) {
     handles[a].push(h)
   }
 }
-let railBox = null // { tx, ty, tz, qy } world corner coordinates
+let railBox = null
 
-// the quads centre on the floor grid, standing on its plane
 function gridCentre() {
   return new THREE.Vector3(
     box.min.x + (box.lo[0] + box.hi[0]) * 8,
@@ -105,9 +89,8 @@ function gridCentre() {
 }
 
 function refresh() {
-  // the planes only clip while the view is ahead of the built cut (dragging
-  // or the settle window): a landed slice build has the cut for real, and
-  // clipping it too would shave models that overhang their block
+  // clip only while previewing ahead of the built cut: a landed slice build has
+  // the cut for real, and clipping it too would shave models overhanging their block
   const previewing = sliceKey() !== appliedKey
   AXES.forEach((a, k) => {
     const s = state[a], plane = SLICE_PLANES[k], mesh = quads[a]
@@ -137,8 +120,6 @@ function refresh() {
       h.userData.base = p
       h.position.copy(p)
     }
-    // the fill only tints while interacting; idle planes are just their
-    // outline, rails and handles
     const hot = hoverA === a || dragA === a
     mesh.material.opacity = hot ? 0.18 : 0
     mesh.children[0].material.opacity = hot ? 0.9 : 0.5
@@ -147,7 +128,6 @@ function refresh() {
   })
 }
 
-// where a handle's rail sits in the two non-travel axes
 function handleSpot(a, corner) {
   const { tx, tz, qy } = railBox
   const i = corner >> 1, j = corner & 1
@@ -156,11 +136,7 @@ function handleSpot(a, corner) {
   return new THREE.Vector3(tx[i], qy[j], 0)
 }
 
-// build-time slicing (called by useBuild for slice builds): drop blocks and
-// entities on the hidden side so the mesher carves real cut faces. the
-// clipping planes are only the live preview over the kept full build
-// a plane parked at (or past) the structure's edge on its hidden side cuts
-// nothing and counts as inactive
+// a plane parked at or past the edge on its hidden side cuts nothing, so it counts inactive
 const cuts = (s, k) => s.on && s.i != null && !(box && (s.flip ? s.i <= 0 : s.i >= box.blocks[k]))
 
 const sliceKey = () => {
@@ -170,8 +146,7 @@ const sliceKey = () => {
   })
   return parts.some(Boolean) ? parts.join("|") : ""
 }
-// what the currently shown sliced build cut ("" = the full build); pending
-// is the cut of the build in flight, promoted when it lands
+// "" = the full build; pendingKey is the in-flight build's cut, promoted when it lands
 let appliedKey = ""
 let pendingKey = ""
 
@@ -191,9 +166,7 @@ function sliceStructure(structure) {
   }
 }
 
-// once a change settles, make the cut real geometry: swap the kept full
-// build back when the slicers are off, rebuild otherwise. the window lets a
-// follow-up drag start without wasting a rebuild
+// the settle window lets a follow-up drag start without wasting a rebuild
 let rebuildTimer = null
 function scheduleRebuild() {
   clearTimeout(rebuildTimer)
@@ -211,10 +184,7 @@ function scheduleRebuild() {
   }, 1000)
 }
 
-// away from the built cut, preview by clipping the kept full build; back on
-// it (dragging over the starting position included), show the real build
 watch(state, () => {
-  // a plane enabled for the first time parks at the current rail ends
   if (box) {
     AXES.forEach((a, k) => {
       const s = state[a]
@@ -226,17 +196,13 @@ watch(state, () => {
   if (!dragA) scheduleRebuild()
 }, { deep: true })
 
-// called by useBuild after each build: size the quads to the new structure,
-// keep positions (clamped), and hand the clipping planes to every material.
-// a full build with active slicers schedules its slice build
 function onBuild(root, position, size, sliced) {
   appliedKey = sliced ? pendingKey : ""
   if (!sliced && sliceKey()) scheduleRebuild()
   box = {
     min: new THREE.Vector3(position.x - 8, position.y - 8, position.z - 8),
     blocks: size,
-    // x/z run out to the floor grid's edge (3-block border); y spans the
-    // structure
+    // x/z run out to the floor grid's edge (3-block border); y spans the structure
     lo: [-3, 0, -3],
     hi: [size[0] + 3, size[1], size[2] + 3]
   }
@@ -244,22 +210,18 @@ function onBuild(root, position, size, sliced) {
     sceneApi.overlayScene.add(group)
     added = true
   }
-  // disabled planes keep no position, so enabling one always defaults it
-  // against the current structure's rail ends (slicing nothing)
   AXES.forEach((a, k) => {
     const s = state[a]
     if (s.i == null) {
       if (s.on) s.i = box.hi[k]
     } else s.i = Math.min(Math.max(s.i, box.lo[k]), box.hi[k])
   })
-  // the quads stretch across the whole floor grid
   const sx = (box.hi[0] - box.lo[0]) * 16
   const sz = (box.hi[2] - box.lo[2]) * 16
   const sy = size[1] * 16
   quads.x.scale.set(sz, sy, 1)
   quads.y.scale.set(sx, sz, 1)
   quads.z.scale.set(sx, sy, 1)
-  // the rails run the travel span at the plane's four corners
   const tx = [box.min.x + box.lo[0] * 16, box.min.x + box.hi[0] * 16]
   const ty = [box.min.y, box.min.y + size[1] * 16]
   const tz = [box.min.z + box.lo[2] * 16, box.min.z + box.hi[2] * 16]
@@ -291,10 +253,7 @@ function onBuild(root, position, size, sliced) {
   })
 }
 
-// ---- viewport interaction: hovering a handle unmaps the orbit's left
-// button before the press, so a drag slides the handle along its rail
-// (snapping block by block) while zoom and right-button pan keep working
-
+// hovering a handle unmaps the orbit's left button before the press, so the drag doesn't orbit
 const raycaster = new THREE.Raycaster()
 const ndc = new THREE.Vector2()
 let hoverA = null, hoverH = null, dragA = null, dragCorner = 0, savedLeft = null
@@ -344,8 +303,7 @@ function setHover(a) {
   refresh()
 }
 
-// the handles hold a constant screen size: scaled per frame from camera
-// distance (or ortho frame height), capped so a cube never exceeds a block
+// constant screen size, capped so a cube never exceeds a block
 function handleScale(h) {
   const cam = sceneApi.camera
   const s = cam.isOrthographicCamera
@@ -368,9 +326,7 @@ function init() {
           vis.push(h)
         }
       }
-      // planes at far edges put their corner gizmos in the same spot: fan
-      // every member of a shared corner inward along its own rail, so none
-      // sits exactly in the corner and a small gap separates the cubes
+      // coincident corner gizmos fan inward along their own rails
       const used = new Array(vis.length).fill(false)
       for (let m = 0; m < vis.length; m++) {
         if (used[m]) continue
@@ -391,9 +347,7 @@ function init() {
           h.userData.tight = true
         }
       }
-      // fanned gizmos sit close together, so their oversized hitboxes
-      // shrink to just past the cube (the child inverts the scale so the
-      // visual size never changes)
+      // fanned hitboxes shrink; the child inverts the scale so the visible cube never changes size
       for (const h of vis) {
         const f = h.userData.tight ? 0.5 : 1
         h.scale.setScalar(h.userData.s * f)
@@ -401,9 +355,7 @@ function init() {
       }
     }
   })
-  // a different structure, a regenerate or a level step all count as a new
-  // structure: slicers turn off and forget their positions. sync flush, so
-  // the reset lands before the load's build slices
+  // sync flush, so the reset lands before the new load's build slices
   const reset = () => {
     clearTimeout(rebuildTimer)
     for (const a of AXES) {
@@ -413,9 +365,8 @@ function init() {
     }
   }
   watch(() => useStructure().state.name, reset, { flush: "sync" })
-  // dynamic import: a static one would evaluate useSession mid-way through
-  // useBuild's module evaluation (build -> slicers -> session -> build) and
-  // trip its top-level useBuild() call
+  // a static import would evaluate useSession mid useBuild module eval
+  // (build -> slicers -> session -> build) and trip its top-level useBuild()
   import("./useSession.js").then(({ useSession }) => {
     watch(() => [useSession().state.level, useSession().state.seed], reset, { flush: "sync" })
   })
@@ -454,7 +405,6 @@ function init() {
   canvas.addEventListener("pointerleave", () => { if (!dragA) setHover(null) })
 }
 
-// container picking stands down while a plane is hovered or dragged
 const busy = () => !!(hoverA || dragA)
 
 export function useSlicers() {

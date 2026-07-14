@@ -12,17 +12,8 @@ import { runJigsaw } from "../jigsaw.js"
 import { mineshaftPieceGens, rerollGen, runDesertPyramid, runDesertWell, runDungeon, runEndCity, runEndSpikes, runEndSpikesActive, runFortress, runIgloo, runJungleTemple, runMansion, runMineshaft, runMineshaftMesa, runMonument, runStronghold } from "../generators/index.js"
 import { PROC } from "../proc.js"
 
-// A level session exists for jigsaw structures (any palette block named
-// jigsaw) and steppable procedurals loaded ON their entry piece; the mansion
-// (steps: false) gets a one-shot generate button instead. Internal level is
-// 0-based, the UI shows level + 1 ("level 1" = the raw base).
-//
-// Seed semantics: the base is seedless and always identical. A seed is picked
-// when you FIRST advance off the base (each fresh ascent re-rolls); past the
-// base it is fixed, so stepping up/down is stable. Jigsaw levels derive
-// per-level rngs via mix(seed, level); a procedural runs its single stream
-// from the seed and filters by depth.
-
+// level is 0-based (the UI shows level + 1). the base is seedless; a seed rolls
+// on the first ascent off it and stays fixed until you return to the base
 const packs = usePacks()
 const structures = useStructures()
 const buildApi = useBuild()
@@ -31,10 +22,10 @@ const { lock, locked } = useLock()
 
 const state = reactive({
   active: false,
-  kind: null,     // "jigsaw" | a PROC gen name
+  kind: null,
   label: "Structure Blocks",
   steps: true,
-  reroll: false,  // one-shot random re-fix of a single structure file
+  reroll: false,
   level: 0,
   maxDepth: 7,
   seed: null,
@@ -45,8 +36,7 @@ let base = null, baseName = null
 let baseRadius = 96
 let prevAnchorWorld = null
 
-// ?seed/?level are adopted by the FIRST session only (the initial ?vanilla
-// load); captured up front because loads rewrite the query string
+// adopted by the FIRST session only; captured up front because loads rewrite the query string
 let urlSeed = null, urlLevel = null
 {
   const sp = new URLSearchParams(location.search)
@@ -79,7 +69,6 @@ async function loadPool(ref) {
   return buf ? JSON.parse(new TextDecoder().decode(buf)) : null
 }
 
-// PROC gen name -> (loadStruct, { maxDepth, seed }) => { structure, maxDepth }
 const generators = {
   igloo: runIgloo, end_city: runEndCity, mansion: runMansion,
   jungle_temple: runJungleTemple, desert_pyramid: runDesertPyramid, desert_well: runDesertWell, dungeon: runDungeon,
@@ -94,15 +83,13 @@ const generators = {
 async function resolve(level) {
   if (level === 0 || !base) return { structure: base }
   if (state.kind === "jigsaw") {
-    // radius bounds like the game (max_distance_from_center); the piece cap
-    // is only a runaway backstop, vanilla has none
+    // maxRadius mirrors the game's max_distance_from_center; the piece cap is a runaway backstop vanilla lacks
     return runJigsaw(base, {
       loadStruct, loadPool,
       maxDepth: level, maxPieces: 1024, maxRadius: baseRadius,
       levelSeed: l => mix(state.seed, l),
       onProgress: n => { buildApi.state.status = `loading… ${n} pieces` },
-      // at the declared depth cap no further level will ever run, so the
-      // frontier's jigsaws are consumed like vanilla's finished generation
+      // at the depth cap the frontier's jigsaws are consumed, like vanilla's finished generation
       keepJigsaws: level < state.maxDepth
     })
   }
@@ -111,9 +98,7 @@ async function resolve(level) {
   return gen(loadStruct, { maxDepth: level, seed: state.seed })
 }
 
-// rebuild the resolved structure, keeping the camera relatively positioned to
-// the start piece: the assembly re-centres each build, so the camera shifts
-// by however far the base's anchor moved in world space
+// each build re-centres the assembly, so the camera shifts by however far the base's anchor moved
 async function regenerate() {
   state.solving = true
   try {
@@ -121,13 +106,8 @@ async function regenerate() {
     try {
       const res = await resolve(state.level)
       structure = res.structure
-      // a solve that stopped short of the requested level IS at max depth:
-      // a dry graph (the outpost's declared size is 7 but its features stop
-      // at depth 2) or the piece cap (rounds replay identically, so deeper
-      // levels re-solve to the same pieces) would make every further level
-      // a no-op that only consumes the hidden frontier jigsaws. the floor is
-      // 1, not the deepest piece: even a round that placed nothing consumed
-      // the base's jigsaws, so it's still a step above the raw base
+      // a solve that stops short IS at max depth (deeper levels re-solve identically);
+      // floor 1, not the deepest piece: even an empty round consumed the base's jigsaws
       if (state.kind === "jigsaw" && (res.exhausted || res.capped || res.depth < state.level)) {
         state.maxDepth = Math.max(res.depth, 1)
         if (state.level > state.maxDepth) state.level = state.maxDepth
@@ -165,13 +145,9 @@ function syncUrl() {
   history.replaceState(null, "", u)
 }
 
-// target Infinity means "the full depth", resolved AFTER any re-probe
 async function setLevel(target, { freshSeed = false } = {}) {
   if (target > 0 && (freshSeed || state.seed == null)) {
     state.seed = rand32()
-    // a procedural's true depth depends on the seed; a jigsaw's comes from
-    // the worldgen size (re-read in case packs changed); the one-shot mansion
-    // has nothing to probe
     if (state.kind === "jigsaw") {
       state.maxDepth = structures.getStructDepth(baseName) ?? state.maxDepth
       baseRadius = structures.getStructRadius(baseName) ?? baseRadius
@@ -179,12 +155,11 @@ async function setLevel(target, { freshSeed = false } = {}) {
     else if (state.steps) await probeDepth()
   }
   target = Math.max(0, Math.min(target, state.maxDepth))
-  if (target === 0) state.seed = null // next ascent from the base re-rolls
+  if (target === 0) state.seed = null
   state.level = target
   await regenerate()
 }
 
-// menu ops; each locks for the whole solve + build
 const op = fn => async (...args) => {
   if (locked.value || !state.active) return
   lock(true)
@@ -194,13 +169,10 @@ const next = op(() => setLevel(state.level + 1))
 const all = op(() => setLevel(Infinity))
 const undo = op(() => setLevel(state.level - 1))
 const reset = op(() => setLevel(0))
-const reloadAll = op(() => setLevel(state.level, { freshSeed: true }))     // jigsaw only
+const reloadAll = op(() => setLevel(state.level, { freshSeed: true }))
 const fullReload = op(() => setLevel(Infinity, { freshSeed: true }))
-const generate = fullReload // one-shot for non-stepped procedurals (mansion)
+const generate = fullReload
 
-// probe a procedural's true depth for this seed by running it unbounded, so
-// "next" disables at the real end (an igloo always has its basement, end city
-// depth varies by seed)
 async function probeDepth() {
   const gen = generators[state.kind]
   if (!gen || state.seed == null) return
@@ -208,10 +180,8 @@ async function probeDepth() {
   if (typeof maxDepth === "number") state.maxDepth = maxDepth
 }
 
-// whether any jigsaw could change the structure: a pool chain with a real
-// template to place, or a visible final_state to swap in. pieces where every
-// jigsaw fails both (the village animal spawners: empty pool, structure_void
-// final_state) have no real levels, so they get no session
+// village animal spawner pieces (empty pool, structure_void final_state) would
+// otherwise get a session with no real levels
 async function jigsawsCanAct(structure) {
   for (const b of structure.blocks) {
     if (!JIGSAW.test(structure.palette[b.state]?.Name || "")) continue
@@ -230,8 +200,6 @@ async function jigsawsCanAct(structure) {
   return false
 }
 
-// called by useStructure after a NEW structure builds. adopts ?seed/?level
-// once, on the initial page-load structure
 async function startSession(structure, name) {
   base = structure
   baseName = name
@@ -250,9 +218,8 @@ async function startSession(structure, name) {
     state.steps = true
     state.reroll = false
     await structures.computeWorldgen()
-    // pieces with no structure def (mid-generation pieces, unmapped modded
-    // ones) get generous caps: the stop-short clamp shrinks them to the
-    // real depth as soon as a solve runs dry. 128 is the codec max radius
+    // pieces with no structure def get generous caps the stop-short clamp
+    // shrinks; 128 is the codec max radius
     state.maxDepth = structures.getStructDepth(name) ?? 20
     baseRadius = structures.getStructRadius(name) ?? 128
   } else {
@@ -290,7 +257,6 @@ function endSession() {
   syncUrl()
 }
 
-// pack swap re-read: keep the session, swap the base, regenerate in place
 async function rebase(structure, name) {
   if (!state.active || name !== baseName) return false
   base = structure

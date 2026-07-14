@@ -3,8 +3,6 @@ import { ref, watchEffect } from "vue"
 import { loadLibrary } from "../lib.js"
 import { usePacks } from "../composables/usePacks.js"
 
-// a single item rendered pixel-crisp onto its own little canvas (the odds
-// and simulate lists in the container modal)
 const props = defineProps({
   id: String,
   components: Object,

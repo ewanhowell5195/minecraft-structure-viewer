@@ -1,7 +1,4 @@
-// Turns a worldgen feature JSON (the game's data form, see tools/features)
-// into a viewer structure. Each supported type is a port of the game's
-// placement code running over an empty world (the viewer's floor grid is the
-// ground); selector types recurse through resolvePlaced into their features.
+// ports of the game's placement code over an empty world: the viewer's floor grid is the ground
 import { nextInt, sampleFloat, sampleInt, sampleState, pickWeighted } from "./providers.js"
 import { generateTree, generateFallenTree } from "./tree.js"
 import { runEndSpike } from "../generators/endspikes.js"
@@ -550,9 +547,7 @@ const TYPES = {
   }
 }
 
-// ---- the long tail: adapted where the game needs terrain context that the
-// empty feature world can't provide (springs get a minimal rock pocket,
-// growth-on-walls features get a small host)
+// ---- adapted where the game needs terrain context the empty world can't provide
 
 Object.assign(TYPES, {
   async no_op() {},
@@ -886,8 +881,7 @@ Object.assign(TYPES, {
     }
   },
 
-  // wall-mounted adaptations face north (-z), the way structures are
-  // authored, so the interesting side greets the default camera
+  // wall-mounted adaptations face north so the interesting side greets the default camera
   async spring_feature(world, json, rand, resolvePlaced, ox, oy, oz) {
     const rock = { Name: [json.valid_blocks ?? "minecraft:stone"].flat()[0] }
     world.set(ox, oy + 1, oz, rock)
@@ -992,9 +986,8 @@ Object.assign(TYPES, {
     const fossil = await world.loadStruct(json.fossil_structures[idx])
     if (!fossil) throw new Error(`missing structure ${json.fossil_structures[idx]}`)
     mergeStructure(world, fossil, ox, oy, oz, 0.9, rand)
-    // the matching _coal overlay stamps over the bones at 0.1 integrity;
-    // the diamond processor list additionally swaps its coal ore for
-    // deepslate diamond ore (the two vanilla lists, not a processor engine)
+    // the _coal overlay stamps over the bones at 0.1 integrity; the diamond list
+    // also swaps coal ore for deepslate diamond ore (vanilla's two processor lists)
     const overlay = json.overlay_structures ? await world.loadStruct(json.overlay_structures[idx]) : null
     if (overlay) {
       const diamonds = strip(json.overlay_processors ?? "").includes("diamond")
@@ -1049,9 +1042,8 @@ function testPredicate(world, pred, x, y, z) {
   return true
 }
 
-// the placement modifiers that matter for a single showcase placement:
-// position tweaks and scans move the inner feature, rarity can drop it,
-// anything else (counts, biome/height filters) has no meaning here
+// only offsets, scans and rarity matter for a single showcase placement;
+// counts and biome/height filters have no meaning here
 function applyPlacement(world, mods, rand, x, y, z) {
   for (const mod of mods ?? []) {
     switch (strip(mod.type)) {

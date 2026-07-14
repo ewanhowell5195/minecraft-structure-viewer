@@ -1,11 +1,7 @@
-// Minimal zip read/write, enough for the server-jar bundler (read) and the
-// builtin structures bundle (write, stored: the .nbt entries are already
-// gzip-compressed).
 import zlib from "node:zlib"
 
 export function readZip(buf) {
   const files = new Map()
-  // find end-of-central-directory
   let eocd = -1
   for (let i = buf.length - 22; i >= 0; i--) {
     if (buf.readUInt32LE(i) === 0x06054b50) { eocd = i; break }
@@ -46,7 +42,7 @@ function crc32(buf) {
   return (c ^ 0xffffffff) >>> 0
 }
 
-// files: Map(name -> Buffer). Entries are stored uncompressed.
+// entries are stored, not deflated: the .nbt payloads are already gzip-compressed
 export function writeZip(files) {
   const locals = [], centrals = []
   let offset = 0
@@ -55,8 +51,8 @@ export function writeZip(files) {
     const crc = crc32(data)
     const local = Buffer.alloc(30)
     local.writeUInt32LE(0x04034b50, 0)
-    local.writeUInt16LE(20, 4)         // version needed
-    local.writeUInt16LE(0, 8)          // method: store
+    local.writeUInt16LE(20, 4)
+    local.writeUInt16LE(0, 8)
     local.writeUInt32LE(crc, 14)
     local.writeUInt32LE(data.length, 18)
     local.writeUInt32LE(data.length, 22)

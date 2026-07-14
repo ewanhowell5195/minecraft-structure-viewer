@@ -8,8 +8,8 @@ import { useLock } from "../composables/useLock.js"
 const props = defineProps({
   node: Object,
   autoOpenName: String,
-  expandToken: { type: Number, default: 0 },  // parent's "expand everything" signal, counts up
-  collapseToken: { type: Number, default: 0 } // parent's "collapse everything" signal, counts up
+  expandToken: { type: Number, default: 0 },
+  collapseToken: { type: Number, default: 0 }
 })
 
 const { state } = useStructures()
@@ -17,7 +17,6 @@ const { loadVanilla, loadMany } = useStructure()
 const ctx = useContextMenu()
 const { locked } = useLock()
 
-// chains of single-child folders compact into one "a/b/c" row
 const entries = computed(() => {
   const out = []
   for (let [name, child] of props.node.dirs) {
@@ -31,11 +30,9 @@ const entries = computed(() => {
   return out
 })
 
-// opened mirrors the details' actual state; mounted is "ever opened", so a
-// natively re-closed folder keeps its children (and their expansion) alive
+// mounted is "ever opened": a natively re-closed folder keeps its children's expansion alive
 const opened = ref(new Set())
 const mounted = ref(new Set())
-// per-child expand-everything tokens (cascades the command down the tree)
 const cascade = reactive({})
 
 const addTo = (setRef, name) => { setRef.value = new Set(setRef.value).add(name) }
@@ -58,7 +55,7 @@ function onToggle(name, e) {
   } else dropFrom(opened, name)
 }
 
-// a parent said "expand everything": open every folder here and pass it on
+// immediate: children mounted later replay the parent's token and keep the cascade going
 watch(() => props.expandToken, v => {
   if (!v) return
   const names = entries.value.map(e => e.name)
@@ -67,7 +64,6 @@ watch(() => props.expandToken, v => {
   for (const n of names) cascade[n] = (cascade[n] ?? 0) + 1
 }, { immediate: true })
 
-// "collapse everything": closing + unmounting here resets all levels below
 watch(() => props.collapseToken, v => {
   if (!v) return
   opened.value = new Set()
@@ -81,8 +77,7 @@ function expandAll(name) {
   cascade[name] = (cascade[name] ?? 0) + 1
 }
 
-// dropping from mounted unmounts the subtree, so every level below starts
-// collapsed again next time it opens
+// unmounting the subtree is what resets every level below to collapsed
 function collapseAll(name) {
   dropFrom(opened, name)
   dropFrom(mounted, name)
@@ -104,9 +99,8 @@ function onMenu(name, child, e) {
   ])
 }
 
-// reveal the page-load selection: folders containing a selected structure
-// expand once, then behave normally. children mount with the selection
-// already set, so their immediate run cascades the whole path open
+// reveal the page-load selection once; children mount with it already set, so
+// their immediate run cascades the whole path open
 let revealed = false
 watch(() => state.selected, sel => {
   if (revealed || !sel.length) return

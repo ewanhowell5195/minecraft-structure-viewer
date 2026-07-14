@@ -13,15 +13,11 @@ const ctx = useContextMenu()
 const { locked } = useLock()
 const collapsed = ref(false)
 
-// vanilla feature paths are flat, so the tree is a plain list; the namespace
-// prefix only shows when a datapack adds a second one
 const soleNs = computed(() => new Set(state.names.map(n => n.slice(0, n.indexOf("/")))).size <= 1)
 const disp = rel => soleNs.value ? rel.slice(rel.indexOf("/") + 1) : rel
 
 const shown = computed(() => (state.filterText, state.names.length, features.visibleNames()))
 
-// the permanent root row, same as the structures tree: its context menu
-// works the whole list at once (during a search, "load all" takes the matches)
 function onRootMenu(e) {
   const rels = shown.value
   ctx.open(e, [

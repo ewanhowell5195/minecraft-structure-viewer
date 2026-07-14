@@ -1,25 +1,3 @@
-// Hand-built showroom for the greedy mesher, loaded via ?debug. Nothing hides
-// behind anything; toggle wireframe to see whether a run merges into one quad.
-// Each row is a case the mesher should handle. ?debug=fluid renders just the
-// water levels row for eyeballing surface heights against the game.
-// ?debug=aquarium is a glass tank of water for translucency testing.
-// ?debug=lighting1 (a lone stone block), ?debug=lighting2 (a 31x31 stone
-// platform), and ?debug=lighting3 (the platform's rim only) isolate the
-// scene-light math: the lone block must match a no-volume build exactly, the
-// platform's underside falls off from 14 at the rim to 0 mid-span, and the
-// hollow square must stay fully sky-lit everywhere with no underside pool.
-// ?debug=lighting4 puts a torch on the platform's centre block: invisible at
-// noon, a warm pool fading to darkness within the platform at night, with
-// the full falloff to light 0 visible before the edges.
-// ?debug=lighting5 is the everything scene, nine zones: emitter pool sizes
-// (torch 14 / soul 10 / redstone 7 / lantern 15 / glowstone 15), a sealed
-// room whose torch light only spills out the doorway, a thin shared wall
-// that must not leak, an elevated platform with a soft square shadow under
-// it (and none beside it, there is no directional sun), a water basin
-// attenuating sky light with a glowstone on its floor, a tunnel whose end
-// gradients meet in the middle, a torch corridor where light passes the
-// stair wall's open half but not the solid wall, wall torches on a pillar,
-// and a lava pond lighting its surroundings.
 export function makeDebug(kind) {
   const palette = [], pi = new Map()
   function st(Name, Properties = {}) {
@@ -47,8 +25,7 @@ export function makeDebug(kind) {
       for (let x = x0; x <= x1; x++) for (let z = z0; z <= z1; z++) out.push([x, z])
       return out
     }
-    // authentic flat-ground spread: sources are level 0, every horizontal step
-    // adds 1 (the game's dropoff), solids block, dead past level 7
+    // the game's flat-ground spread: level +1 per step, solids block, dead past 7
     function spread(cells, sources, solids, place) {
       const k = (x, z) => x + "," + z
       const solid = new Set(solids.map(c => k(...c)))
@@ -100,8 +77,7 @@ export function makeDebug(kind) {
     floor(0, 22, 14, 36)
     spread(rect(0, 22, 14, 36), [[7, 29]], [], (x, z, l) => water(x, 1, z, l))
 
-    // 6: waterfall: an elevated walled channel pours over the edge (falling
-    // level 8 column) and spreads across the floor below
+    // 6: waterfall over the edge (falling level 8) onto the floor below
     floor(0, 39, 3, 39, 3)
     for (let x = 0; x <= 3; x++) { put(x, 4, 38, "stone"); put(x, 4, 40, "stone") }
     for (let i = 0; i <= 3; i++) water(i, 4, 39, i)
@@ -218,8 +194,7 @@ export function makeDebug(kind) {
       put(x, y, z, "stone")
     }
 
-    // 7: torch corridor: a stair wall passes light through its open half, the
-    // solid wall opposite passes none
+    // 7: torch corridor: the stair wall passes light, the solid wall passes none
     floor(32, 46, 52, 62)
     for (let z = 49; z <= 59; z++) {
       for (let y = 1; y <= 3; y++) put(38, y, z, "stone")
@@ -243,10 +218,7 @@ export function makeDebug(kind) {
   }
 
   if (kind === "aquarium") {
-    // glass tank on grass: sand bed, two blocks of water, a waterlogged sea
-    // pickle in the middle. every translucent case at once: water seen
-    // through glass, glass through water, water through water, and the
-    // surface from above and below
+    // glass tank: every translucent adjacency case at once
     for (let x = 0; x <= 6; x++) for (let z = 0; z <= 6; z++) put(x, 0, z, "grass_block")
     put(0, 1, 0, "dandelion")
     put(6, 1, 6, "dandelion")
@@ -265,31 +237,28 @@ export function makeDebug(kind) {
   // different models, same texture, coplanar 16x16 tops: should all merge
   put(0, 0, 0, "cobblestone"); put(1, 0, 0, "cobblestone_slab", { type: "double" })
   put(2, 0, 0, "cobblestone"); put(3, 0, 0, "cobblestone_slab", { type: "double" }); put(4, 0, 0, "cobblestone")
-  run(2, "oak_slab", { type: "bottom" })                          // bottom slab floor: one top quad
-  run(4, "oak_slab", { type: "top" })                             // top slab floor
-  run(6, "oak_stairs", { half: "bottom", facing: "east", shape: "straight" }) // stair run
+  run(2, "oak_slab", { type: "bottom" })
+  run(4, "oak_slab", { type: "top" })
+  run(6, "oak_stairs", { half: "bottom", facing: "east", shape: "straight" })
   // rotated logs (x,y,z) then a matching-axis pair that should merge
   put(0, 0, 8, "oak_log", { axis: "x" }); put(1, 0, 8, "oak_log", { axis: "y" }); put(2, 0, 8, "oak_log", { axis: "z" })
   put(4, 0, 8, "oak_log", { axis: "x" }); put(5, 0, 8, "oak_log", { axis: "x" })
-  for (let i = 0; i < 3; i++) put(i * 2, 0, 10, "grass_block")    // grass, gapped so overlay sides show
-  for (let i = 0; i < 6; i++) put(i, 0, 12, i % 2 ? "cobblestone" : "oak_planks") // two-texture checker
-  for (let i = 0; i < 3; i++) put(i * 2, 0, 14, "glass")          // glass, gapped (self-cull is future)
-  run(16, "cobblestone_wall", {}, 4)                              // walls (partial faces)
-  put(0, 0, 18, "oak_planks"); put(0, 1, 18, "oak_planks"); put(1, 0, 18, "oak_slab", { type: "bottom" }) // cull: slab against a cube
-  run(20, "dirt_path")                                            // 15/16-tall top (never culls): tops merge, sides partial
-  put(0, 0, 22, "grass_block"); put(1, 0, 22, "dirt_path"); put(2, 0, 22, "grass_block") // path between full cubes: shared sides cull
-  // fluids: source (level 0) then flowing levels 1-7, each lower than the
-  // last, so the surface slopes down the run
+  for (let i = 0; i < 3; i++) put(i * 2, 0, 10, "grass_block")
+  for (let i = 0; i < 6; i++) put(i, 0, 12, i % 2 ? "cobblestone" : "oak_planks")
+  for (let i = 0; i < 3; i++) put(i * 2, 0, 14, "glass")
+  run(16, "cobblestone_wall", {}, 4)
+  put(0, 0, 18, "oak_planks"); put(0, 1, 18, "oak_planks"); put(1, 0, 18, "oak_slab", { type: "bottom" })
+  run(20, "dirt_path")
+  put(0, 0, 22, "grass_block"); put(1, 0, 22, "dirt_path"); put(2, 0, 22, "grass_block")
+  // fluids: source then flowing levels 1-7, surface sloping down the run
   for (let i = 0; i < 8; i++) put(i, 0, 24, "water", { level: String(i) })
   for (let i = 0; i < 8; i++) put(i, 0, 26, "lava", { level: String(i) })
-  // stacked columns: same fluid above renders the lower block full 16 tall;
-  // level 8 is falling (also full-ish). plus a waterlogged slab
+  // same fluid above renders the lower block full; level 8 is falling
   put(9, 0, 24, "water", { level: "0" }); put(9, 1, 24, "water", { level: "0" })
   put(11, 0, 24, "water", { level: "8" })
   put(9, 0, 26, "lava", { level: "0" }); put(9, 1, 26, "lava", { level: "0" })
   put(0, 0, 30, "oak_slab", { type: "bottom", waterlogged: "true" })
-  // stained glass wall (2 tall), mixed colours: same colour culls the shared
-  // face (vertical pairs), different colours don't (horizontal neighbours)
+  // same colour culls the shared face, different colours don't
   const glassCols = ["red", "orange", "yellow", "lime", "light_blue", "blue", "purple", "magenta"]
   for (let i = 0; i < glassCols.length; i++) {
     put(i, 0, 28, glassCols[i] + "_stained_glass")

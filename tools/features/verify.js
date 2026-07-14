@@ -1,11 +1,5 @@
-// Regression harness for the feature generators: generates every feature in
-// public/features.zip at two seeds and fails on errors, unsupported types,
-// or empty output. Run it after tools/features/extract.js and after any
-// change to src/features/*. Exit code 0 means full coverage.
-//
 // Usage:  node tools/features/verify.js [version]
-//   version picks the cached client.jar (placed features + structure
-//   templates); it downloads through the shared cache when missing.
+//   version picks the cached client.jar; downloads through the shared cache when missing.
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { prepareVersion } from "../builtin/common.js"

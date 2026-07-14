@@ -1,9 +1,7 @@
 import { loadLibrary } from "./lib.js"
 import { usePacks } from "./composables/usePacks.js"
 
-// the minecraft font, straight from the pack's ascii.png: 16x16 grid of
-// glyph cells, advance widths scanned from the alpha channel the way the
-// game does (space is half a cell). re-read when the packs change
+// advance widths scanned from the alpha channel the way the game does; space is half a cell
 let fontPromise = null, fontVersion = -1
 
 export async function getFont() {
@@ -35,7 +33,6 @@ export async function getFont() {
   })()
 }
 
-// glyphs outside the sheet (or with no pixels) fall back to "?"
 function codeOf(font, g) {
   const n = g.codePointAt(0)
   return n < 256 && (font.widths[n] || n === 32) ? n : 63
@@ -47,7 +44,6 @@ export function measure(font, text) {
   return Math.max(0, w - 1)
 }
 
-// glyphs are white in the sheet; a color tints them via an offscreen pass
 export function drawText(ctx, font, text, x, y, { scale = 1, color } = {}) {
   const w = Math.ceil(measure(font, text) * scale), h = Math.ceil(font.ch * scale)
   if (!w) return 0

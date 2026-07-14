@@ -1,17 +1,13 @@
 ﻿import { DIR, OPP, add3, rnd, rotDir, rotPos, shuffle } from "../transforms.js"
 import { combine } from "../combine.js"
 
-// woodland mansion (WoodlandMansionPieces): an 11x11 grid is flood-filled into
-// corridors + rooms across three floors, then a piece placer walks that grid
-// emitting wall / floor / carpet / room / roof templates: with rotation AND
-// mirror (rooms mirror to face their door). it's assembled in one pass with no
-// recursion depth, so there are no steps: it just builds whole. mob-spawn markers
-// are dropped; the ChestN/E/S/W markers become facing loot chests (via combine).
+// woodland mansion (WoodlandMansionPieces): pieces place with rotation AND mirror
+// (rooms mirror to face their door). ChestN/E/S/W markers become facing chests.
 export async function runMansion(loadStruct, { seed } = {}) {
   const rand = seed == null ? Math.random : rnd(seed)
   const ni = n => Math.floor(rand() * n), nb = () => rand() < 0.5
   const getR = (a, r) => (a + r) & 3                          // Rotation.getRotated (NONE0 CW1 180=2 CCW3)
-  const ROT = 0                                               // global placement rotation
+  const ROT = 0
 
   // grid Direction helpers (grid x = Direction stepX, grid y = stepZ)
   const stepX = d => DIR[d][0], stepZ = d => DIR[d][2]
@@ -156,7 +152,7 @@ export async function runMansion(loadStruct, { seed } = {}) {
   identifyRooms(thirdGrid, floorRooms[2])
 
   // ---- piece placer (MansionPiecePlacer.createMansion) ----------------------
-  const pieces = []                                          // { name, pos, rot, mir }
+  const pieces = []
   const origin = [0, 0, 0]
   const mv = (pos, baseDir, rotK, n) => { const d = rotDir(baseDir, rotK); return [pos[0] + DIR[d][0] * n, pos[1] + DIR[d][1] * n, pos[2] + DIR[d][2] * n] }
   const up = (pos, n) => [pos[0], pos[1] + n, pos[2]]
@@ -361,7 +357,6 @@ export async function runMansion(loadStruct, { seed } = {}) {
     }
   }
 
-  // load every referenced template once, then flatten
   const names = Array.from(new Set(pieces.map(p => p.name)))
   const tpl = {}
   for (const n of names) tpl[n] = await loadStruct("woodland_mansion/" + n)

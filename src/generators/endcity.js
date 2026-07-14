@@ -1,11 +1,8 @@
 import { add3, boxHit, pieceBox, rotPos, rnd } from "../transforms.js"
 import { combine } from "../combine.js"
 
-// end city (EndCityPieces): a recursive tower of base/floors/roofs, towers,
-// bridges, an optional ship and fat towers. faithful port, including the
-// subtree collision pruning (a branch is dropped if it hits an unrelated piece;
-// a piece's `gen` tag lets it overlap the group it connects from). pieces
-// connect by childOrigin = parentOrigin + rotate(offset, parentRotation).
+// end city (EndCityPieces): faithful port including the subtree collision pruning;
+// a piece's `gen` tag lets it overlap the group it connects from.
 export async function runEndCity(loadStruct, { maxDepth = Infinity, seed } = {}) {
   const rand = seed == null ? Math.random : rnd(seed)
   const NAMES = ["base_floor", "base_roof", "second_floor_1", "second_floor_2", "third_floor_1", "third_floor_2", "second_roof", "third_roof", "tower_base", "tower_piece", "tower_top", "bridge_end", "bridge_piece", "bridge_steep_stairs", "bridge_gentle_stairs", "ship", "fat_tower_base", "fat_tower_middle", "fat_tower_top"]
@@ -17,12 +14,8 @@ export async function runEndCity(loadStruct, { maxDepth = Infinity, seed } = {})
   const pieces = []
   let tag = 1, shipCreated = false
   const addH = (list, p) => { list.push(p); return p }
-  // ow = MC's `overwrite` flag: true => STRUCTURE_BLOCK processor (air is placed,
-  // carving doorways/ladders through earlier pieces); false => STRUCTURE_AND_AIR
-  // (air skipped). only the interior floors/roofs are non-overwriting.
-  // depth = graph distance from the root, one per outward piece, so a step grows
-  // one piece at a time; `grp` keeps a piece on its parent's step (pieces that
-  // always come together, a building's floors + roof, are one step)
+  // ow = MC's overwrite flag: STRUCTURE_BLOCK (air carves) vs STRUCTURE_AND_AIR.
+  // grp keeps always-paired pieces on their parent's step
   function addPiece(parent, offset, name, rot, ow = true, grp = false) {
     const origin = add3(parent.origin, rotPos(offset || [0, 0, 0], parent.rot))
     return { name, rot, origin, box: pieceBox(tpl[name], rot, origin), gen: 0, ow, depth: (parent.depth ?? 0) + (grp ? 0 : 1) }
@@ -30,7 +23,6 @@ export async function runEndCity(loadStruct, { maxDepth = Infinity, seed } = {})
   const TOWER_BRIDGES = [[0, [1, -1, 0]], [1, [6, -1, 1]], [3, [0, -1, 5]], [2, [5, -1, 6]]]
   const FAT_BRIDGES = [[0, [4, -1, 0]], [1, [12, -1, 4]], [3, [0, -1, 8]], [2, [8, -1, 12]]]
 
-  // generate a subtree into a fresh list; add it only if nothing collides
   function recursive(gen, depth, parent, offset, list) {
     if (depth > 8) return false
     const child = []
@@ -47,8 +39,6 @@ export async function runEndCity(loadStruct, { maxDepth = Infinity, seed } = {})
   function houseTower(depth, parent, offset, list) {
     if (depth > 8) return false
     const r = parent.rot
-    // the whole building (base_floor + any floors + its roof) is one step: a
-    // bridge always lands on a complete building, floors always capped by a roof
     let last = addH(list, addPiece(parent, offset, "base_floor", r))
     const nf = nInt(3)
     if (nf === 0) addH(list, addPiece(last, [-1, 4, -1], "base_roof", r, true, true))
@@ -58,8 +48,6 @@ export async function runEndCity(loadStruct, { maxDepth = Infinity, seed } = {})
   }
   function tower(depth, parent, offset, list) {
     const r = parent.rot
-    // tower_base + its first tower_piece are both unconditional (always paired),
-    // so they're one step: the tower's start, not a lone base stub
     let last = addH(list, addPiece(parent, [3 + nInt(2), -3, 3 + nInt(2)], "tower_base", r))
     last = addH(list, addPiece(last, [0, 7, 0], "tower_piece", r, true, true))
     let bridge = nInt(3) === 0 ? last : null
@@ -89,7 +77,6 @@ export async function runEndCity(loadStruct, { maxDepth = Infinity, seed } = {})
   }
   function fatTower(depth, parent, offset, list) {
     const r = parent.rot
-    // same: fat_tower_base + its first middle are always paired => one step
     let last = addH(list, addPiece(parent, [-3, 4, -3], "fat_tower_base", r))
     last = addH(list, addPiece(last, [0, 4, 0], "fat_tower_middle", r, true, true))
     for (let i = 0; i < 2 && nInt(3) !== 0; i++) {
@@ -100,8 +87,7 @@ export async function runEndCity(loadStruct, { maxDepth = Infinity, seed } = {})
     return true
   }
 
-  // startHouseTower: the root building (base + two floors + roof) is one step
-  // (depth 0), then a tower grows up from it one piece at a time
+  // startHouseTower
   let last = addH(pieces, { name: "base_floor", rot: 0, origin: [0, 0, 0], box: pieceBox(tpl.base_floor, 0, [0, 0, 0]), gen: 0, depth: 0, ow: true })
   last = addH(pieces, addPiece(last, [-1, 0, -1], "second_floor_1", 0, false, true))
   last = addH(pieces, addPiece(last, [-1, 4, -1], "third_floor_1", 0, false, true))

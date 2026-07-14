@@ -5,14 +5,12 @@ import { runMonument } from "./monument.js"
 import { mineshaftPieceGens, runMineshaftRoom, runMineshaftRoomMesa } from "./mineshaft.js"
 import { makeEndSpikeSize } from "./endspikes.js"
 
-// structures with no .nbt at all: the tree entry is synthesized and a load
-// runs the generator at seed 0
+// nbt-less structures: the tree entry is synthesized, loads run the generator at seed 0
 export const GENERATED = {
   "minecraft/builtin/ocean_monument": runMonument,
   "minecraft/builtin/mineshaft/normal/room": runMineshaftRoom,
   "minecraft/builtin/mineshaft/mesa/room": runMineshaftRoomMesa
 }
-// the ten spikes, named by their obsidian height (sizes 1 and 2 are caged)
 for (let size = 0; size < 10; size++) {
   const caged = size === 1 || size === 2 ? "_caged" : ""
   GENERATED[`minecraft/builtin/end/spike_${76 + size * 3}${caged}`] = makeEndSpikeSize(size)
@@ -25,11 +23,8 @@ for (const type of ["normal", "mesa"]) {
   }
 }
 
-// Fixers for the extracted hardcoded structures (tools/builtin). The .nbt
-// files are one canonical roll of the game's code; the .rand.json sidecars
-// list exactly which cells a random selector controls, and these re-roll
-// them with the game's distributions. Loads apply a random seed, the level
-// menu's Regenerate re-rolls with a session seed.
+// fixers: the nbts are one canonical roll; the .rand.json sidecars list the
+// selector-controlled cells, re-rolled here with the game's distributions
 
 const AIRISH = /(^|:)(cave_)?air$/
 
@@ -72,7 +67,7 @@ function setCell(s, cells, stateFor, pos, Name, Properties, nbt) {
   }
 }
 
-// ---- jungle temple: 40% cobblestone / 60% mossy per selector cell
+// ---- jungle temple
 
 function fixJungleTemple(s, masks, rand) {
   const cells = cellMap(s), stateFor = statePicker(s)
@@ -81,8 +76,7 @@ function fixJungleTemple(s, masks, rand) {
   }
 }
 
-// ---- desert pyramid: collapsed cellar roof, the two stair-hole blocks, and
-// 5-7 suspicious sands among the potential positions (plus one in the roof)
+// ---- desert pyramid
 
 function fixDesertPyramid(s, masks, rand) {
   const cells = cellMap(s), stateFor = statePicker(s)
@@ -101,8 +95,7 @@ function fixDesertPyramid(s, masks, rand) {
   sus(masks.collapsed_roof[Math.floor(rand() * masks.collapsed_roof.length)])
 }
 
-// ---- desert well: one suspicious sand under a random water cell at each of
-// depth 1 and depth 2
+// ---- desert well
 
 function fixDesertWell(s, masks, rand) {
   const cells = cellMap(s), stateFor = statePicker(s)
@@ -113,8 +106,7 @@ function fixDesertWell(s, masks, rand) {
   }
 }
 
-// ---- dungeon: mossy floor rolls, the spawner mob, and up to two chests
-// probed against the walls (MonsterRoomFeature)
+// ---- dungeon (MonsterRoomFeature)
 
 const DUNGEON_MOBS = ["minecraft:skeleton", "minecraft:zombie", "minecraft:zombie", "minecraft:spider"]
 
@@ -130,13 +122,11 @@ function fixDungeon(s, masks, rand) {
   const at = (p, d) => [p[0] + STEP[d][0], 1, p[2] + STEP[d][1]]
   const nameAt = p => s.palette[cells.get(key(p))?.state]?.Name || ""
   const empty = p => !cells.has(key(p)) || AIRISH.test(nameAt(p))
-  // wall counting is isSolid (cobble, spawner, even a placed chest all pass);
-  // reorient's facing pick is isSolidRender (full render cubes only)
+  // wall counting is isSolid; the facing pick is isSolidRender (full cubes only)
   const isSolid = p => cells.has(key(p)) && !AIRISH.test(nameAt(p))
   const solidRender = p => /cobblestone$/.test(nameAt(p))
   const isChest = p => /(^|:)chest$/.test(nameAt(p))
-  // StructurePiece.reorient: a chest next door keeps the default facing,
-  // one full-render wall faces the chest away from it, else walk the fallback
+  // StructurePiece.reorient
   function reorient(p) {
     let unique = null
     for (const d of ["north", "south", "west", "east"]) {
@@ -167,8 +157,7 @@ function fixDungeon(s, masks, rand) {
       break
     }
   }
-  // adjacent same-facing chests join into a double (type per the direction
-  // of the partner: clockwise of facing = left)
+  // same-facing neighbours join into doubles; clockwise of facing = left
   const chests = s.blocks.filter(b => /(^|:)chest$/.test(s.palette[b.state]?.Name || ""))
   for (const c of chests) {
     const f = s.palette[c.state].Properties.facing
@@ -205,7 +194,6 @@ export async function fixBuiltin(rel, structure, seed = (Math.random() * 0x10000
   return structure
 }
 
-// one-shot session generators (Re-roll re-fixes with the session seed)
 export const rerollGen = rel => async (loadStruct, { seed } = {}) => {
   const s = await loadStruct(rel.replace(/^minecraft\//, ""))
   return { structure: await fixBuiltin(rel, s, seed), maxDepth: 1 }

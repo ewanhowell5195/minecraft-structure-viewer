@@ -1,6 +1,3 @@
-// Minimal NBT reader, enough for Minecraft structure files. Big-endian by
-// default (Java); littleEndian reads Bedrock files (.mcstructure). Structure
-// block output is gzipped; plain uncompressed NBT also occurs.
 const TAG = {
   END: 0, BYTE: 1, SHORT: 2, INT: 3, LONG: 4, FLOAT: 5, DOUBLE: 6,
   BYTE_ARRAY: 7, STRING: 8, LIST: 9, COMPOUND: 10, INT_ARRAY: 11, LONG_ARRAY: 12
@@ -73,9 +70,7 @@ export async function readNBT(input, { littleEndian = false } = {}) {
   return payload(TAG.COMPOUND)
 }
 
-// palette entries are { Name, Properties? }; blocks are { state, pos, nbt? }.
-// some vanilla files (shipwrecks) use the plural `palettes` form. entities
-// keep their exact double position (block units) and raw nbt.
+// some vanilla files (shipwrecks) use the plural `palettes` form
 export async function readStructure(input) {
   const root = await readNBT(input)
   const size = (root.size ?? [0, 0, 0]).map(Number)

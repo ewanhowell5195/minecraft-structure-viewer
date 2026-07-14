@@ -23,22 +23,16 @@ function rerollFeature() {
   else if (sel[0]) loadFeature(sel[0], rand32())
 }
 
-// first press builds the field around the current roll; while a field is
-// up the same button re-bases it on a fresh seed
 function fieldFeature() {
   const rel = features.state.selected[0]
   if (rel) loadFeatureField(rel, structState.field ? rand32() : undefined)
 }
 
-// back to one tree: the roll the field grew from
 function singleFeature() {
   const f = structState.field
   if (f) loadFeature(f.rel, f.base)
 }
 
-// one menu shell for everything: features and sessions share the
-// collapsible panel + head button, the show/hide toggle stands alone.
-// a static feature (one shape ever) gets no menu, like a static structure
 const mode = computed(() => {
   if (s.active) return "session"
   const sel = features.state.selected
@@ -49,13 +43,10 @@ const mode = computed(() => {
 
 const headLabel = computed(() => mode.value === "feature"
   ? structState.name.replace(/^minecraft\//, "")
-  // the base is just the raw structure: no level shown until you grow
   : s.steps && s.level > 0 ? `${s.label} · Level ${s.level + 1}` : s.label)
 </script>
 
 <template>
-  <!-- without a session or feature (plain pieces, combinations) only the
-       show/hide toggle remains, as a lone floating button -->
   <div v-if="mode === 'toggle'" class="level-menu" :class="{ locked }">
     <button :disabled="locked" @click="buildState.hideStructureBlocks = !buildState.hideStructureBlocks">
       <span class="material-symbols-outlined">{{ buildState.hideStructureBlocks ? "visibility" : "visibility_off" }}</span>
@@ -63,14 +54,9 @@ const headLabel = computed(() => mode.value === "feature"
     </button>
   </div>
   <div v-else-if="mode" class="level-menu" :class="{ locked }">
-    <!-- buttons that can't do anything right now aren't rendered at all.
-         collapsed, the panel is hidden but keeps its width so the head button
-         stretches to match -->
+    <!-- collapsed uses visibility so the panel keeps its width and the head button stretches to match -->
     <div class="panel" :class="{ collapsed: !open }">
       <template v-if="mode === 'feature'">
-        <!-- a field packs up to 256 deterministic rolls of the loaded
-             feature, deduped; while one is up the button re-bases it and
-             the single Re-roll disappears -->
         <button v-if="structState.field" :disabled="locked" @click="singleFeature">
           <span class="material-symbols-outlined">crop_square</span>
           Single

@@ -5,10 +5,7 @@ import { PROC } from "../proc.js"
 import { GENERATED } from "../generators/builtin.js"
 import { numeric } from "../transforms.js"
 
-// Discovery: every data/<ns>/structure/*.nbt plus the legacy/mod plural
-// data/<ns>/structures/*.nbt, across the union of all pack sources. Names are
-// "<ns>/<path>"; reads go through readFile(zipPath, assets) so the highest
-// priority pack's copy wins.
+// structures? also matches the legacy/mod plural folder
 const STRUCT_RE = /^data\/([^/]+)\/structures?\/(.+)\.nbt$/
 
 const packs = usePacks()
@@ -22,13 +19,10 @@ const state = reactive({
   worldgenReady: false
 })
 
-// name -> real zip path (the folder may be structure or structures)
 let structPath = new Map()
 let starterSet = null, standaloneSet = null, structDepth = null, structRadius = null
 let worldgenPromise = null
 
-// structure-block saves from an opened world sit under their own root in
-// the tree instead of merging into the vanilla namespaces
 let worldNames = []
 
 function refreshNames() {
@@ -61,13 +55,8 @@ async function allZipKeys() {
   return keys
 }
 
-// One lazy pass over every namespace's worldgen data:
-// - starterSet: structures that start a build (a structure is a piece if a
-//   non-start template pool lists it; everything else is a starter)
-// - standaloneSet: starters that also load nothing else in (not a start-pool
-//   member, not a procedural entry); entity spawns don't count
-// - structDepth: each start-pool member's generation depth (the structure
-//   def's `size`), the "fully loaded" point when growing jigsaws
+// starterSet: not listed as a piece by any non-start pool; standaloneSet:
+// starters that pull nothing else in (entity spawns don't count)
 function computeWorldgen() {
   worldgenPromise ??= (async () => {
     const lib = await loadLibrary()
@@ -87,8 +76,7 @@ function computeWorldgen() {
       const j = await readJson(p)
       if (typeof j?.start_pool === "string") {
         const sp = nsify(j.start_pool)
-        // max_distance_from_center is a plain number or, in newer formats,
-        // { horizontal, vertical }; 80 was the default when it was optional
+        // 80 was max_distance_from_center's default when it was optional
         const md = j.max_distance_from_center
         const r = typeof md === "number" ? md : typeof md?.horizontal === "number" ? md.horizontal : 80
         startPoolDepth.set(sp, typeof j.size === "number" ? j.size : 7)
@@ -154,7 +142,6 @@ function filteredNames() {
   return set ? state.names.filter(n => set.has(n)) : state.names
 }
 
-// what the sidebar list is currently showing (filter mode + search text)
 function visibleNames() {
   let names = filteredNames()
   const q = state.filterText.trim().toLowerCase()

@@ -1,7 +1,4 @@
-// The game's tree feature, ported from the decompiled 26.3 trunk placers,
-// foliage placers and decorators. Runs against an empty feature world, so
-// the game's can-I-grow checks all pass and only the shapes remain.
-// Randomness is distribution-faithful, not bit-exact.
+// ported from the decompiled 26.3 placers; randomness is distribution-faithful, not bit-exact
 import { nextInt, sampleInt, sampleState } from "./providers.js"
 import { DIR, HORIZ as HORIZ_NAMES, OPP } from "../transforms.js"
 
@@ -553,8 +550,7 @@ function decorate(ctx, decorators, rand) {
         }
         break
       }
-      // litter on the ground around the trunk; the viewer's grid is the
-      // ground, so the plane just below the trunk base counts as solid
+      // the viewer's grid is the ground: the plane just below the trunk base counts as solid
       case "place_on_ground": {
         if (!logs.length) break
         const baseY = logs[0][1]

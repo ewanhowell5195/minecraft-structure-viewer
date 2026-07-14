@@ -17,8 +17,6 @@ const fileInput = ref(null)
 const treeEl = ref(null)
 const collapsed = ref(false)
 
-// page load: once the selection lands (and TreeFolder has expanded the path
-// to it), bring the first selected row into view
 const stopReveal = watch(() => state.selected.length, async n => {
   if (!n) return
   stopReveal()
@@ -31,7 +29,6 @@ const names = computed(() => {
   return state.filterMode === "all" ? state.names : filteredNames()
 })
 
-// the shown path drops the namespace when only one exists
 const soleNs = computed(() => new Set(names.value.map(n => n.slice(0, n.indexOf("/")))).size <= 1)
 const disp = rel => soleNs.value ? rel.slice(rel.indexOf("/") + 1) : rel
 
@@ -58,11 +55,9 @@ const tree = computed(() => {
 
 const autoOpenName = computed(() => soleNs.value ? "" : "minecraft")
 
-// the permanent root row: never collapses, and its context menu works the
-// whole list at once (during a search, "load all" takes the matches)
 const rootExpand = ref(0), rootCollapse = ref(0)
-// searching unmounts the tree; zero the tokens so the remounted tree doesn't
-// replay an old "expand all" (its token watcher runs on mount)
+// zero the tokens while searching: the tree's token watcher runs on mount, so
+// a remounted tree would replay a stale "expand all"
 watch(() => !!flat.value, isFlat => {
   if (isFlat) {
     rootExpand.value = 0
@@ -90,7 +85,6 @@ function onFile(e) {
   const file = e.target.files[0]
   e.target.value = ""
   if (!file) return
-  // a world save zip or a bare region file opens the chunk picker instead
   if (/\.(zip|mca)$/i.test(file.name)) useWorld().openWorld(file)
   else loadFile(file)
 }

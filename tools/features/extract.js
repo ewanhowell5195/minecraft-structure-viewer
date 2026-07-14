@@ -1,9 +1,3 @@
-// Dumps the game's worldgen/feature registry to JSON and bundles it as
-// public/features.zip, plus two precomputed viewer indexes: a just-a-block
-// hide list and the ref-only selectors the viewer delists. Shares
-// tools/builtin's version cache (server jar + extracted classpath) so both
-// extractors download the game once.
-//
 // Usage:  node tools/features/extract.js [version]
 //   version defaults to the latest snapshot from Mojang's manifest.
 //   Requires a JDK (javac/java on PATH or via JAVA_HOME).
@@ -46,10 +40,8 @@ async function main() {
   }
   const ctx = buildGenCtx(files, path.join(verDir, "client.jar"))
 
-  // template stampers only ever show structure nbts the structures tab
-  // already lists, and their re-rolls barely differ, so they get the dupes
-  // treatment too. the scan follows references (rooted_sulfur_spring wraps
-  // the placed sulfur_spring by name), so wrappers go with their stamp
+  // template stampers duplicate the structures tab; the scan follows
+  // references, so wrappers go with the stamp they wrap
   const templateBased = []
   for (const [rel, json] of Array.from(ctx.featureByRel)) {
     if (await stampsTemplates(ctx, json, new Set())) {
@@ -62,17 +54,14 @@ async function main() {
   const hidden = await computeHidden(ctx)
   files.set("viewer/hidden_features.json", Buffer.from(JSON.stringify(hidden, null, 2)))
 
-  // selectors that only pick between other registry features are redundant
-  // in a list that already shows every feature; they stay in the zip (other
-  // features resolve through them) but the viewer drops them from the list
+  // ref-only selectors stay in the zip (other features resolve through them), the viewer just delists them
   const selectors = []
   for (const [rel, json] of ctx.featureByRel) {
     const entries = selectorEntries(json)
     if (entries && entries.every(isRef)) selectors.push(rel)
   }
   files.set("viewer/redundant_selectors.json", Buffer.from(JSON.stringify(selectors.sort(), null, 2)))
-  // snapshot jars ship worldgen/feature JSONs as data, so deleting the dupes
-  // from this zip isn't enough: the viewer also delists them by name
+  // snapshot jars ship feature JSONs as data, so deleting dupes from this zip isn't enough: the viewer also delists by name
   const dupes = STRUCTURE_DUPES.map(n => "minecraft/" + n).concat(templateBased).sort()
   files.set("viewer/structure_dupes.json", Buffer.from(JSON.stringify(dupes, null, 2)))
 
@@ -87,8 +76,7 @@ async function main() {
   log(`wrote bundled/features + public/features.zip: ${ctx.featureByRel.size} features, ${hidden.length} hidden as just-a-block, ${selectors.length} ref-only selectors delisted, ${templateBased.length} template stampers excluded, ${statics.length} static`)
 }
 
-// the viewer already offers these under Structures (extracted builtins), so
-// they don't get a second entry in the Features tab
+// already offered under Structures (extracted builtins)
 const STRUCTURE_DUPES = [
   "bonus_chest",
   "desert_well",
@@ -102,14 +90,10 @@ const STRUCTURE_DUPES = [
   "void_start_platform"
 ]
 
-// a selector entry is a pure reference when it bottoms out in a registry id
-// rather than an inline feature config
 const isRef = x => typeof x === "string" || (x != null && typeof x === "object" && x.feature !== undefined && isRef(x.feature))
 
-// only pure template stampers: fossils also stamp templates but their
-// overlay processors rot the bones and embed coal/deepslate diamond ore,
-// which is real generation, so they stay features. string values resolve
-// through the registries (misses return null and count as plain strings)
+// fossils also stamp templates but their overlay processors do real
+// generation, so anything beyond a pure stamp stays a feature
 async function stampsTemplates(ctx, json, seen) {
   if (json == null) return false
   if (typeof json === "string") {
@@ -134,19 +118,14 @@ function selectorEntries(json) {
   return null
 }
 
-// Seed 0 often rolls a tiny output, so the default (clean-url) load uses a
-// representative seed instead: sample a batch per feature, sort by block
-// count, take the seed in the middle of the range. Explicit ?fseed and
-// Re-roll are unaffected.
+// seed 0 often rolls tiny, so the default load gets the median-size roll of a sampled batch
 const DEFAULT_SAMPLES = 256
 
-// hand-picked defaults win over the computed median: a good-looking roll
-// beats a statistically average one
+// handpicked seeds beat the computed median: good-looking over statistically average
 const HANDPICKED_SEEDS = {
   "minecraft/amethyst_geode": 2948352934
 }
 
-// canonical shape key, used to spot features whose output never varies
 function shapeKey(s) {
   return s.blocks.map(b => {
     const e = s.palette[b.state]
@@ -184,9 +163,6 @@ async function computeDefaults(ctx) {
   return { defaults, statics: statics.sort() }
 }
 
-// Precompute the names whose seed-0 roll is just a block (one cell, or the
-// upper and lower halves of one double plant): the viewer hides those from
-// its list instead of re-deriving this on every load
 async function computeHidden(ctx) {
   const hidden = []
   for (const [rel, json] of ctx.featureByRel) {

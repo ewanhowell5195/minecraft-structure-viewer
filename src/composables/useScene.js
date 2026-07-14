@@ -2,27 +2,21 @@ import { reactive, watch } from "vue"
 import * as THREE from "three"
 import { OrbitControls } from "three/addons/controls/OrbitControls.js"
 
-// The three.js scene: renderer, cameras, controls, grid, wireframe, and the
-// render loop. Content roots (the built structure, later collected ones) are
-// registered so fit/grid can span everything.
 const FOV = 45
 const GRID_COLOR = 0x444448
 
 const view = reactive({
   ortho: false,
-  wireframe: "off", // "off" | "wire" | "overlay"
+  wireframe: "off",
   grid: true
 })
 
 let renderer = null, canvas = null
 const scene = new THREE.Scene()
-// drawn over the finished frame against its depth buffer: wireframe modes
-// and the override material never touch it (the slicer planes live here)
+// drawn over the finished frame; the wireframe override material never touches it
 const overlayScene = new THREE.Scene()
-// near 2 (1/8 block): depth precision scales with the near plane, and 0.1
-// left far surfaces quantising to the same depth value (distant z-fighting,
-// faces poking through each other). walking can't get closer than ~4 units
-// to a surface, so nothing visible ever clips
+// near 2: at 0.1 far surfaces quantised to the same depth (distant z-fighting);
+// walking never gets closer than ~4 units, so nothing visible clips
 const perspCam = new THREE.PerspectiveCamera(FOV, 1, 2, 5000)
 perspCam.position.set(-68, 50, -68)
 const orthoCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 5000)
@@ -34,8 +28,7 @@ let orthoManual = false
 const contentRoots = new Set()
 const animators = new Set()
 
-// the slicers' clipping planes (useSlicers drives them): always three so
-// materials compile once, disabled ones pushed out to infinity
+// always three so materials compile once; disabled ones pushed out to infinity
 export const SLICE_PLANES = [
   new THREE.Plane(new THREE.Vector3(0, 1, 0), 1e9),
   new THREE.Plane(new THREE.Vector3(0, 1, 0), 1e9),
@@ -45,15 +38,10 @@ export const SLICE_PLANES = [
 const wireMat = new THREE.MeshBasicMaterial({ wireframe: true, color: 0x9fd0ff })
 wireMat.clippingPlanes = SLICE_PLANES
 
-// floor grids: one rectangular grid per structure, hugging its footprint.
-// the brighter centre cross sits on the nearest block boundary, off-centre
-// on odd sizes
 let gridGroup = null
 const gridVisible = () => view.grid && view.wireframe !== "wire"
 const GRID_LINE = 0x333336
 
-// inCave clips the lines against the cave: any 16-unit span with a carved
-// cell on either side is left out (the cave outline draws that border)
 function makeRectGrid({ x, z, w, d, y }, inCave) {
   const P = [], C = []
   const cross = new THREE.Color(GRID_COLOR), line = new THREE.Color(GRID_LINE)
@@ -90,8 +78,6 @@ function makeRectGrid({ x, z, w, d, y }, inCave) {
   return new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ vertexColors: true }))
 }
 
-// cave wireframe: the fake carver's outline drawn at floor and ceiling
-// height, so the suspended stretches of a mineshaft make sense
 const CAVE_LINE = 0x3d5464
 function makeCaveWire({ segments, y0, y1 }) {
   const P = []
@@ -104,9 +90,6 @@ function makeCaveWire({ segments, y0, y1 }) {
   return new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: CAVE_LINE }))
 }
 
-// north indicator: a vector "N" just past the north (-z) edge, drawn as
-// lines so it stays crisp at any zoom. hidden once the camera is far enough
-// that it would just be clutter
 function makeNorth({ x, z, y, w, d }) {
   const nx = x + Math.floor(w / 2) * 16, x0 = nx - 2.5, x1 = nx + 2.5, zb = z - 3, zt = z - 9
   const geo = new THREE.BufferGeometry()
@@ -116,9 +99,6 @@ function makeNorth({ x, z, y, w, d }) {
   return seg
 }
 
-// combination mode: the north marker's spot holds a floating nametag
-// instead, fading in as the camera gets near that structure. the sprite
-// stays hidden until the font has loaded and the texture is drawn
 function makeNameTag({ x, z, y, w, d, label }) {
   const spr = new THREE.Sprite(new THREE.SpriteMaterial({ transparent: true }))
   spr.visible = false
@@ -152,9 +132,6 @@ async function drawNameTag(spr, label) {
   spr.userData.ready = true
 }
 
-// block highlight: box edges whose lines invert whatever is behind them
-// (1 - dst via custom blending) and always render on top; only the edges of
-// camera-facing faces draw, so the back of the cube never shows through
 function makeHighlight() {
   const box = new THREE.Box3()
   const geo = new THREE.BufferGeometry()
@@ -176,9 +153,8 @@ function makeHighlight() {
   lines.frustumCulled = false
   lines.visible = false
   scene.add(lines)
-  // corners are xyz bitmasks; faces are -x,+x,-y,+y,-z,+z. an edge draws
-  // when either of its two adjacent faces looks at the camera: that keeps
-  // the front + silhouette edges and drops the back ones
+  // [cornerBitmaskA, cornerBitmaskB, faceA, faceB], faces -x,+x,-y,+y,-z,+z;
+  // an edge draws when either adjacent face looks at the camera
   const EDGES = [
     [0, 1, 2, 4], [2, 3, 3, 4], [4, 5, 2, 5], [6, 7, 3, 5],
     [0, 2, 0, 4], [1, 3, 1, 4], [4, 6, 0, 5], [5, 7, 1, 5],
@@ -216,7 +192,7 @@ function makeHighlight() {
   }
 }
 
-// proximity for the markers: ortho "zoom" moves no closer, so divide it out
+// ortho "zoom" moves no closer, so divide it out
 function updateGridLabels() {
   if (!gridGroup) return
   for (const o of gridGroup.children) {
@@ -232,13 +208,9 @@ function updateGridLabels() {
   }
 }
 
-// world-space xz extents of the current floor grids (walk mode spawns onto
-// the nearest one when the camera is far away)
 let gridRects = []
 
-// rects: [{ x, z, y, w, d, label? }] with x/z/y in world units, w/d in
-// blocks. cave (world units) adds a cave wireframe and cuts its footprint
-// out of the rect grids
+// rects x/z/y are world units, w/d are blocks; cave is world units
 function setGrids(rects, cave = null) {
   gridRects = rects.map(r => ({ x0: r.x, z0: r.z, x1: r.x + r.w * 16, z1: r.z + r.d * 16 }))
   if (gridGroup) {
@@ -268,9 +240,6 @@ function sceneBounds() {
   return _bb
 }
 
-// the far plane follows the content: big combinations would otherwise get cut
-// off by the fixed clip when zoomed out. the sphere is cached per build
-// (setGrids fires once the meshes are in) and the clip tracks the camera
 const sceneSphere = new THREE.Sphere(new THREE.Vector3(), 300)
 const refreshSphere = () => sceneBounds().getBoundingSphere(sceneSphere)
 function updateClips() {
@@ -322,8 +291,7 @@ function fit() {
   controls.update()
 }
 
-// the end portal shader samples in screen space assuming a square viewport;
-// its Aspect uniform squashes the pattern back for whatever shape we render at
+// the end portal shader assumes a square viewport; Aspect squashes the pattern back
 function syncAspect() {
   const aspect = (canvas?.clientWidth || 1) / (canvas?.clientHeight || 1)
   scene.traverse(o => {
@@ -333,10 +301,7 @@ function syncAspect() {
   })
 }
 
-// resize when the CSS size or device pixel ratio changes, and also when the
-// buffer itself no longer matches: browsers can shrink or drop a hidden
-// tab's backing store, which used to be silently repaired by the old
-// setSize-every-frame bug
+// also check the buffer itself: browsers can shrink or drop a hidden tab's backing store
 let sizeW = 0, sizeH = 0
 function resize() {
   const w = canvas.clientWidth, h = canvas.clientHeight
@@ -358,7 +323,6 @@ function init(canvasEl) {
   renderer.localClippingEnabled = true
   controls = new OrbitControls(camera, canvas)
   controls.enableDamping = true
-  // a camera move reverts auto-enabled ortho; a manual toggle sticks
   controls.addEventListener("start", () => { if (camera === orthoCam && !orthoManual) setOrtho(false) })
   setGrids([{ x: -128, z: -128, y: -8.01, w: 16, d: 16 }])
   new ResizeObserver(resize).observe(canvas)
@@ -375,13 +339,10 @@ function init(canvasEl) {
     const dt = (now - lastT) / 1000
     lastT = now
     resize()
-    // while walking, the walk sim drives the camera instead of the orbit
     if (!walkUpdate?.(dt)) controls.update()
     updateClips()
     updateGridLabels()
     for (const a of animators) a.update()
-    // overlay renders the scene twice: textures first, then the wireframe
-    // over the same depth buffer, so hidden edges stay hidden
     scene.overrideMaterial = view.wireframe === "wire" ? wireMat : null
     renderer.render(scene, camera)
     if (view.wireframe === "overlay") {
@@ -402,7 +363,6 @@ function init(canvasEl) {
   })
 }
 
-// walk mode's per-frame hook: returns true while it owns the camera
 let walkUpdate = null
 const setWalkUpdate = fn => { walkUpdate = fn }
 

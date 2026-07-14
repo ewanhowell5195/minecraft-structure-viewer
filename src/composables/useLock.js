@@ -1,9 +1,6 @@
 import { computed, reactive, readonly } from "vue"
 
-// One reference-counted lock covers everything that can start a load, so
-// nothing changes mid-build. Nested locks (a build inside a jigsaw solve)
-// balance through the refcount. withLock locks synchronously before any await
-// so a click in a pre-build async gap can't race.
+// withLock locks synchronously before any await so a click in a pre-build async gap can't race
 const state = reactive({ depth: 0 })
 
 const locked = computed(() => state.depth > 0)

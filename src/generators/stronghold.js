@@ -3,12 +3,8 @@ import { combine } from "../combine.js"
 import { boxesIntersect, orientBox, placePiece } from "./pieces.js"
 import { readMasks } from "./builtin.js"
 
-// stronghold (StrongholdPieces): weighted piece graph, random-order BFS,
-// whole layouts retried (seed+tries) until a portal room lands, exactly like
-// the game. blocks come from the extracted piece nbts (canonical: plain
-// stone, OPENING doorways, no side exits); per-instance randomness is
-// stamped on top: the SmoothStoneSelector re-roll over the .rand.json stone
-// masks, doorway types, branch exit carves, torches, cobwebs, portal eyes.
+// stronghold (StrongholdPieces): the nbts are one canonical roll (plain stone,
+// OPENING doorways, no side exits); per-instance randomness is stamped on top.
 
 const P = {
   straight: { off: [-1, -1, 0], size: [5, 5, 7], door: [1, 1, 0] },
@@ -49,13 +45,10 @@ function makeBox(x, y, z, dir, w, h, d) {
 const STONES = "minecraft:stone_bricks"
 const rollStone = r => r < 0.2 ? "minecraft:cracked_stone_bricks" : r < 0.5 ? "minecraft:mossy_stone_bricks" : r < 0.55 ? "minecraft:infested_stone_bricks" : STONES
 
-// spec coordinates are in the game's authored space; the nbts (and stamps,
-// which ride the same transform) are stored in north-placement space, which
-// flips z
+// authored spec coords vs north-placement nbt space: z flips between them
 const flipCells = (cells, depth) => cells.map(([p, ...rest]) => [[p[0], p[1], depth - 1 - p[2]], ...rest])
 
-// a stamp is a mini piece sharing the parent's size, so it goes through the
-// same orientation transform and box placement
+// a stamp shares the parent's size so it rides the same orientation transform
 function stamp(size, cells) {
   const palette = [], palIdx = new Map(), blocks = []
   for (const [pos, Name, Properties, nbt] of cells) {
@@ -104,7 +97,7 @@ function doorCells(type, [fx, fy, fz]) {
       [[fx + 2, fy + 1, fz], "minecraft:iron_bars", { east: "true" }], [[fx + 2, fy, fz], "minecraft:iron_bars", { east: "true" }]
     ]
   }
-  return null // opening is the canonical extraction
+  return null
 }
 
 export async function runStronghold(loadStruct, { maxDepth = Infinity, seed } = {}) {
@@ -303,8 +296,7 @@ export async function runStronghold(loadStruct, { maxDepth = Infinity, seed } = 
     const size = p.name === "library" && !p.tall ? [14, 6, 15] : P[p.name].size
     placed.push(placePiece(tpl[nbtName], p.dir, p.box))
 
-    // mask cells are already in nbt space; everything below is authored
-    // spec coordinates and gets flipped when stamped
+    // mask cells are in nbt space; the rest is authored coords, flipped on stamp
     const maskCells = []
     for (const [x, y, z] of masks[nbtName]) maskCells.push([[x, y, z], rollStone(rand())])
     const cells = []
@@ -316,8 +308,7 @@ export async function runStronghold(loadStruct, { maxDepth = Infinity, seed } = 
       if (p.rightChild) cells.push(...boxCells(4, 1, 2, 4, 3, 4, "minecraft:cave_air"))
     }
     if ((p.name === "left_turn" || p.name === "right_turn") && (p.dir === "south" || p.dir === "west")) {
-      // the mirrored orientations exit through the opposite wall: refill the
-      // canonical hole with selector stone and carve the other side
+      // mirrored orientations exit the opposite wall: refill, carve the other side
       const canonicalX = p.name === "left_turn" ? 0 : 4
       for (let y = 1; y <= 3; y++) for (let z = 1; z <= 3; z++) cells.push([[canonicalX, y, z], rollStone(rand())])
       cells.push(...boxCells(4 - canonicalX, 1, 1, 4 - canonicalX, 3, 3, "minecraft:cave_air"))
@@ -359,8 +350,7 @@ export async function runStronghold(loadStruct, { maxDepth = Infinity, seed } = 
     }
   }
 
-  // anchor on the start piece's corner (the base nbt's origin), so the
-  // camera stays glued to it across levels
+  // anchor on the start piece so the camera stays put across levels
   const structure = combine(placed)
   const sb = pieces[0].box
   structure.anchor = [structure.anchor[0] + sb.minX, structure.anchor[1] + sb.minY, structure.anchor[2] + sb.minZ]

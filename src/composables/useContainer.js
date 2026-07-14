@@ -9,18 +9,12 @@ import { useStructures } from "./useStructures.js"
 import { readLootTable, readTrialSpawnerConfig, rollLoot, sampleTable, stackKey, prettyName, isInspectable } from "../loot.js"
 import { parseState } from "../transforms.js"
 
-// Clicking a loot container (chest, barrel, dispenser...) opens a modal with
-// its loot table rules and a rolled inventory rendered in the vanilla GUI.
-// Walk mode reaches here via useBuild.interact; orbit mode via a raycast on
-// plain (non-drag) clicks.
 const sceneApi = useScene()
 const buildApi = useBuild()
 const packs = usePacks()
 const structures = useStructures()
 
-// gui metrics: texture name, its full height, how much of the top is the
-// container section, and where the slot grid starts. tiled guis compose
-// header + n slot-row strips + bottom, so their row count can grow
+// vanilla gui texture metrics; tiled guis compose header + slot-row strips + bottom, so rows can grow
 const KINDS = {
   generic: { tex: "generic_54", texH: 222, cropH: 71, tile: true, cols: 9, rows: 3, ox: 7, oy: 17 },
   shulker: { tex: "shulker_box", texH: 166, cropH: 71, tile: true, cols: 9, rows: 3, ox: 7, oy: 17 },
@@ -38,8 +32,8 @@ function kindOf(name) {
 
 const state = reactive({
   open: false,
-  pick: null,      // overlapping entities: [{ e, label }] chosen before the modal
-  aim: null,       // { name, props } of the block under the pointer
+  pick: null,
+  aim: null,
   blockName: "",
   tableId: "",
   table: null,
@@ -47,26 +41,25 @@ const state = reactive({
   stacks: [],
   error: "",
   note: "",
-  tab: "loot",     // loot | odds | rules
-  odds: null,      // sampleTable result, computed once per open on demand
+  tab: "loot",
+  odds: null,
   oddsBusy: false,
-  rolls: 0,        // opens accumulated into the gui pile
+  rolls: 0,
   pileTotal: 0,
-  gui: null,       // the gui actually drawn (accumulated piles grow a chest)
+  gui: null,
   guiTitle: "",
-  dataRows: null,  // technical blocks (command/structure/jigsaw) show these
-  blurb: "",       // one-liner explaining what this block does
-  poolId: "",      // the pool the card currently shows
-  poolEntries: null, // what that pool can place, weighted
+  dataRows: null,
+  blurb: "",
+  poolId: "",
+  poolEntries: null,
   poolFallback: "",
-  poolStack: []    // ids walked through via fallback links, for going back
+  poolStack: []
 })
 
-let openSeq = 0 // bumps per open(): stale async work from a previous container is discarded
+let openSeq = 0 // stale async work from a previous open is discarded
 
 const stripNs = s => typeof s === "string" ? s.replace(/^minecraft:/, "") : s
 
-// technical block nbt as readable label/value rows
 const spawnerEntity = nbt => nbt?.SpawnData?.entity?.id ?? nbt?.SpawnPotentials?.[0]?.data?.entity?.id ?? null
 
 function dataRowsFor(name, p, nbt) {
@@ -96,7 +89,6 @@ function dataRowsFor(name, p, nbt) {
   } else if (name === "jigsaw") {
     add("Name", stripNs(nbt?.name), true)
     add("Target", stripNs(nbt?.target), true)
-    // block id + its state as key/value chips, not the raw [k=v,...] string
     const fin = parseState(typeof nbt?.final_state === "string" ? nbt.final_state : "")
     rows.push({ label: "Turns into", value: stripNs(fin.Name), mono: true, props: fin.Properties, full: true })
     add("Joint", nbt?.joint)
@@ -104,7 +96,6 @@ function dataRowsFor(name, p, nbt) {
     if (nbt?.selection_priority) add("Selection priority", nbt.selection_priority)
     if (nbt?.placement_priority) add("Placement priority", nbt.placement_priority)
   } else if (name === "trial_spawner") {
-    // the quick synchronous rows; loadTrialRows swaps in the config detail
     add("State", prettyName(p.trial_spawner_state ?? ""))
     if (p.ominous === "true") add("Ominous", "Yes")
     if (typeof nbt?.normal_config === "string") add("Config", stripNs(nbt.normal_config), true)
@@ -122,8 +113,6 @@ function dataRowsFor(name, p, nbt) {
   return rows
 }
 
-// trial spawner detail needs its datapack configs: fetch them and swap the
-// rows in, unless another open happened meanwhile
 async function loadTrialRows(p, nbt) {
   const seq = openSeq
   const rows = []
@@ -151,9 +140,6 @@ async function loadTrialRows(p, nbt) {
   state.dataRows = rows
 }
 
-// what the jigsaw's template pool can place: weighted entries, nested list
-// elements flattened, features and empties shown but not loadable. the card
-// navigates: clicking the fallback loads that pool in place
 let poolSeq = 0
 async function loadPoolEntries(poolId) {
   const seq = ++poolSeq, oseq = openSeq
@@ -204,9 +190,6 @@ function poolBack() {
   if (prev) loadPoolEntries(prev)
 }
 
-// what THIS jigsaw does during generation, phrased from its data: active
-// ones roll their pool and attach a piece, empty-pool ones are just the
-// attachment point a parent connects to
 function jigsawBlurb(p, nbt) {
   const pool = stripNs(nbt?.pool ?? "")
   const target = stripNs(nbt?.target ?? "")
@@ -221,13 +204,8 @@ function jigsawBlurb(p, nbt) {
   return `Places a random piece from the pool ${where}, joined at that piece's "${target}" jigsaw.${joint}`
 }
 
-// a billboarded structure entity: identity facts plus its raw nbt
-// the game saves these entity fields unconditionally even when they still
-// hold the spawn default. only defaults that are the same for every mob,
-// modded ones included, get to hide a value (checked against the decompiled
-// save/read code, old and new key names). per-mob values like attribute
-// bases and max air stay in the output; Health qualifies because its spawn
-// default is "equals the max_health base saved in the same compound"
+// fields the game saves unconditionally at a spawn default identical for every
+// mob (checked against decompiled save/read code); per-mob defaults stay visible
 const NBT_ZERO_DEFAULTS = new Set([
   "HurtTime", "DeathTime", "HurtByTimestamp", "AbsorptionAmount", "FallFlying",
   "Invulnerable", "PortalCooldown", "fall_distance", "FallDistance", "OnGround",
@@ -239,10 +217,8 @@ const emptyObj = v => !!v && typeof v === "object" && !Array.isArray(v) && !Obje
 const vanillaDropChance = v => typeof v === "number" && Math.abs(v - 0.085) < 1e-6
 const near = (a, b) => a === b || Math.abs(a - b) < 1e-6 * Math.max(1, Math.abs(a), Math.abs(b))
 
-// attributes no vanilla mob ever overrides (checked across every supplier in
-// the decompiled source), keyed by id with the registry default. a saved
-// base equal to its registry default says nothing; anything else, including
-// unknown or modded ids, stays
+// registry defaults no vanilla mob ever overrides (checked across every
+// supplier in the decompiled source); unknown/modded ids always stay
 const ATTR_REGISTRY_DEFAULTS = {
   armor_toughness: 0, max_absorption: 0, scale: 1, gravity: 0.08,
   entity_interaction_range: 3, oxygen_bonus: 0, burning_time: 1,
@@ -252,8 +228,7 @@ const ATTR_REGISTRY_DEFAULTS = {
   below_name_distance: 10, spawn_reinforcements: 0
 }
 
-// old saves name attributes generic.maxHealth / minecraft:generic.max_health /
-// zombie.spawnReinforcements; normalise them to the current snake_case ids
+// old saves use generic.maxHealth-style names; normalise to current snake_case ids
 function attrId(s) {
   s = stripNs(String(s ?? ""))
   s = s.slice(s.indexOf(".") + 1)
@@ -323,8 +298,6 @@ function openEntity(e) {
   state.open = true
 }
 
-// a stacked marker holds several entities: list them first, picking one
-// opens its modal
 function openEntityMarker(m) {
   const stack = m.stack ?? []
   if (stack.length <= 1) return openEntity(stack[0] ?? m.e)
@@ -400,8 +373,6 @@ async function open(block) {
       state.table = table
       await reroll()
     } else if (Array.isArray(block.nbt?.Items) && block.nbt.Items.length) {
-      // pre-filled inventory (mansion allium/sapling chests and such): show
-      // the exact items in their saved slots
       const cap = state.kind.cols * state.kind.rows
       state.stacks = block.nbt.Items.filter(it => it?.id).map(it => ({
         id: it.id,
@@ -418,8 +389,6 @@ async function open(block) {
   }
 }
 
-// the odds and sim views need the measured drop rates; compute them once
-// per open, in the background, the first time either tab wants them
 async function ensureOdds() {
   if (!state.table || state.odds || state.oddsBusy) return
   const seq = openSeq
@@ -437,8 +406,6 @@ function setTab(tab) {
   if (tab === "odds") ensureOdds()
 }
 
-// the gui shows an accumulated pile of opens: re-roll starts a fresh one,
-// add-roll opens the container again on top, biggest stacks first
 let pile = []
 
 function mergeRoll(loot) {
@@ -450,9 +417,7 @@ function mergeRoll(loot) {
   }
 }
 
-// a fresh single open scatters into the block's own gui in random slots
-// like the game fills a chest. accumulated piles switch to a chest gui
-// that grows rows to fit, biggest stacks first, with the stats as title
+// single rolls scatter into random slots like the game fills a chest
 function display(scatter = false) {
   state.pileTotal = pile.reduce((a, s) => a + s.count, 0)
   const ownCap = state.kind.cols * state.kind.rows
@@ -486,7 +451,7 @@ async function addRoll(n = 1) {
   const seq = openSeq
   for (let i = 0; i < n; i++) {
     const loot = await rollLoot(state.table)
-    if (seq !== openSeq || !state.open) return // a different container opened meanwhile
+    if (seq !== openSeq || !state.open) return
     mergeRoll(loot)
     state.rolls++
   }
@@ -498,17 +463,11 @@ function close() {
   state.pick = null
 }
 
-// orbit-mode picking: a click that didn't drag marches the block grid along
-// the cursor ray (same walk-mode rayHit, orbit-scale reach) and opens
-// whatever loot container lives in the hit cell. a triangle raycast against
-// the merged meshes would scan every triangle in the scene per event, which
-// stutters on huge scenes. hovering shows the block highlight + a pointer
-// cursor. walking is excluded (pointer lock owns clicks there)
+// grid march instead of a triangle raycast: scanning every merged triangle per event stutters on huge scenes
 const _ray = new THREE.Raycaster(), _ndc = new THREE.Vector2()
 let downX = 0, downY = 0, downT = 0
 let hover = null
 
-// -> { block } | { marker } | null
 function underRay(e, canvas) {
   const root = buildApi.getRoot()
   if (!root) return null
@@ -525,7 +484,6 @@ function inspectableUnder(e, canvas) {
   return h?.container ? { block: h.container } : null
 }
 
-// the id + blockstates readout for whatever the pointer rests on
 function aimFor(h) {
   if (h?.entity) {
     const stack = h.entity.stack ?? []
@@ -542,7 +500,6 @@ function aimFor(h) {
 function clearHover(canvas) {
   hover?.hide()
   state.aim = null
-  // the slicers own the cursor while a gizmo is hovered or dragged
   if (!useSlicers().busy()) canvas.style.cursor = ""
 }
 
@@ -579,7 +536,6 @@ function initPicking(canvas) {
       u.marker ? openEntityMarker(u.marker) : open(u.block)
     }
   })
-  // hover raycasts throttle to one per frame, and skip entirely mid-drag
   let pending = null
   canvas.addEventListener("pointermove", e => {
     if (pending) { pending = e; return }

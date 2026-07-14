@@ -1,15 +1,11 @@
 import { AIR, JIGSAW, REAL_AIR, STRUCT_VOID, mirrorPos, mirrorState, parseState, rotDir, rotPos, rotateState } from "./transforms.js"
 
-// Flatten placed pieces into one structure. Pieces are { struct, rot, off,
-// mir?, ow? } in placement order; later pieces win a cell. `ow` (overwrite)
-// maps MC's per-piece BlockIgnoreProcessor: with it, template air CARVES
-// (deletes) earlier blocks; without it air is skipped. Jigsaw pieces never
-// carve; igloo and mansion always do; end city is per-piece.
+// later pieces win a cell. ow maps MC's per-piece BlockIgnoreProcessor: template
+// air CARVES earlier blocks (jigsaw never; igloo/mansion always; end city per-piece)
 const SB = /(^|:)structure_block$/
 const CHEST_MARKER = /^Chest(West|East|South|North)$/
 
-// entity positions are continuous, so the cell transforms shift by one on
-// negated axes: cell [x, x+1) rotated 90 lands at [-x-1, -x), i.e. 1 - x
+// continuous positions: cell [x, x+1) rotated 90 lands at [-x-1, -x), hence 1 - x
 function rotPosF([x, y, z], k) {
   switch (k & 3) {
     case 1: return [1 - z, y, x]
@@ -57,15 +53,13 @@ export function combine(pieces) {
         continue
       }
       if (SB.test(e.Name)) {
-        // data markers are invisible and dropped, except the mansion's chest
-        // markers (facing uses rotation only, as vanilla does)
+        // data markers drop, except the mansion's chest markers (facing rotates only, as vanilla)
         const m = typeof b.nbt?.metadata === "string" && b.nbt.metadata.match(CHEST_MARKER)
         if (m) cells.set(key, { Name: "minecraft:chest", Properties: { facing: rotDir(m[1].toLowerCase(), rot), type: "single" } })
         continue
       }
       if (JIGSAW.test(e.Name)) {
-        // a piece whose jigsaws haven't run yet keeps them as jigsaw blocks
-        // (vanilla only swaps in final_state once a jigsaw has been processed)
+        // vanilla swaps in final_state only once a jigsaw has been processed
         if (!keepJigsaws) {
           const fs = parseState(typeof b.nbt?.final_state === "string" ? b.nbt.final_state : "")
           if (AIR.test(fs.Name)) continue
@@ -79,8 +73,7 @@ export function combine(pieces) {
 
   if (!cells.size) return { size: [1, 1, 1], palette: [{ Name: "minecraft:air" }], blocks: [{ state: 0, pos: [0, 0, 0] }], entities, anchor: [0, 0, 0] }
 
-  // normalise to a non-negative grid; anchor = where the start piece's local
-  // origin sits afterwards (the viewer keeps it visually fixed across levels)
+  // anchor = where the start piece's local origin lands (kept visually fixed across levels)
   const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity]
   const parsed = []
   for (const [key, e] of cells) {

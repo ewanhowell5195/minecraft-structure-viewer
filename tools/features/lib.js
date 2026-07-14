@@ -1,8 +1,3 @@
-// Shared plumbing for the feature scripts: loading the dumped registry and
-// building the generation context that resolves references the way the
-// viewer does (selector entries resolve through the jar's placed features;
-// a placed feature's inner ref points at the FEATURE registry, never back
-// through placed, because ids collide across the two registries).
 import fs from "node:fs"
 import { readZip, unzipEntry } from "../builtin/zip.js"
 import { readStructure } from "../../src/nbt.js"
@@ -36,6 +31,8 @@ export function buildGenCtx(files, clientJarPath) {
     const e = clientZip?.get("data/" + nsPath(ref).replace(/^([^/]+)\//, "$1/structure/") + ".nbt")
     return e ? readStructure(Buffer.from(unzipEntry(e))) : null
   }
+  // a placed feature's inner ref points at the FEATURE registry, never back
+  // through placed: ids collide across the two registries
   const resolveFeatureRef = ref => ref == null ? null
     : typeof ref === "object" ? (ref.feature !== undefined ? resolveFeatureRef(ref.feature) : ref)
     : featureByRel.get(nsPath(ref)) ?? null

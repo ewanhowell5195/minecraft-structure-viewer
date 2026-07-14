@@ -1,13 +1,8 @@
 import * as THREE from "three"
 import { getFont, measure, drawText } from "./mcfont.js"
 
-// Sign text, matching the decompiled 26.3 renderers. Standing/wall signs:
-// centre the block, yaw by rotation (22.5deg segments) or facing, wall signs
-// shift onto the wall, text offset (0, 1/3, 0.0467), scale 1/96 blocks per
-// font px, 4 lines 10px apart, 90px wide. Hanging signs: pivot at y 0.9375
-// then down 0.3125, offset (0, -0.32, 0.073), scale 0.0140625, lines 9px,
-// 60px wide. Text colour darkens to 40% unless glowing, where the full
-// colour draws over an outline (glowing black uses the special 0xF0EBCC).
+// geometry and magic numbers match the decompiled 26.3 sign renderers; text
+// darkens to 40% unless glowing (glowing black outlines with the special 0xF0EBCC)
 const TEXT_COLORS = {
   white: 0xffffff, orange: 0xff681f, magenta: 0xff00ff, light_blue: 0x9ac0cd,
   yellow: 0xffff00, lime: 0xbfff00, pink: 0xff69b4, gray: 0x808080,
@@ -19,7 +14,6 @@ const hex = n => "#" + n.toString(16).padStart(6, "0")
 const scaleRGB = (n, f) => hex(
   (Math.floor((n >> 16 & 255) * f) << 16) | (Math.floor((n >> 8 & 255) * f) << 8) | Math.floor((n & 255) * f))
 
-// text components arrive as raw strings, json strings, or nbt compounds
 function flat(j) {
   if (j == null) return ""
   if (typeof j === "string") return j
@@ -71,8 +65,6 @@ function makeFaceTexture(font, face, LH, MAXW) {
 const YROT = { south: 0, west: 90, north: 180, east: 270 }
 const _m = new THREE.Matrix4()
 
-// text meshes for every sign in the structure, in root-local coordinates
-// (block cells centred on pos*16). returns null when there are none
 export async function makeSignTexts(structure) {
   const group = new THREE.Group()
   let font = null

@@ -1,11 +1,6 @@
 import { readNBT } from "./nbt.js"
 import { AIR, parseState } from "./transforms.js"
 
-// Readers for third-party structure formats, each returning the same
-// { size, palette, blocks } shape as readStructure. Litematica and Sponge
-// carry Java blockstates directly; Bedrock .mcstructure gets a best-effort
-// state translation (common properties only; unmapped states are dropped).
-
 function collector() {
   const palette = [], idx = new Map(), cells = []
   function stateFor(Name, Properties) {
@@ -19,7 +14,6 @@ function collector() {
     return i
   }
   const push = (x, y, z, state) => cells.push([x, y, z, state])
-  // shift to a non-negative grid and derive the size from what's actually there
   function finish() {
     if (!cells.length) return { size: [1, 1, 1], palette: [{ Name: "minecraft:air" }], blocks: [{ state: 0, pos: [0, 0, 0] }] }
     const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity]
@@ -43,10 +37,8 @@ function strProps(props) {
   return Object.keys(out).length ? out : undefined
 }
 
-// ---- Litematica (.litematic): gzipped NBT, one or more regions of
-// bit-packed palette indices. entries span long boundaries (pre-1.16 style),
-// LSB first; index order is y, then z, then x fastest. negative Size means
-// the region extends in the negative direction from Position.
+// ---- Litematica: packed indices span long boundaries (pre-1.16 style), order
+// y, z, x fastest; negative Size extends the region negative from Position
 export async function readLitematic(buf) {
   const root = await readNBT(buf)
   const { stateFor, push, finish } = collector()
@@ -73,9 +65,7 @@ export async function readLitematic(buf) {
   return finish()
 }
 
-// ---- Sponge schematic (.schem, WorldEdit): gzipped NBT. v2 is flat with
-// Palette { "state string": id } + varint BlockData; v3 nests them under
-// Schematic.Blocks. index order is y, then z, then x fastest.
+// ---- Sponge .schem: varint indices, order y, z, x fastest
 export async function readSchem(buf) {
   const root = await readNBT(buf)
   const s = root.Schematic ?? root
@@ -102,9 +92,8 @@ export async function readSchem(buf) {
   return finish()
 }
 
-// ---- Bedrock (.mcstructure): LITTLE-endian NBT. two block layers (the
-// second is mostly waterlogging), palette of { name, states }, index order
-// x, then y, then z fastest. -1 = not saved.
+// ---- Bedrock .mcstructure: LITTLE-endian NBT, index order x, y, z fastest;
+// layer 1 is mostly waterlogging, -1 = not saved. state mapping is best-effort
 const FACING6 = ["down", "up", "north", "south", "west", "east"]
 const STAIRS4 = ["east", "west", "south", "north"]
 const DIR4 = ["south", "west", "north", "east"]

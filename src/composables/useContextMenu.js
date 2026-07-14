@@ -1,8 +1,5 @@
 import { reactive, readonly } from "vue"
 
-// One app-wide context menu: callers hand over the items to show at the
-// pointer, ContextMenu.vue renders and dismisses it.
-// items: [{ label, icon?, disabled?, action }]
 const state = reactive({ open: false, x: 0, y: 0, items: [] })
 
 function open(e, items) {

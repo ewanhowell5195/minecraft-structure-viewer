@@ -1,12 +1,7 @@
 import { rnd } from "../transforms.js"
 import { combine } from "../combine.js"
 
-// igloo (IglooPieces): the top, plus a ladder shaft down to a basement lab.
-// three parts, so three step-levels: top (0), the ladder shaft (1), the lab at
-// its bottom (2). vanilla only rolls the basement 50% of the time, but here the
-// bare top is just the plain igloo you can already load, so we always build the
-// basement: otherwise the session would have nothing to step to. offsets from
-// the decompiled source; ladder length N=4-11 stays random
+// igloo (IglooPieces): vanilla rolls the basement 50% of the time; always built here
 export async function runIgloo(loadStruct, { maxDepth = Infinity, seed } = {}) {
   const rand = seed == null ? Math.random : rnd(seed)
   const top = await loadStruct("igloo/top")

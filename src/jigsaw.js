@@ -1,15 +1,11 @@
 import { DIR, EMPTY, OPP, boxHit, inBox, jigsawsOf, pieceBox, poolTemplates, rnd, rotDir, rotPos, shuffle, worldJigsaw } from "./transforms.js"
 import { combine } from "./combine.js"
 
-// Grow a structure through its jigsaw graph like worldgen. BFS one connection
-// level at a time; level d rolls its own rng seeded levelSeed(d + 1), so
-// re-running with a deeper maxDepth reproduces every earlier level exactly
-// (this is what makes the stepped level menu stable and shareable-by-seed).
+// level d rolls its own rng seeded levelSeed(d + 1), so re-running with a deeper maxDepth reproduces every earlier level exactly
 
 const nsName = s => s.includes(":") ? s : "minecraft:" + s
 
 export async function runJigsaw(start, { loadStruct, loadPool, maxDepth = 6, maxPieces = 48, maxRadius = 96, levelSeed, onProgress, keepJigsaws = true }) {
-  // misses cached too, so they aren't retried
   const structs = new Map(), pools = new Map()
   async function getStruct(ref) {
     if (!structs.has(ref)) structs.set(ref, await Promise.resolve(loadStruct(ref)).catch(() => null))
@@ -26,10 +22,8 @@ export async function runJigsaw(start, { loadStruct, loadPool, maxDepth = 6, max
   let frontier = [startPiece]
   let exhausted = false
 
-  // one iteration past maxDepth is a look-ahead: it answers "is there anything
-  // left to process" (a piece's jigsaws can all be dead ends: empty pools,
-  // nothing fits) and is rolled back, so the menu can stop AT the last real
-  // level instead of discovering it one step late
+  // the d === maxDepth iteration is a rolled-back look-ahead: it only answers
+  // "is anything left", so the level menu can stop AT the last real level
   for (let d = 0; d <= maxDepth && frontier.length && pieces.length < maxPieces; d++) {
     const probe = d === maxDepth
     const mark = probe && { pieces: pieces.length, boxes: boxes.length, plots: frontier.map(f => f.onPlot.length) }
@@ -44,12 +38,9 @@ export async function runJigsaw(start, { loadStruct, loadPool, maxDepth = 6, max
         const pool = await getPool(wj.pool)
         if (!pool) continue
         const dir = DIR[wj.front]
-        // where the child's matching jigsaw must land
         const targetPos = [wj.pos[0] + dir[0], wj.pos[1] + dir[1], wj.pos[2] + dir[2]]
-        // a child landing inside the source footprint (a house on a street
-        // plot, a tower on a base plate) collision-checks against the
-        // source's own plot, not the global list: THE fix for villages piling
-        // houses on each other and outposts spawning 15 tents
+        // a child inside the source footprint collision-checks the source's own
+        // plot, not the global list (else villages pile houses on each other)
         const attachInside = inBox(targetPos, src.box)
         let candidates = shuffle(poolTemplates(pool), rand)
         if (typeof pool.fallback === "string") {
@@ -58,7 +49,7 @@ export async function runJigsaw(start, { loadStruct, loadPool, maxDepth = 6, max
         }
         const tried = new Set()
         jig: for (const loc of candidates) {
-          if (loc === EMPTY) break // weighted "nothing" spot: place nothing here
+          if (loc === EMPTY) break // empty_pool_element won the roll: place nothing
           if (tried.has(loc)) continue
           tried.add(loc)
           const child = await getStruct(loc)
@@ -99,16 +90,12 @@ export async function runJigsaw(start, { loadStruct, loadPool, maxDepth = 6, max
     if (!next.length) { exhausted = true; break }
     frontier = next
   }
-  // the depth actually reached; exhausted = the graph ran dry before maxDepth
-  // (deeper solves can't add anything), as opposed to hitting the piece cap
+  // exhausted = the graph ran dry, as opposed to hitting the piece cap
   let depth = 0
   for (const p of pieces) if (p.depth > depth) depth = p.depth
   exhausted = exhausted && pieces.length < maxPieces
-  // vanilla semantics: a jigsaw block is only replaced by its final_state once
-  // it has RUN. the final level's pieces haven't run theirs yet, so those stay
-  // visible jigsaw blocks while another level can still load them: the
-  // look-ahead consumed a dry frontier, and the caller flags a depth cap
-  // (keepJigsaws false), where generation is over regardless
+  // vanilla only swaps a jigsaw block for its final_state once it has RUN;
+  // the final level's unrun jigsaws stay visible while more can still load
   if (!exhausted && keepJigsaws) for (const p of pieces) if (p.depth === depth) p.keepJigsaws = true
   return { structure: combine(pieces), pieces: pieces.length, depth, exhausted, capped: pieces.length >= maxPieces }
 }
