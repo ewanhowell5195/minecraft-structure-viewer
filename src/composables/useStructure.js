@@ -202,7 +202,7 @@ async function packField() {
   const parts = loaded.map((e, i) => ({
     s: e.structure,
     off: [
-      (i % cols) * (cellW + GAP) + 3 + Math.floor((innerW - e.structure.size[0]) / 2),
+      (cols - 1 - i % cols) * (cellW + GAP) + 3 + Math.floor((innerW - e.structure.size[0]) / 2),
       0,
       Math.floor(i / cols) * (cellD + GAP) + 3 + Math.floor((innerD - e.structure.size[2]) / 2)
     ],
