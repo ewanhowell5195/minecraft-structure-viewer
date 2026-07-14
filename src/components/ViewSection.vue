@@ -18,16 +18,16 @@ const collapsed = ref(true)
       View
     </h2>
     <div class="fields">
-      <label for="lighting">Lighting</label>
-      <select id="lighting" v-model="buildState.lighting" :disabled="locked">
-        <option value="world">World</option>
-        <option value="off">Off</option>
-      </select>
       <label for="wireframe">Wireframe</label>
       <select id="wireframe" v-model="view.wireframe">
         <option value="off">Off</option>
         <option value="overlay">Overlay</option>
         <option value="wire">Wireframe</option>
+      </select>
+      <label for="lighting">Lighting</label>
+      <select id="lighting" v-model="buildState.lighting" :disabled="locked">
+        <option value="world">World</option>
+        <option value="off">Off</option>
       </select>
     </div>
     <div class="checks">
