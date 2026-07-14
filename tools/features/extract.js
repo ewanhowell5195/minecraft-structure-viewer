@@ -51,29 +51,44 @@ async function main() {
     }
   }
 
-  const hidden = await computeHidden(ctx)
-  files.set("viewer/hidden_features.json", Buffer.from(JSON.stringify(hidden, null, 2)))
+  log("sampling rolls (default seeds, statics, single-block detection)")
+  const { defaults, statics, singles } = await sampleRolls(ctx)
 
-  // ref-only selectors stay in the zip (other features resolve through them), the viewer just delists them
+  // ref-only selectors just pick between features the list already shows
   const selectors = []
   for (const [rel, json] of ctx.featureByRel) {
     const entries = selectorEntries(json)
     if (entries && entries.every(isRef)) selectors.push(rel)
   }
-  files.set("viewer/redundant_selectors.json", Buffer.from(JSON.stringify(selectors.sort(), null, 2)))
-  // snapshot jars ship feature JSONs as data, so deleting dupes from this zip isn't enough: the viewer also delists by name
+  selectors.sort()
+
+  // singles and ref-only selectors are delisted; the unreferenced ones leave
+  // the zip entirely (the viewer never indexes the jar, so gone is gone)
+  const removed = removableFeatures(ctx, Array.from(new Set(singles.concat(selectors))))
+  const removedSet = new Set(removed)
+  for (const rel of removed) {
+    files.delete(`data/${rel.replace("/", "/worldgen/feature/")}.json`)
+    ctx.featureByRel.delete(rel)
+    delete defaults[rel]
+  }
+  const singleSet = new Set(singles)
+  for (const rel of singles) delete defaults[rel]
+  // delist files ship only when they have names in them
+  const keptSingles = singles.filter(rel => !removedSet.has(rel))
+  const keptSelectors = selectors.filter(rel => !removedSet.has(rel))
+  if (keptSingles.length) files.set("viewer/hidden_features.json", Buffer.from(JSON.stringify(keptSingles, null, 2)))
+  if (keptSelectors.length) files.set("viewer/redundant_selectors.json", Buffer.from(JSON.stringify(keptSelectors, null, 2)))
+  // a tools-side record only: the viewer no longer reads it
   const dupes = STRUCTURE_DUPES.map(n => "minecraft/" + n).concat(templateBased).sort()
   files.set("viewer/structure_dupes.json", Buffer.from(JSON.stringify(dupes, null, 2)))
 
-  log("picking default seeds (median-size roll per feature)")
-  const { defaults, statics } = await computeDefaults(ctx)
   files.set("viewer/default_seeds.json", Buffer.from(JSON.stringify(defaults, null, 2)))
-  files.set("viewer/static_features.json", Buffer.from(JSON.stringify(statics, null, 2)))
+  files.set("viewer/static_features.json", Buffer.from(JSON.stringify(statics.filter(rel => !singleSet.has(rel) && !removedSet.has(rel)), null, 2)))
 
   const root = path.resolve(here, "../..")
   writeBundle(path.join(root, "bundled/features"), files)
   packBundle(path.join(root, "bundled/features"), path.join(root, "public/features.zip"))
-  log(`wrote bundled/features + public/features.zip: ${ctx.featureByRel.size} features, ${hidden.length} hidden as just-a-block, ${selectors.length} ref-only selectors delisted, ${templateBased.length} template stampers excluded, ${statics.length} static`)
+  log(`wrote bundled/features + public/features.zip: ${ctx.featureByRel.size} features, ${singles.length} single-block + ${selectors.length} ref-only selectors delisted (${removed.length} unreferenced, removed), ${templateBased.length} template stampers excluded, ${statics.length} static`)
 }
 
 // already offered under Structures (extracted builtins)
@@ -133,9 +148,19 @@ function shapeKey(s) {
   }).sort().join("\n")
 }
 
-async function computeDefaults(ctx) {
+// a two-block double plant (lower+upper halves) counts as just-a-block too
+function isDoublePlant(s) {
+  if (s.blocks.length !== 2) return false
+  const [a, b] = s.blocks.map(x => s.palette[x.state])
+  if (a.Name !== b.Name) return false
+  const halves = new Set([a.Properties?.half, b.Properties?.half])
+  return halves.has("lower") && halves.has("upper")
+}
+
+async function sampleRolls(ctx) {
   const defaults = {}
   const statics = []
+  const singles = []
   for (const [rel, seed] of Object.entries(HANDPICKED_SEEDS)) {
     if (ctx.featureByRel.has(rel)) defaults[rel] = seed
     else log(`note: handpicked seed for "${rel}" points at a feature that no longer exists`)
@@ -143,16 +168,18 @@ async function computeDefaults(ctx) {
   for (const [rel, json] of ctx.featureByRel) {
     try {
       const rolls = []
-      let firstKey = null, allSame = true
+      let firstKey = null, allSame = true, allSingle = true
       for (let seed = 0; seed < DEFAULT_SAMPLES; seed++) {
         const s = await generateFeature(rel, json, rnd(seed), ctx.resolvePlaced, ctx.loadStruct)
         rolls.push({ seed, n: s.blocks.length })
+        if (allSingle && s.blocks.length > 1 && !isDoublePlant(s)) allSingle = false
         if (allSame) {
           const key = shapeKey(s)
           if (firstKey === null) firstKey = key
           else if (key !== firstKey) allSame = false
         }
       }
+      if (allSingle) singles.push(rel)
       if (allSame) statics.push(rel)
       if (defaults[rel] !== undefined) continue
       rolls.sort((a, b) => a.n - b.n || a.seed - b.seed)
@@ -160,24 +187,63 @@ async function computeDefaults(ctx) {
       if (mid.seed !== 0) defaults[rel] = mid.seed
     } catch {}
   }
-  return { defaults, statics: statics.sort() }
+  return { defaults, statics: statics.sort(), singles: singles.sort() }
 }
 
-async function computeHidden(ctx) {
-  const hidden = []
-  for (const [rel, json] of ctx.featureByRel) {
-    try {
-      const s = await generateFeature(rel, json, rnd(0), ctx.resolvePlaced, ctx.loadStruct)
-      const double = s.blocks.length === 2 && (() => {
-        const [a, b] = s.blocks.map(x => s.palette[x.state])
-        if (a.Name !== b.Name) return false
-        const halves = new Set([a.Properties?.half, b.Properties?.half])
-        return halves.has("lower") && halves.has("upper")
-      })()
-      if (s.blocks.length === 1 || double) hidden.push(rel)
-    } catch {}
+const nsPath = ref => ref.includes(":") ? ref.replace(":", "/") : "minecraft/" + ref
+
+// every string anywhere in a config that resolves as a feature (directly or
+// through the placed registry) counts as a reference: over-detection only
+// keeps a removable file, under-detection would break resolution
+function collectRefs(ctx, json, out, seenPlaced) {
+  if (typeof json === "string") {
+    const rel = nsPath(json)
+    if (ctx.featureByRel.has(rel)) out.add(rel)
+    const placed = ctx.placedByRel.get(rel)
+    // ids collide across registries, so a placed chain can name itself: guard it
+    if (placed && !seenPlaced.has(rel)) {
+      seenPlaced.add(rel)
+      collectRefs(ctx, placed.feature, out, seenPlaced)
+    }
+    return
   }
-  return hidden.sort()
+  if (Array.isArray(json)) {
+    for (const v of json) collectRefs(ctx, v, out, seenPlaced)
+    return
+  }
+  if (json !== null && typeof json === "object") {
+    for (const v of Object.values(json)) collectRefs(ctx, v, out, seenPlaced)
+  }
+}
+
+// delist candidates nothing resolves through, transitively from the features
+// that stay listed (a chain of candidates only referencing each other drops whole)
+function removableFeatures(ctx, candidates) {
+  const refsOf = new Map()
+  for (const [rel, json] of ctx.featureByRel) {
+    const out = new Set()
+    collectRefs(ctx, json, out, new Set())
+    out.delete(rel)
+    refsOf.set(rel, out)
+  }
+  const candidateSet = new Set(candidates)
+  const keep = new Set()
+  const queue = []
+  for (const rel of ctx.featureByRel.keys()) {
+    if (!candidateSet.has(rel)) {
+      keep.add(rel)
+      queue.push(rel)
+    }
+  }
+  while (queue.length) {
+    for (const t of refsOf.get(queue.pop()) ?? []) {
+      if (!keep.has(t)) {
+        keep.add(t)
+        queue.push(t)
+      }
+    }
+  }
+  return candidates.filter(rel => !keep.has(rel)).sort()
 }
 
 main().catch(e => { console.error(e); process.exit(1) })

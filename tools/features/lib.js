@@ -43,5 +43,5 @@ export function buildGenCtx(files, clientJarPath) {
     if (placed?.feature !== undefined) return resolveFeatureRef(placed.feature)
     return featureByRel.get(nsPath(ref)) ?? null
   }
-  return { featureByRel, resolvePlaced, loadStruct }
+  return { featureByRel, placedByRel, resolvePlaced, loadStruct }
 }

@@ -22,7 +22,7 @@ let staticSet = new Set()
 async function populate() {
   const lib = await loadLibrary()
   featurePath = new Map()
-  for (const src of Array.from(packs.allSources()).reverse()) {
+  for (const src of Array.from(packs.featureSources()).reverse()) {
     for (const k of lib.parseZip(src).keys()) {
       const m = k.match(FEATURE_RE)
       if (m) featurePath.set(m[1] + "/" + m[2], k)
@@ -35,10 +35,10 @@ async function populate() {
   // features whose 256-seed sample never changed shape: no Re-roll, no Field
   const stbuf = await lib.readFile("viewer/static_features.json", packs.assets.value)
   staticSet = new Set(stbuf ? JSON.parse(textDecoder.decode(stbuf)) : [])
-  // delist by name, not zip membership: snapshot jars ship these JSONs, so the
-  // vanilla jar re-adds anything only deleted from features.zip
+  // these names stay in the zip so references resolve; the list keeps them
+  // out of the tree (fully removed features never index: no jar source)
   const delisted = new Set()
-  for (const f of ["viewer/redundant_selectors.json", "viewer/structure_dupes.json"]) {
+  for (const f of ["viewer/redundant_selectors.json", "viewer/hidden_features.json"]) {
     const buf = await lib.readFile(f, packs.assets.value)
     if (buf) for (const rel of JSON.parse(textDecoder.decode(buf))) delisted.add(rel)
   }

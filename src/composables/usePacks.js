@@ -158,6 +158,10 @@ async function movePack(id, delta, swap) {
 
 const allSources = () => state.packs.map(p => bytesById.get(p.id)).concat(baseBytes, builtinBytes, featureBytes).filter(Boolean)
 
+// the vanilla jar is excluded on purpose: minecraft features list only from
+// the bundle, so anything the tools removed stays gone on snapshot jars too
+const featureSources = () => state.packs.map(p => bytesById.get(p.id)).concat(builtinBytes, featureBytes).filter(Boolean)
+
 export function usePacks() {
-  return { state: readonly(state), assets, loadBase, setChannel, addPacks, removePack, movePack, allSources, setSwapHandler }
+  return { state: readonly(state), assets, loadBase, setChannel, addPacks, removePack, movePack, allSources, featureSources, setSwapHandler }
 }
