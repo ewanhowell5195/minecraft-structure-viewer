@@ -606,6 +606,7 @@ function rayBoxT(ox, oy, oz, dx, dy, dz, x0, y0, z0, x1, y1, z1) {
 // block-centred local coords; merged meshes carry per-element boxes in
 // userData.collision, so a stair keeps its stepped boxes
 let collBoxCache = new Map()
+let aimBoxCache = new Map()
 const _cb = new THREE.Box3()
 function templateBoxes(tmpl, arr) {
   tmpl.updateMatrixWorld(true)
@@ -634,6 +635,19 @@ function collisionBoxes(stateIdx) {
   for (let v = 1; !tmpl && v < 17; v++) tmpl = templates.get(stateIdx + ":" + v)
   if (tmpl && !nonSolid.has(stateIdx)) templateBoxes(tmpl, arr)
   collBoxCache.set(stateIdx, arr)
+  return arr
+}
+
+function aimBoxes(stateIdx) {
+  const coll = collisionBoxes(stateIdx)
+  if (coll.length || !nonSolid.has(stateIdx)) return coll
+  let arr = aimBoxCache.get(stateIdx)
+  if (arr) return arr
+  arr = []
+  let tmpl = templates.get(stateIdx)
+  for (let v = 1; !tmpl && v < 17; v++) tmpl = templates.get(stateIdx + ":" + v)
+  if (tmpl) templateBoxes(tmpl, arr)
+  aimBoxCache.set(stateIdx, arr)
   return arr
 }
 
@@ -684,7 +698,7 @@ function rayHit(ox, oy, oz, dx, dy, dz, REACH = 80) {
       return entT < t ? { entity: entM } : { container: b }
     }
     const cx = bx * 16 + rx, cy = by * 16 + ry, cz = bz * 16 + rz
-    for (const s of collisionBoxes(b.state)) {
+    for (const s of aimBoxes(b.state)) {
       const th = rayBoxT(ox, oy, oz, dx, dy, dz, s[0] + cx, s[1] + cy, s[2] + cz, s[3] + cx, s[4] + cy, s[5] + cz)
       if (th != null && th <= REACH) return entT < th ? { entity: entM } : { block: b }
     }
@@ -903,6 +917,7 @@ async function build(structure = source, refit = true, slice = false) {
     templates = new Map()
     nonSolid = new Set()
     collBoxCache = new Map()
+    aimBoxCache = new Map()
     const isPlane = el => el.from[0] === el.to[0] || el.from[1] === el.to[1] || el.from[2] === el.to[2]
 
     // seeded rotations: states whose blockstate has weighted arrays get one
