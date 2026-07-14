@@ -982,7 +982,10 @@ async function build(structure = source, refit = true, slice = false) {
       }
       if (lightBlocks.length) {
         state.status = "lighting…"
-        newLight = await lib.computeSceneLight(lightBlocks, { assets })
+        newLight = await lib.computeSceneLight(lightBlocks, {
+          assets,
+          onProgress: (done, total) => { state.progress = { phase: "light", done, total } }
+        })
         if (cancelBuild) return abort()
         state.status = "building…"
       }

@@ -4,8 +4,8 @@ import { useBuild } from "../composables/useBuild.js"
 import { useStructure } from "../composables/useStructure.js"
 
 // gallery-style hairline progress along the top of the window: amber while
-// structure files read in, blue while the block templates build, green
-// while the optimiser runs
+// structure files read in, gold while the light volume floods, blue while
+// the block templates build, green while the optimiser runs
 const { state } = useBuild()
 const { state: current } = useStructure()
 
@@ -36,6 +36,7 @@ const pct = computed(() => {
 }
 
 .build-progress.read { background: #d9a13f; }
+.build-progress.light { background: #e8d44d; }
 .build-progress.build { background: var(--accent); }
 .build-progress.optimise { background: var(--green); }
 </style>
