@@ -1,0 +1,14 @@
+{
+  "target": {
+    "Name": "minecraft:netherrack"
+  },
+  "state": {
+    "Name": "minecraft:blackstone"
+  },
+  "radius": {
+    "min_inclusive": 3,
+    "max_inclusive": 7,
+    "type": "minecraft:uniform"
+  },
+  "type": "minecraft:netherrack_replace_blobs"
+}

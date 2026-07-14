@@ -1,0 +1,19 @@
+{
+  "state": {
+    "Properties": {
+      "falling": "true"
+    },
+    "Name": "minecraft:lava"
+  },
+  "valid_blocks": [
+    "minecraft:stone",
+    "minecraft:granite",
+    "minecraft:diorite",
+    "minecraft:andesite",
+    "minecraft:deepslate",
+    "minecraft:tuff",
+    "minecraft:calcite",
+    "minecraft:dirt"
+  ],
+  "type": "minecraft:spring_feature"
+}

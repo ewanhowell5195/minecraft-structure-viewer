@@ -1,0 +1,27 @@
+{
+  "state_provider": {
+    "state": {
+      "Name": "minecraft:packed_ice"
+    },
+    "type": "minecraft:simple_state_provider"
+  },
+  "target": {
+    "blocks": [
+      "minecraft:dirt",
+      "minecraft:grass_block",
+      "minecraft:podzol",
+      "minecraft:coarse_dirt",
+      "minecraft:mycelium",
+      "minecraft:snow_block",
+      "minecraft:ice"
+    ],
+    "type": "minecraft:matching_blocks"
+  },
+  "radius": {
+    "min_inclusive": 2,
+    "max_inclusive": 3,
+    "type": "minecraft:uniform"
+  },
+  "half_height": 1,
+  "type": "minecraft:disk"
+}

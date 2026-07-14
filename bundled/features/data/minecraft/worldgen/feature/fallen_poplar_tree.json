@@ -1,0 +1,37 @@
+{
+  "trunk_provider": {
+    "state": {
+      "Properties": {
+        "axis": "y"
+      },
+      "Name": "minecraft:poplar_log"
+    },
+    "type": "minecraft:simple_state_provider"
+  },
+  "log_length": {
+    "min_inclusive": 4,
+    "max_inclusive": 7,
+    "type": "minecraft:uniform"
+  },
+  "stump_decorators": [],
+  "log_decorators": [
+    {
+      "probability": 0.1,
+      "block_provider": {
+        "state": {
+          "Name": "minecraft:brown_mushroom"
+        },
+        "type": "minecraft:simple_state_provider"
+      },
+      "directions": [
+        "up"
+      ],
+      "type": "minecraft:attached_to_logs"
+    },
+    {
+      "probability": 0.8,
+      "type": "minecraft:shelf_mushroom"
+    }
+  ],
+  "type": "minecraft:fallen_tree"
+}

@@ -1,0 +1,69 @@
+{
+  "trunk_provider": {
+    "state": {
+      "Properties": {
+        "axis": "y"
+      },
+      "Name": "minecraft:oak_log"
+    },
+    "type": "minecraft:simple_state_provider"
+  },
+  "trunk_placer": {
+    "base_height": 4,
+    "height_rand_a": 2,
+    "height_rand_b": 0,
+    "min_height_for_leaves": 3,
+    "bend_length": {
+      "min_inclusive": 1,
+      "max_inclusive": 2,
+      "type": "minecraft:uniform"
+    },
+    "type": "minecraft:bending_trunk_placer"
+  },
+  "foliage_provider": {
+    "entries": [
+      {
+        "data": {
+          "Properties": {
+            "waterlogged": "false",
+            "persistent": "false",
+            "distance": "7"
+          },
+          "Name": "minecraft:azalea_leaves"
+        },
+        "weight": 3
+      },
+      {
+        "data": {
+          "Properties": {
+            "waterlogged": "false",
+            "persistent": "false",
+            "distance": "7"
+          },
+          "Name": "minecraft:flowering_azalea_leaves"
+        },
+        "weight": 1
+      }
+    ],
+    "type": "minecraft:weighted_state_provider"
+  },
+  "foliage_placer": {
+    "radius": 3,
+    "offset": 0,
+    "foliage_height": 2,
+    "leaf_placement_attempts": 50,
+    "type": "minecraft:random_spread_foliage_placer"
+  },
+  "minimum_size": {
+    "type": "minecraft:two_layers_feature_size"
+  },
+  "decorators": [],
+  "ignore_vines": false,
+  "below_trunk_provider": {
+    "state": {
+      "Name": "minecraft:rooted_dirt"
+    },
+    "type": "minecraft:simple_state_provider"
+  },
+  "type": "minecraft:tree"
+}

@@ -1,0 +1,78 @@
+{
+  "blocks": {
+    "filling_provider": {
+      "state": {
+        "Name": "minecraft:air"
+      },
+      "type": "minecraft:simple_state_provider"
+    },
+    "inner_layer_provider": {
+      "state": {
+        "Name": "minecraft:amethyst_block"
+      },
+      "type": "minecraft:simple_state_provider"
+    },
+    "alternate_inner_layer_provider": {
+      "state": {
+        "Name": "minecraft:budding_amethyst"
+      },
+      "type": "minecraft:simple_state_provider"
+    },
+    "middle_layer_provider": {
+      "state": {
+        "Name": "minecraft:calcite"
+      },
+      "type": "minecraft:simple_state_provider"
+    },
+    "outer_layer_provider": {
+      "state": {
+        "Name": "minecraft:smooth_basalt"
+      },
+      "type": "minecraft:simple_state_provider"
+    },
+    "inner_placements": [
+      {
+        "Properties": {
+          "waterlogged": "false",
+          "facing": "up"
+        },
+        "Name": "minecraft:small_amethyst_bud"
+      },
+      {
+        "Properties": {
+          "waterlogged": "false",
+          "facing": "up"
+        },
+        "Name": "minecraft:medium_amethyst_bud"
+      },
+      {
+        "Properties": {
+          "waterlogged": "false",
+          "facing": "up"
+        },
+        "Name": "minecraft:large_amethyst_bud"
+      },
+      {
+        "Properties": {
+          "waterlogged": "false",
+          "facing": "up"
+        },
+        "Name": "minecraft:amethyst_cluster"
+      }
+    ],
+    "cannot_replace": "#minecraft:features_cannot_replace",
+    "invalid_blocks": "#minecraft:geode_invalid_blocks"
+  },
+  "layers": {},
+  "crack": {
+    "generate_crack_chance": 0.95
+  },
+  "use_alternate_layer0_chance": 0.083,
+  "outer_wall_distance": {
+    "min_inclusive": 4,
+    "max_inclusive": 6,
+    "type": "minecraft:uniform"
+  },
+  "invalid_blocks_threshold": 1,
+  "type": "minecraft:geode"
+}

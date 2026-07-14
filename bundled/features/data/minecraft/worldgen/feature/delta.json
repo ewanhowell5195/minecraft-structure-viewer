@@ -1,0 +1,22 @@
+{
+  "contents": {
+    "Properties": {
+      "level": "0"
+    },
+    "Name": "minecraft:lava"
+  },
+  "rim": {
+    "Name": "minecraft:magma_block"
+  },
+  "size": {
+    "min_inclusive": 3,
+    "max_inclusive": 7,
+    "type": "minecraft:uniform"
+  },
+  "rim_size": {
+    "min_inclusive": 0,
+    "max_inclusive": 2,
+    "type": "minecraft:uniform"
+  },
+  "type": "minecraft:delta_feature"
+}

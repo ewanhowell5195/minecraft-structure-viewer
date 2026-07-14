@@ -1,0 +1,35 @@
+{
+  "cap_provider": {
+    "state": {
+      "Properties": {
+        "west": "true",
+        "up": "true",
+        "south": "true",
+        "north": "true",
+        "east": "true",
+        "down": "false"
+      },
+      "Name": "minecraft:red_mushroom_block"
+    },
+    "type": "minecraft:simple_state_provider"
+  },
+  "stem_provider": {
+    "state": {
+      "Properties": {
+        "west": "true",
+        "up": "false",
+        "south": "true",
+        "north": "true",
+        "east": "true",
+        "down": "false"
+      },
+      "Name": "minecraft:mushroom_stem"
+    },
+    "type": "minecraft:simple_state_provider"
+  },
+  "can_place_on": {
+    "tag": "minecraft:huge_red_mushroom_can_place_on",
+    "type": "minecraft:matching_block_tag"
+  },
+  "type": "minecraft:huge_red_mushroom"
+}

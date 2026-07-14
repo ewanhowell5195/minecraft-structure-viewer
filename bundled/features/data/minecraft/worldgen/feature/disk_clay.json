@@ -1,0 +1,22 @@
+{
+  "state_provider": {
+    "state": {
+      "Name": "minecraft:clay"
+    },
+    "type": "minecraft:simple_state_provider"
+  },
+  "target": {
+    "blocks": [
+      "minecraft:dirt",
+      "minecraft:clay"
+    ],
+    "type": "minecraft:matching_blocks"
+  },
+  "radius": {
+    "min_inclusive": 2,
+    "max_inclusive": 3,
+    "type": "minecraft:uniform"
+  },
+  "half_height": 1,
+  "type": "minecraft:disk"
+}

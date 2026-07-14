@@ -1,0 +1,14 @@
+{
+  "state": {
+    "Name": "minecraft:packed_ice"
+  },
+  "can_place_on": {
+    "blocks": "minecraft:snow_block",
+    "type": "minecraft:matching_blocks"
+  },
+  "can_replace": {
+    "tag": "minecraft:ice_spike_replaceable",
+    "type": "minecraft:matching_block_tag"
+  },
+  "type": "minecraft:spike"
+}

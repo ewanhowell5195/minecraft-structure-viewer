@@ -43,6 +43,7 @@ import net.minecraft.world.level.levelgen.feature.DesertWellFeature;
 import net.minecraft.world.level.levelgen.feature.EndGatewayFeature;
 import net.minecraft.world.level.levelgen.feature.EndPlatformFeature;
 import net.minecraft.world.level.levelgen.feature.EndPodiumFeature;
+import net.minecraft.world.level.levelgen.feature.VoidStartPlatformFeature;
 import net.minecraft.world.level.levelgen.structure.BoundingBox;
 import net.minecraft.world.level.levelgen.structure.ScatteredFeaturePiece;
 import net.minecraft.world.level.levelgen.structure.StructurePiece;
@@ -678,6 +679,19 @@ public class BuiltinExtract {
     write("end/gateway", cap, null, false);
   }
 
+  // the game builds the platform chunk by chunk; running the feature once
+  // per chunk around the platform origin captures the whole disc
+  static void voidStartPlatform() throws Exception {
+    Capture cap = new Capture();
+    VoidStartPlatformFeature feature = new VoidStartPlatformFeature();
+    for (int cx = -1; cx <= 1; cx++) {
+      for (int cz = -1; cz <= 1; cz++) {
+        feature.place(cap.level(), null, cap.random, new BlockPos(cx * 16, 0, cz * 16));
+      }
+    }
+    write("void_start_platform", cap, null, false);
+  }
+
   static void exitPortal(boolean active) throws Exception {
     Capture cap = new Capture();
     BlockPos origin = new BlockPos(0, 0, 0);
@@ -711,6 +725,7 @@ public class BuiltinExtract {
     mineshaft("mesa", net.minecraft.world.level.levelgen.structure.structures.MineshaftStructure.Type.MESA);
     endPlatform();
     endGateway();
+    voidStartPlatform();
     exitPortal(false);
     exitPortal(true);
     System.out.println("[builtin] done");

@@ -1,0 +1,87 @@
+{
+  "targets": [
+    {
+      "target": {
+        "rules": [
+          {
+            "rules": [
+              {
+                "tag": "minecraft:height_specific_ore_replaceables",
+                "predicate_type": "minecraft:tag_match"
+              },
+              {
+                "min_inclusive": 0,
+                "max_inclusive": 2031,
+                "predicate_type": "minecraft:height_match"
+              }
+            ],
+            "predicate_type": "minecraft:all_of"
+          },
+          {
+            "rules": [
+              {
+                "rule": {
+                  "tag": "minecraft:height_specific_ore_replaceables",
+                  "predicate_type": "minecraft:tag_match"
+                },
+                "predicate_type": "minecraft:not"
+              },
+              {
+                "tag": "minecraft:stone_ore_replaceables",
+                "predicate_type": "minecraft:tag_match"
+              }
+            ],
+            "predicate_type": "minecraft:all_of"
+          }
+        ],
+        "predicate_type": "minecraft:any_of"
+      },
+      "state": {
+        "Name": "minecraft:lapis_ore"
+      }
+    },
+    {
+      "target": {
+        "rules": [
+          {
+            "rules": [
+              {
+                "tag": "minecraft:height_specific_ore_replaceables",
+                "predicate_type": "minecraft:tag_match"
+              },
+              {
+                "min_inclusive": -2032,
+                "max_inclusive": 8,
+                "predicate_type": "minecraft:height_match"
+              }
+            ],
+            "predicate_type": "minecraft:all_of"
+          },
+          {
+            "rules": [
+              {
+                "rule": {
+                  "tag": "minecraft:height_specific_ore_replaceables",
+                  "predicate_type": "minecraft:tag_match"
+                },
+                "predicate_type": "minecraft:not"
+              },
+              {
+                "tag": "minecraft:deepslate_ore_replaceables",
+                "predicate_type": "minecraft:tag_match"
+              }
+            ],
+            "predicate_type": "minecraft:all_of"
+          }
+        ],
+        "predicate_type": "minecraft:any_of"
+      },
+      "state": {
+        "Name": "minecraft:deepslate_lapis_ore"
+      }
+    }
+  ],
+  "size": 7,
+  "discard_chance_on_air_exposure": 1.0,
+  "type": "minecraft:ore"
+}

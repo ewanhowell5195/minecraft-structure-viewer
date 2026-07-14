@@ -1,0 +1,14 @@
+{
+  "features": [
+    {
+      "feature": "minecraft:pale_oak_creaking_checked",
+      "chance": 0.1
+    },
+    {
+      "feature": "minecraft:pale_oak_checked",
+      "chance": 0.9
+    }
+  ],
+  "default": "minecraft:pale_oak_checked",
+  "type": "minecraft:random_selector"
+}

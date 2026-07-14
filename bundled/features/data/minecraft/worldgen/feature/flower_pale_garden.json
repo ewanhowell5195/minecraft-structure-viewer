@@ -1,0 +1,10 @@
+{
+  "to_place": {
+    "state": {
+      "Name": "minecraft:closed_eyeblossom"
+    },
+    "type": "minecraft:simple_state_provider"
+  },
+  "schedule_tick": true,
+  "type": "minecraft:simple_block"
+}

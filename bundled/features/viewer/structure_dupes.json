@@ -1,0 +1,12 @@
+[
+  "minecraft/bonus_chest",
+  "minecraft/desert_well",
+  "minecraft/monster_room",
+  "minecraft/end_gateway_delayed",
+  "minecraft/end_gateway_return",
+  "minecraft/end_platform",
+  "minecraft/end_spike",
+  "minecraft/end_podium_active",
+  "minecraft/end_podium_inactive",
+  "minecraft/void_start_platform"
+]

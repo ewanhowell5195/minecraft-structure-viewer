@@ -1,0 +1,22 @@
+{
+  "state_provider": {
+    "state": {
+      "Name": "minecraft:gravel"
+    },
+    "type": "minecraft:simple_state_provider"
+  },
+  "target": {
+    "blocks": [
+      "minecraft:dirt",
+      "minecraft:grass_block"
+    ],
+    "type": "minecraft:matching_blocks"
+  },
+  "radius": {
+    "min_inclusive": 2,
+    "max_inclusive": 5,
+    "type": "minecraft:uniform"
+  },
+  "half_height": 2,
+  "type": "minecraft:disk"
+}

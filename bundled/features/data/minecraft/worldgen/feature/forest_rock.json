@@ -1,0 +1,10 @@
+{
+  "state": {
+    "Name": "minecraft:mossy_cobblestone"
+  },
+  "can_place_on": {
+    "tag": "minecraft:forest_rock_can_place_on",
+    "type": "minecraft:matching_block_tag"
+  },
+  "type": "minecraft:block_blob"
+}

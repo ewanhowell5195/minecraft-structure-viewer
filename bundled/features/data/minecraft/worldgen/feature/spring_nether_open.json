@@ -1,0 +1,11 @@
+{
+  "state": {
+    "Properties": {
+      "falling": "true"
+    },
+    "Name": "minecraft:lava"
+  },
+  "requires_block_below": false,
+  "valid_blocks": "minecraft:netherrack",
+  "type": "minecraft:spring_feature"
+}

@@ -1,0 +1,18 @@
+{
+  "features": [
+    {
+      "feature": "minecraft:fancy_oak_checked",
+      "chance": 0.1
+    },
+    {
+      "feature": "minecraft:jungle_bush",
+      "chance": 0.5
+    },
+    {
+      "feature": "minecraft:fallen_jungle_tree",
+      "chance": 0.0125
+    }
+  ],
+  "default": "minecraft:jungle_tree",
+  "type": "minecraft:random_selector"
+}
