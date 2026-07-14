@@ -322,6 +322,17 @@ function fit() {
   controls.update()
 }
 
+// the end portal shader samples in screen space assuming a square viewport;
+// its Aspect uniform squashes the pattern back for whatever shape we render at
+function syncAspect() {
+  const aspect = (canvas?.clientWidth || 1) / (canvas?.clientHeight || 1)
+  scene.traverse(o => {
+    for (const mat of [].concat(o.material ?? [])) {
+      if (mat?.uniforms?.Aspect) mat.uniforms.Aspect.value = aspect
+    }
+  })
+}
+
 // resize when the CSS size or device pixel ratio changes, and also when the
 // buffer itself no longer matches: browsers can shrink or drop a hidden
 // tab's backing store, which used to be silently repaired by the old
@@ -336,6 +347,7 @@ function resize() {
     renderer.setPixelRatio(ratio)
     renderer.setSize(w, h, false)
     updateProjection()
+    syncAspect()
   }
 }
 
@@ -404,7 +416,7 @@ export function useScene() {
     view, scene, overlayScene, init, fit, setGrids, sceneBounds, setOrtho, setOrthoManual,
     makeHighlight,
     getGridRects: () => gridRects,
-    contentRoots, animators, perspCam, FOV, updateProjection, setWalkUpdate,
+    contentRoots, animators, perspCam, FOV, updateProjection, setWalkUpdate, syncAspect,
     get camera() { return camera },
     get controls() { return controls },
     get canvas() { return canvas },

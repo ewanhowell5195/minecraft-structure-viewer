@@ -893,6 +893,7 @@ function restoreFull() {
   state.info = fullBundle.info
   root.visible = true
   sceneApi.contentRoots.add(root)
+  sceneApi.syncAspect()
   sceneApi.animators.add(animator)
   fullBundle = null
   rootSliced = false
@@ -1176,6 +1177,7 @@ async function build(structure = source, refit = true, slice = false) {
     markerTextures = []
     sceneApi.scene.add(root)
     sceneApi.contentRoots.add(root)
+    sceneApi.syncAspect()
     if (old) sceneApi.contentRoots.delete(old)
     if (animator) sceneApi.animators.delete(animator)
     const doorDraws = attachDoors(doorEntries)
