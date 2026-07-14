@@ -886,30 +886,32 @@ Object.assign(TYPES, {
     }
   },
 
+  // wall-mounted adaptations face north (-z), the way structures are
+  // authored, so the interesting side greets the default camera
   async spring_feature(world, json, rand, resolvePlaced, ox, oy, oz) {
     const rock = { Name: [json.valid_blocks ?? "minecraft:stone"].flat()[0] }
     world.set(ox, oy + 1, oz, rock)
     world.set(ox, oy - 1, oz, rock)
     world.set(ox - 1, oy, oz, rock)
     world.set(ox + 1, oy, oz, rock)
-    world.set(ox, oy, oz - 1, rock)
+    world.set(ox, oy, oz + 1, rock)
     const fluid = json.state?.Name ?? "minecraft:water"
     world.set(ox, oy, oz, { Name: fluid, Properties: { level: "0" } })
   },
 
   async vines(world, json, rand, resolvePlaced, ox, oy, oz) {
-    for (let dy = 0; dy < 3; dy++) world.set(ox, oy + dy, oz - 1, { Name: "minecraft:stone" })
-    for (let dy = 0; dy < 3; dy++) world.set(ox, oy + dy, oz, { Name: "minecraft:vine", Properties: { north: "true" } })
+    for (let dy = 0; dy < 3; dy++) world.set(ox, oy + dy, oz + 1, { Name: "minecraft:stone" })
+    for (let dy = 0; dy < 3; dy++) world.set(ox, oy + dy, oz, { Name: "minecraft:vine", Properties: { south: "true" } })
   },
 
   async multiface_growth(world, json, rand, resolvePlaced, ox, oy, oz) {
     const host = { Name: [json.can_be_placed_on ?? "minecraft:stone"].flat()[0] }
     const block = json.block ?? "minecraft:glow_lichen"
     for (let dx = -1; dx <= 1; dx++) for (let dy = 0; dy < 3; dy++) {
-      world.set(ox + dx, oy + dy, oz - 1, host)
+      world.set(ox + dx, oy + dy, oz + 1, host)
     }
     for (let dx = -1; dx <= 1; dx++) for (let dy = 0; dy < 3; dy++) {
-      if (rand() < 0.6) world.set(ox + dx, oy + dy, oz, { Name: block, Properties: { north: "true" } })
+      if (rand() < 0.6) world.set(ox + dx, oy + dy, oz, { Name: block, Properties: { south: "true" } })
     }
   },
 
