@@ -648,9 +648,10 @@ Object.assign(TYPES, {
   },
 
   async large_dripstone(world, json, rand, resolvePlaced, ox, oy, oz) {
-    const caveHeight = 4 + nextInt(rand, 27)
+    const caveHeight = 4 + nextInt(rand, 57)
     const floorY = oy, ceilY = oy + caveHeight - 1
-    const originY = floorY + nextInt(rand, caveHeight)
+    const originMin = Math.max(floorY, ceilY - 30), originMax = Math.min(ceilY, floorY + 30)
+    const originY = originMin + nextInt(rand, originMax - originMin + 1)
     const [rMin, rMaxProvider] = intBounds(json.column_radius)
     const ratio = json.max_column_radius_to_cave_height_ratio
     const rMax = Math.min(Math.max(Math.trunc(caveHeight * ratio), rMin), rMaxProvider)
