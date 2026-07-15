@@ -22,12 +22,14 @@ import LevelMenu from "./components/LevelMenu.vue"
 import WalkOverlay from "./components/WalkOverlay.vue"
 import FpsCounter from "./components/FpsCounter.vue"
 import ContainerModal from "./components/ContainerModal.vue"
+import UsedBlocksModal from "./components/UsedBlocksModal.vue"
 import ContextMenu from "./components/ContextMenu.vue"
 import BuildProgress from "./components/BuildProgress.vue"
 import BuildWarning from "./components/BuildWarning.vue"
 
 const libError = ref("")
 const canvasEl = ref(null)
+const usedModal = ref(null)
 const { loadBase } = usePacks()
 const structures = useStructures()
 const { state: current, structure, loadVanilla, loadMany, loadDebug, loadFeature, loadFeatures, loadFeatureField, cancelReading } = useStructure()
@@ -124,9 +126,14 @@ onMounted(async () => {
           <span class="material-symbols-outlined">directions_walk</span>
           Walk Around
         </button>
+        <button v-if="buildState.info" class="used-btn" :disabled="locked" @click="usedModal?.open()">
+          <span class="material-symbols-outlined">list_alt</span>
+          Blocks
+        </button>
       </template>
       <WalkOverlay />
       <FpsCounter />
+      <UsedBlocksModal ref="usedModal" />
       <ContainerModal />
       <ContextMenu />
       <BuildProgress />
@@ -216,6 +223,17 @@ onMounted(async () => {
 }
 
 .walk-btn .material-symbols-outlined { font-size: 18px; }
+
+.used-btn {
+  position: absolute;
+  left: 14px;
+  bottom: 52px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.used-btn .material-symbols-outlined { font-size: 18px; }
 
 .cancel-btn {
   position: absolute;
