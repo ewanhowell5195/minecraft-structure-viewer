@@ -208,12 +208,30 @@ function jigsawBlurb(p, nbt) {
 // mob (checked against decompiled save/read code); per-mob defaults stay visible
 const NBT_ZERO_DEFAULTS = new Set([
   "HurtTime", "DeathTime", "HurtByTimestamp", "AbsorptionAmount", "FallFlying",
-  "Invulnerable", "PortalCooldown", "fall_distance", "FallDistance", "OnGround",
-  "InLove", "Age", "ForcedAge", "AgeLocked", "CanPickUpLoot", "PersistenceRequired",
-  "LeftHanded", "NoAI", "Leashed", "Dimension", "Sitting", "PlayerCreated",
-  "Tame", "Bred", "EatingHaystack", "Temper",
+  "Invulnerable", "PortalCooldown", "fall_distance", "FallDistance",
+  "InLove", "Age", "ForcedAge", "AgeLocked",
+  "LeftHanded", "NoAI", "Leashed", "Sitting", "PlayerCreated",
+  "Tame", "Bred", "EatingHaystack", "Temper", "Xp", "FoodLevel", "food_level",
+  "Willing", "Riches", "CanBreakDoors", "TimeInOverworld", "Sheared",
+  "ShowArms", "DisabledSlots", "Invisible", "Small", "NoBasePlate",
+  "lastRestock", "LastRestock", "LastGossipDecay", "last_gossip_decay",
   "current_impulse_context_reset_grace_time"
 ])
+// physics/session state that says nothing about a placed entity, any value
+const NBT_NOISE = new Set(["OnGround", "PersistenceRequired", "Dimension", "CanPickUpLoot"])
+
+// for hiding full-health mobs whose nbt carries no max_health attribute
+const DEFAULT_MAX_HEALTH = {
+  villager: 20, zombie_villager: 20, zombie: 20, husk: 20, drowned: 20,
+  skeleton: 20, stray: 20, wither_skeleton: 20, bogged: 16, creeper: 20,
+  spider: 16, cave_spider: 12, enderman: 40, witch: 26,
+  piglin: 16, piglin_brute: 50, zombified_piglin: 20, hoglin: 40, zoglin: 40,
+  pillager: 24, vindicator: 24, evoker: 24, illusioner: 32, ravager: 100,
+  allay: 10, cat: 10, ocelot: 10, cow: 10, mooshroom: 10, pig: 10, sheep: 8,
+  chicken: 4, goat: 10, camel: 32, sniffer: 14, frog: 10, axolotl: 14,
+  armadillo: 12, bee: 10, iron_golem: 100, snow_golem: 4,
+  squid: 10, glow_squid: 10, bat: 6, salmon: 3, cod: 3
+}
 const emptyObj = v => !!v && typeof v === "object" && !Array.isArray(v) && !Object.keys(v).length
 const vanillaDropChance = v => typeof v === "number" && Math.abs(v - 0.085) < 1e-6
 const near = (a, b) => a === b || Math.abs(a - b) < 1e-6 * Math.max(1, Math.abs(a), Math.abs(b))
@@ -244,11 +262,21 @@ function filterDefaultNbt(nbt) {
   }
   const out = {}
   for (const [k, v] of Object.entries(nbt)) {
-    if (NBT_ZERO_DEFAULTS.has(k) && (v === 0 || v === false)) continue
+    if (NBT_ZERO_DEFAULTS.has(k) && (v === 0 || v === false || v === 0n)) continue
+    if (NBT_NOISE.has(k)) continue
+    if (Array.isArray(v) && !v.length) continue
     if (k === "Fire" && v <= 0) continue
+    if (k === "Air" && v === 300) continue
+    if (k === "ConversionTime" && v < 0) continue
+    if (k === "CollarColor" && v === 14) continue
+    if (k === "Color" && v === 0 && stripNs(nbt.id ?? "") === "sheep") continue
     if ((k === "OwnerUUID" || k === "Owner") && v === "") continue
-    if (k === "Health" && maxHealth != null && near(v, maxHealth)) continue
-    if (k === "Motion" && Array.isArray(v) && v.every(n => !n)) continue
+    if (k === "Health") {
+      const max = maxHealth ?? DEFAULT_MAX_HEALTH[stripNs(nbt.id ?? "")]
+      if (max != null && near(v, max)) continue
+    }
+    // at rest under gravity: zero, or the first-tick fall velocity every placed mob carries
+    if (k === "Motion" && Array.isArray(v) && near(v[0], 0) && near(v[2], 0) && v[1] <= 0 && v[1] > -0.1) continue
     if ((k === "HandItems" || k === "ArmorItems") && Array.isArray(v) && v.every(emptyObj)) continue
     if ((k === "HandDropChances" || k === "ArmorDropChances") && Array.isArray(v) && v.every(vanillaDropChance)) continue
     if ((k === "body_armor_drop_chance" || k === "saddle_drop_chance") && vanillaDropChance(v)) continue
