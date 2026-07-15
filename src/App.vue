@@ -49,6 +49,8 @@ const info = computed(() => {
   return `${name}${i.size} · ${i.blocks} blocks · ${i.palette} palette entries · ${i.draws} draws · ${fmtK(i.tris)} tris`
 })
 
+const usedLabel = computed(() => buildState.info?.blocks === 0 && structure.value?.entities?.length ? "Entities" : "Blocks")
+
 // id + blockstates of the block under the pointer, under the info chip
 const aim = computed(() => {
   const a = containerState.aim
@@ -126,9 +128,9 @@ onMounted(async () => {
           <span class="material-symbols-outlined">directions_walk</span>
           Walk Around
         </button>
-        <button v-if="buildState.info" class="used-btn" :disabled="locked" @click="usedModal?.open()">
+        <button v-if="buildState.info && (buildState.info.blocks || structure?.entities?.length)" class="used-btn" :disabled="locked" @click="usedModal?.open()">
           <span class="material-symbols-outlined">list_alt</span>
-          Blocks
+          {{ usedLabel }}
         </button>
       </template>
       <WalkOverlay />

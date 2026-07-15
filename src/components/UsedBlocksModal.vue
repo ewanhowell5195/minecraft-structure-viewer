@@ -133,10 +133,10 @@ function clickEntity(g) {
 }
 
 function open() {
-  state.tab = "blocks"
   state.expanded = {}
   state.expandedState = {}
   state.data = compute()
+  state.tab = state.data?.blocks.length || !state.data?.entities.length ? "blocks" : "entities"
   state.open = true
 }
 
@@ -162,7 +162,7 @@ defineExpose({ open })
   <div v-if="state.open" class="ub-backdrop" @pointerdown.self="close">
     <div class="ub-panel">
       <header>
-        <h3>Used blocks</h3>
+        <h3>{{ state.data?.blocks.length || !state.data?.entities.length ? "Used blocks" : "Used entities" }}</h3>
         <div class="controls">
           <div class="seg">
             <button :class="{ active: state.sort === 'count' }" @click="state.sort = 'count'">Most common</button>
@@ -173,7 +173,7 @@ defineExpose({ open })
           </button>
         </div>
       </header>
-      <div class="seg tabs" v-if="state.data?.entities.length">
+      <div class="seg tabs" v-if="state.data?.entities.length && state.data?.blocks.length">
         <button :class="{ active: state.tab === 'blocks' }" @click="state.tab = 'blocks'">Blocks ({{ state.data.blocks.length }})</button>
         <button :class="{ active: state.tab === 'entities' }" @click="state.tab = 'entities'">Entities ({{ state.data.entities.length }})</button>
       </div>
