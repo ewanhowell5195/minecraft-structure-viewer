@@ -7,7 +7,8 @@ import { useBuild } from "./useBuild.js"
 import { useScene } from "./useScene.js"
 import { useLock } from "./useLock.js"
 import { readStructure } from "../nbt.js"
-import { AIR, EMPTY, JIGSAW, mix, parseState, poolTemplates, rand32 } from "../transforms.js"
+import { AIR, EMPTY, JIGSAW, mix, parseState, poolTemplates, rand32, rnd } from "../transforms.js"
+import { hasDataMarkers, processDataMarkers } from "../markers.js"
 import { runJigsaw } from "../jigsaw.js"
 import { mineshaftPieceGens, rerollGen, runDesertPyramid, runDesertWell, runDungeon, runEndCity, runEndSpikes, runEndSpikesActive, runFortress, runIgloo, runJungleTemple, runMansion, runMineshaft, runMineshaftMesa, runMonument, runStronghold } from "../generators/index.js"
 import { PROC } from "../proc.js"
@@ -34,6 +35,8 @@ const state = reactive({
 
 let base = null, baseName = null
 let baseRadius = 96
+// the generator's own depth cap; data markers add one processing level past it
+let genCap = Infinity
 let prevAnchorWorld = null
 
 // adopted by the FIRST session only; captured up front because loads rewrite the query string
@@ -81,21 +84,28 @@ const generators = {
 }
 
 async function resolve(level) {
-  if (level === 0 || !base) return { structure: base }
-  if (state.kind === "jigsaw") {
+  const gl = Math.min(level, genCap)
+  let res
+  if (gl === 0 || !base) res = { structure: base }
+  else if (state.kind === "jigsaw") {
     // maxRadius mirrors the game's max_distance_from_center; the piece cap is a runaway backstop vanilla lacks
-    return runJigsaw(base, {
+    res = await runJigsaw(base, {
       loadStruct, loadPool,
-      maxDepth: level, maxPieces: 1024, maxRadius: baseRadius,
+      maxDepth: gl, maxPieces: 1024, maxRadius: baseRadius,
       levelSeed: l => mix(state.seed, l),
       onProgress: n => { buildApi.state.status = `loading… ${n} pieces` },
       // at the depth cap the frontier's jigsaws are consumed, like vanilla's finished generation
-      keepJigsaws: level < state.maxDepth
+      keepJigsaws: gl < genCap
     })
+  } else {
+    const gen = generators[state.kind]
+    res = gen ? await gen(loadStruct, { maxDepth: gl, seed: state.seed }) : { structure: base }
   }
-  const gen = generators[state.kind]
-  if (!gen) return { structure: base }
-  return gen(loadStruct, { maxDepth: level, seed: state.seed })
+  // stepless sessions have no way to reach a bonus level, so they process inline
+  if ((level > gl || (!state.steps && gl > 0)) && res.structure && hasDataMarkers(res.structure, baseName)) {
+    res = { ...res, structure: processDataMarkers(res.structure, baseName, rnd(mix(state.seed ?? 1, 0x5f375a86))) }
+  }
+  return res
 }
 
 // each build re-centres the assembly, so the camera shifts by however far the base's anchor moved
@@ -108,9 +118,14 @@ async function regenerate() {
       structure = res.structure
       // a solve that stops short IS at max depth (deeper levels re-solve identically);
       // floor 1, not the deepest piece: even an empty round consumed the base's jigsaws
-      if (state.kind === "jigsaw" && (res.exhausted || res.capped || res.depth < state.level)) {
-        state.maxDepth = Math.max(res.depth, 1)
+      if (state.kind === "jigsaw" && (res.exhausted || res.capped || res.depth < Math.min(state.level, genCap))) {
+        genCap = Math.max(res.depth, 1)
+        state.maxDepth = genCap
         if (state.level > state.maxDepth) state.level = state.maxDepth
+      }
+      // reaching the generator's cap with markers still present unlocks one more step
+      if (state.steps && state.kind !== "markers" && state.level === genCap && state.maxDepth === genCap && hasDataMarkers(structure, baseName)) {
+        state.maxDepth = genCap + 1
       }
     } catch (err) {
       buildApi.state.status = `couldn't assemble: ${err}`
@@ -149,7 +164,8 @@ async function setLevel(target, { freshSeed = false } = {}) {
   if (target > 0 && (freshSeed || state.seed == null)) {
     state.seed = rand32()
     if (state.kind === "jigsaw") {
-      state.maxDepth = structures.getStructDepth(baseName) ?? state.maxDepth
+      genCap = structures.getStructDepth(baseName) ?? genCap
+      state.maxDepth = genCap
       baseRadius = structures.getStructRadius(baseName) ?? baseRadius
     }
     else if (state.steps) await probeDepth()
@@ -166,7 +182,11 @@ const op = fn => async (...args) => {
   try { await fn(...args) } finally { lock(false) }
 }
 const next = op(() => setLevel(state.level + 1))
-const all = op(() => setLevel(Infinity))
+const all = op(async () => {
+  await setLevel(Infinity)
+  // a marker level unlocked by reaching the generator cap counts as "all"
+  if (state.level < state.maxDepth) await setLevel(Infinity)
+})
 const undo = op(() => setLevel(state.level - 1))
 const reset = op(() => setLevel(0))
 const reloadAll = op(() => setLevel(state.level, { freshSeed: true }))
@@ -177,7 +197,10 @@ async function probeDepth() {
   const gen = generators[state.kind]
   if (!gen || state.seed == null) return
   const { maxDepth } = await gen(loadStruct, { maxDepth: Infinity, seed: state.seed })
-  if (typeof maxDepth === "number") state.maxDepth = maxDepth
+  if (typeof maxDepth === "number") {
+    genCap = maxDepth
+    state.maxDepth = maxDepth
+  }
 }
 
 // village animal spawner pieces (empty pool, structure_void final_state) would
@@ -211,7 +234,8 @@ async function startSession(structure, name) {
     state.label = proc.label
     state.steps = proc.steps
     state.reroll = !!proc.reroll
-    state.maxDepth = proc.maxDepth ?? 1
+    genCap = proc.maxDepth ?? 1
+    state.maxDepth = genCap
   } else if (isJigsaw && await jigsawsCanAct(structure)) {
     state.kind = "jigsaw"
     state.label = "Structure Blocks"
@@ -220,8 +244,16 @@ async function startSession(structure, name) {
     await structures.computeWorldgen()
     // pieces with no structure def get generous caps the stop-short clamp
     // shrinks; 128 is the codec max radius
-    state.maxDepth = structures.getStructDepth(name) ?? 20
+    genCap = structures.getStructDepth(name) ?? 20
+    state.maxDepth = genCap
     baseRadius = structures.getStructRadius(name) ?? 128
+  } else if (hasDataMarkers(structure, name)) {
+    state.kind = "markers"
+    state.label = "Structure Blocks"
+    state.steps = true
+    state.reroll = false
+    genCap = 0
+    state.maxDepth = 1
   } else {
     endSession()
     return

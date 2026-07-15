@@ -1,9 +1,8 @@
-import { AIR, JIGSAW, REAL_AIR, STRUCT_VOID, mirrorPos, mirrorState, parseState, rotDir, rotPos, rotateState } from "./transforms.js"
+import { AIR, JIGSAW, REAL_AIR, STRUCT_VOID, mirrorPos, mirrorState, parseState, rotPos, rotateState } from "./transforms.js"
 
 // later pieces win a cell. ow maps MC's per-piece BlockIgnoreProcessor: template
 // air CARVES earlier blocks (jigsaw never; igloo/mansion always; end city per-piece)
 const SB = /(^|:)structure_block$/
-const CHEST_MARKER = /^Chest(West|East|South|North)$/
 
 // continuous positions: cell [x, x+1) rotated 90 lands at [-x-1, -x), hence 1 - x
 function rotPosF([x, y, z], k) {
@@ -53,9 +52,11 @@ export function combine(pieces) {
         continue
       }
       if (SB.test(e.Name)) {
-        // data markers drop, except the mansion's chest markers (facing rotates only, as vanilla)
-        const m = typeof b.nbt?.metadata === "string" && b.nbt.metadata.match(CHEST_MARKER)
-        if (m) cells.set(key, { Name: "minecraft:chest", Properties: { facing: rotDir(m[1].toLowerCase(), rot), type: "single" } })
+        // DATA markers survive assembly (processed as their own session level);
+        // __rot preserves the piece rotation for facing-sensitive markers
+        if (b.nbt?.mode !== "DATA") continue
+        const nbt = rot ? { ...b.nbt, __rot: rot & 3 } : b.nbt
+        cells.set(key, { Name: e.Name, Properties: e.Properties, nbt })
         continue
       }
       if (JIGSAW.test(e.Name)) {
