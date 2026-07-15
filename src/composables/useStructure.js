@@ -86,8 +86,24 @@ export function parseSeedParam(param) {
 let seededHistory = false
 let navigatingHistory = false
 
+// the implicit start-up structure keeps the URL pristine; only a manual pick
+// or a session change writes params
+const DEFAULT_REL = "minecraft/village/plains/houses/plains_small_house_1"
+let implicitLoad = false
+
+async function loadDefault() {
+  if (!structures.has(DEFAULT_REL)) return
+  seededHistory = true
+  implicitLoad = true
+  try {
+    await loadVanilla(DEFAULT_REL)
+  } finally {
+    implicitLoad = false
+  }
+}
+
 function setStructureParam(rel, featureRel, featureSeed, featureField) {
-  if (navigatingHistory) return
+  if (navigatingHistory || implicitLoad) return
   const u = new URL(location)
   const before = u.searchParams.get("structure") + "|" + u.searchParams.get("feature")
   rel ? u.searchParams.set("structure", rel) : u.searchParams.delete("structure")
@@ -124,6 +140,7 @@ addEventListener("popstate", async () => {
     const rels = (await decodeStructureParam(params.get("structure"))).filter(r => structures.has(r))
     if (rels.length > 1) await loadMany(rels)
     else if (rels.length === 1) await loadVanilla(rels[0])
+    else await loadDefault()
   } finally {
     navigatingHistory = false
   }
@@ -614,5 +631,5 @@ async function onAssetsSwapped() {
 packs.setSwapHandler(onAssetsSwapped)
 
 export function useStructure() {
-  return { state: readonly(state), structure, loadVanilla, loadMany, loadFile, loadObject, loadDebug, loadFeature, loadFeatures, loadFeatureField, clickFeature, cancelReading }
+  return { state: readonly(state), structure, loadVanilla, loadDefault, loadMany, loadFile, loadObject, loadDebug, loadFeature, loadFeatures, loadFeatureField, clickFeature, cancelReading }
 }

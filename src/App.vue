@@ -32,7 +32,7 @@ const canvasEl = ref(null)
 const usedModal = ref(null)
 const { loadBase } = usePacks()
 const structures = useStructures()
-const { state: current, structure, loadVanilla, loadMany, loadDebug, loadFeature, loadFeatures, loadFeatureField, cancelReading } = useStructure()
+const { state: current, structure, loadVanilla, loadDefault, loadMany, loadDebug, loadFeature, loadFeatures, loadFeatureField, cancelReading } = useStructure()
 const { state: buildState, cancel: cancelBuild } = useBuild()
 const sceneApi = useScene()
 const walk = useWalk()
@@ -71,7 +71,6 @@ onMounted(async () => {
   useContainer().initPicking(canvasEl.value)
   // load the requested structure (?debug = the generated mesher test scene),
   // or a default so the page never starts empty
-  const DEFAULT = "minecraft/village/plains/houses/plains_small_house_1"
   const params = new URLSearchParams(location.search)
   const structureParam = params.get("structure")
   const debug = params.get("debug")
@@ -86,7 +85,7 @@ onMounted(async () => {
     else if (feature != null) loadFeature(feature, parseSeedParam(params.get("fseed")))
     else if (rels.length > 1) loadMany(rels)
     else if (rels.length === 1) loadVanilla(rels[0])
-    else if (structures.has(DEFAULT)) loadVanilla(DEFAULT)
+    else loadDefault()
   })
   await loadBase()
 })
