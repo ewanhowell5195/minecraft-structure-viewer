@@ -2,6 +2,7 @@ import { reactive, readonly } from "vue"
 import { readWorldZip, readRegionFile, buildSelection, unzipEntry } from "../world.js"
 import { useStructure } from "./useStructure.js"
 import { useStructures } from "./useStructures.js"
+import { cacheFile, uncache } from "../userCache.js"
 
 const state = reactive({
   active: false,
@@ -18,7 +19,7 @@ const state = reactive({
 let world = null
 const selected = new Set() // "cx,cz"
 
-async function openWorld(file) {
+async function openWorld(file, cacheIt = true) {
   state.error = ""
   state.busy = true
   try {
@@ -30,6 +31,7 @@ async function openWorld(file) {
     state.chunkCount = world.chunks.length
     state.selCount = 0
     useStructures().setWorldStructures([...world.structures.keys()])
+    if (cacheIt) cacheFile("world", file)
   } catch (err) {
     world = null
     useStructures().setWorldStructures([])
@@ -91,7 +93,7 @@ async function loadSelected() {
   try {
     const s = await buildSelection(world, selected, { yMin: state.yMin, yMax: state.yMax })
     const n = selected.size
-    await useStructure().loadObject(s, `${state.name} · ${n} chunk${n === 1 ? "" : "s"}`)
+    await useStructure().loadObject(s, `${state.name} · ${n} chunk${n === 1 ? "" : "s"}`, true)
   } catch (err) {
     state.error = String(err.message ?? err)
   } finally {
@@ -106,6 +108,7 @@ function closeWorld() {
   state.selCount = 0
   state.error = ""
   useStructures().setWorldStructures([])
+  uncache("world")
 }
 
 const hasStructure = rel => !!world?.structures.has(rel)

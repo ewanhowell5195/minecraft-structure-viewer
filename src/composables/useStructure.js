@@ -14,6 +14,7 @@ import { yieldTask } from "../yield.js"
 import { useFeatures } from "./useFeatures.js"
 import { generateFeature } from "../features/index.js"
 import { mix, rand32, rnd } from "../transforms.js"
+import { cacheFile, uncache } from "../userCache.js"
 
 const READERS = { nbt: readStructure, litematic: readLitematic, schem: readSchem, mcstructure: readMcstructure }
 const COMBINE_AIR = /(^|:)(air|cave_air|void_air|structure_void)$/
@@ -89,6 +90,11 @@ let navigatingHistory = false
 // the implicit start-up structure keeps the URL pristine
 const DEFAULT_REL = "minecraft/village/plains/houses/plains_small_house_1"
 let implicitLoad = false
+
+// true while the page-load restore sequence runs, so startup loads never drop the cache
+let initializing = false
+export function beginInit() { initializing = true }
+export function endInit() { initializing = false }
 
 async function loadDefault() {
   if (!structures.has(DEFAULT_REL)) return
@@ -403,11 +409,22 @@ function clickLoad(cat, rel, ev) {
         anchor = rel
       }
       state.field = null
-      if (await apply() === false) restore(snap)
+      if (await apply() === false) return restore(snap)
+      syncFileCache()
     } catch (err) {
       state.error = `couldn't load: ${err?.message ?? err}`
     }
   })
+}
+
+// only user switches drop caches; the world survives while everything loaded still comes from it.
+// startup restores (initializing) never drop anything: a reload that lands on a stale
+// ?structure= url would otherwise wipe the file/world the user expects restored
+function syncFileCache() {
+  if (implicitLoad || initializing) return
+  uncache("structure")
+  const w = useWorld()
+  if (loaded.some(e => e.feature || !e.rel || !w.hasStructure(e.rel))) uncache("world")
 }
 
 const structCatalog = {
@@ -454,7 +471,8 @@ function loadMany(rels) {
       loaded = entries
       sortLoaded(visualOrder())
       anchor = loaded.at(-1)?.rel ?? null
-      if (await apply() === false) restore(snap)
+      if (await apply() === false) return restore(snap)
+      syncFileCache()
     } catch (err) {
       state.error = `couldn't load structures: ${err}`
     }
@@ -472,7 +490,8 @@ function loadFeature(rel, seed) {
       state.field = null
       loaded = [e]
       anchor = rel
-      if (await apply() === false) restore(snap)
+      if (await apply() === false) return restore(snap)
+      syncFileCache()
     } catch (err) {
       state.error = `couldn't generate ${rel}: ${err?.message ?? err}`
     }
@@ -491,7 +510,8 @@ function loadFeatures(rels, reroll = false) {
       state.field = null
       loaded = entries
       anchor = loaded.at(-1)?.rel ?? null
-      if (await apply() === false) restore(snap)
+      if (await apply() === false) return restore(snap)
+      syncFileCache()
     } catch (err) {
       state.error = `couldn't generate features: ${err?.message ?? err}`
     }
@@ -545,7 +565,8 @@ function loadFeatureField(rel, baseSeed) {
       state.field = { rel, base }
       loaded = entries
       anchor = rel
-      if (await apply() === false) restore(snap)
+      if (await apply() === false) return restore(snap)
+      syncFileCache()
     } catch (err) {
       state.error = `couldn't generate ${rel} field: ${err?.message ?? err}`
     }
@@ -565,11 +586,12 @@ function loadDebug(kind) {
     history.replaceState(null, "", u)
     state.field = null
     loaded = [{ structure: makeDebug(kind), name }]
-    if (await apply() === false) restore(snap)
+    if (await apply() === false) return restore(snap)
+    syncFileCache()
   })
 }
 
-function loadFile(file) {
+function loadFile(file, cacheIt = true) {
   if (!file || locked.value) return
   return withLock(async () => {
     state.error = ""
@@ -580,14 +602,18 @@ function loadFile(file) {
       setStructureParam(null)
       state.field = null
       loaded = [{ structure: s, name: file.name.replace(/\.(nbt|litematic|schem|mcstructure)$/i, "") }]
-      if (await apply() === false) restore(snap)
+      if (await apply() === false) return restore(snap)
+      if (cacheIt) {
+        uncache("world")
+        cacheFile("structure", file)
+      }
     } catch (err) {
       state.error = `couldn't read ${file.name}: ${err}`
     }
   })
 }
 
-function loadObject(structure, name) {
+function loadObject(structure, name, keepWorld = false) {
   if (!structure || locked.value) return
   return withLock(async () => {
     state.error = ""
@@ -596,7 +622,9 @@ function loadObject(structure, name) {
       setStructureParam(null)
       state.field = null
       loaded = [{ structure, name }]
-      if (await apply() === false) restore(snap)
+      if (await apply() === false) return restore(snap)
+      uncache("structure")
+      if (!keepWorld) uncache("world")
     } catch (err) {
       state.error = `couldn't load ${name}: ${err}`
     }
@@ -632,3 +660,6 @@ packs.setSwapHandler(onAssetsSwapped)
 export function useStructure() {
   return { state: readonly(state), structure, loadVanilla, loadDefault, loadMany, loadFile, loadObject, loadDebug, loadFeature, loadFeatures, loadFeatureField, clickFeature, cancelReading }
 }
+
+
+

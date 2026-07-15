@@ -1,6 +1,7 @@
 import { reactive, shallowRef, readonly } from "vue"
 import { loadLibrary } from "../lib.js"
 import { loadMojangJar } from "../mojang.js"
+import { cachePack, uncachePack, setPackOrder, restorePacks } from "../userCache.js"
 import { useLock } from "./useLock.js"
 
 // index 0 = highest priority (prepareAssets first-wins order); pack bytes
@@ -114,8 +115,10 @@ async function addPacks(files, swap) {
       const id = nextId++
       bytesById.set(id, new Uint8Array(await file.arrayBuffer()))
       added.push({ id, name: file.name })
+      cachePack(file)
     }
     state.packs.unshift(...added)
+    setPackOrder(state.packs.map(p => p.name))
     await rebuildAssets(swap)
   } finally {
     state.busy = false
@@ -130,8 +133,10 @@ async function removePack(id, swap) {
   state.busy = true
   lock(true)
   try {
-    state.packs.splice(i, 1)
+    const [removed] = state.packs.splice(i, 1)
     bytesById.delete(id)
+    uncachePack(removed.name)
+    setPackOrder(state.packs.map(p => p.name))
     await rebuildAssets(swap)
   } finally {
     state.busy = false
@@ -149,10 +154,19 @@ async function movePack(id, delta, swap) {
   try {
     const [p] = state.packs.splice(i, 1)
     state.packs.splice(j, 0, p)
+    setPackOrder(state.packs.map(p => p.name))
     await rebuildAssets(swap)
   } finally {
     state.busy = false
     lock(false)
+  }
+}
+
+async function restoreCachedPacks() {
+  for (const file of await restorePacks()) {
+    const id = nextId++
+    bytesById.set(id, new Uint8Array(await file.arrayBuffer()))
+    state.packs.push({ id, name: file.name })
   }
 }
 
@@ -163,5 +177,5 @@ const allSources = () => state.packs.map(p => bytesById.get(p.id)).concat(baseBy
 const featureSources = () => state.packs.map(p => bytesById.get(p.id)).concat(builtinBytes, featureBytes).filter(Boolean)
 
 export function usePacks() {
-  return { state: readonly(state), assets, loadBase, setChannel, addPacks, removePack, movePack, allSources, featureSources, setSwapHandler }
+  return { state: readonly(state), assets, loadBase, setChannel, addPacks, removePack, movePack, restoreCachedPacks, allSources, featureSources, setSwapHandler }
 }

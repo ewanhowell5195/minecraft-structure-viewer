@@ -3,11 +3,13 @@ import { computed, onMounted, ref, watch } from "vue"
 import { loadLibrary } from "./lib.js"
 import { usePacks } from "./composables/usePacks.js"
 import { useStructures } from "./composables/useStructures.js"
-import { useStructure, decodeStructureParam, parseSeedParam } from "./composables/useStructure.js"
+import { useStructure, decodeStructureParam, parseSeedParam, beginInit, endInit } from "./composables/useStructure.js"
 import { useBuild } from "./composables/useBuild.js"
 import { useScene } from "./composables/useScene.js"
 import { useLock } from "./composables/useLock.js"
 import { useWalk } from "./composables/useWalk.js"
+import { useWorld } from "./composables/useWorld.js"
+import { restoreFile } from "./userCache.js"
 import { useContainer } from "./composables/useContainer.js"
 import { useSlicers } from "./composables/useSlicers.js"
 import { tab } from "./composables/useTab.js"
@@ -30,9 +32,9 @@ import BuildWarning from "./components/BuildWarning.vue"
 const libError = ref("")
 const canvasEl = ref(null)
 const usedModal = ref(null)
-const { loadBase } = usePacks()
+const { loadBase, restoreCachedPacks } = usePacks()
 const structures = useStructures()
-const { state: current, structure, loadVanilla, loadDefault, loadMany, loadDebug, loadFeature, loadFeatures, loadFeatureField, cancelReading } = useStructure()
+const { state: current, structure, loadVanilla, loadDefault, loadMany, loadFile, loadDebug, loadFeature, loadFeatures, loadFeatureField, cancelReading } = useStructure()
 const { state: buildState, cancel: cancelBuild } = useBuild()
 const sceneApi = useScene()
 const walk = useWalk()
@@ -78,16 +80,29 @@ onMounted(async () => {
   const stop = watch(() => structures.state.names.length, async n => {
     if (!n) return
     stop()
-    const rels = (await decodeStructureParam(structureParam)).filter(r => structures.has(r))
-    if (debug != null) await loadDebug(debug)
-    else if (feature != null && feature.includes(",")) await loadFeatures(feature.split(","))
-    else if (feature != null && params.get("field") != null) await loadFeatureField(feature, parseSeedParam(params.get("fseed")))
-    else if (feature != null) await loadFeature(feature, parseSeedParam(params.get("fseed")))
-    else if (rels.length > 1) await loadMany(rels)
-    else if (rels.length === 1) await loadVanilla(rels[0])
-    else await loadDefault()
+    // startup restores must never drop the cache: a reload landing on a stale
+    // ?structure= url would otherwise wipe the file the user expects back
+    beginInit()
+    try {
+      // the world restores first so its structures resolve for the param filter below
+      const worldFile = await restoreFile("world")
+      if (worldFile) await useWorld().openWorld(worldFile, false)
+      const rels = (await decodeStructureParam(structureParam)).filter(r => structures.has(r))
+      const structureFile = rels.length || debug != null || feature != null ? null : await restoreFile("structure")
+      if (debug != null) await loadDebug(debug)
+      else if (feature != null && feature.includes(",")) await loadFeatures(feature.split(","))
+      else if (feature != null && params.get("field") != null) await loadFeatureField(feature, parseSeedParam(params.get("fseed")))
+      else if (feature != null) await loadFeature(feature, parseSeedParam(params.get("fseed")))
+      else if (rels.length > 1) await loadMany(rels)
+      else if (rels.length === 1) await loadVanilla(rels[0])
+      else if (structureFile) await loadFile(structureFile, false)
+      else await loadDefault()
+    } finally {
+      endInit()
+    }
     useSlicers().restoreUrlSlice()
   })
+  await restoreCachedPacks()
   await loadBase()
 })
 </script>
