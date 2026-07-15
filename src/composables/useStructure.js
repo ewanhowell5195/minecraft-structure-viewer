@@ -214,11 +214,13 @@ async function packField() {
 async function mergeParts(parts) {
   const palette = [], byKey = new Map()
   function stateFor(e) {
-    const k = e.Name + "|" + JSON.stringify(e.Properties ?? null)
+    const k = e.Name + "|" + JSON.stringify(e.Properties ?? null) + "|" + (e.__biome ? JSON.stringify(e.__biome) : "")
     let i = byKey.get(k)
     if (i === undefined) {
       i = palette.length
-      palette.push(e.Properties ? { Name: e.Name, Properties: e.Properties } : { Name: e.Name })
+      const entry = e.Properties ? { Name: e.Name, Properties: e.Properties } : { Name: e.Name }
+      if (e.__biome) entry.__biome = e.__biome
+      palette.push(entry)
       byKey.set(k, i)
     }
     return i
@@ -420,7 +422,7 @@ async function featureEntry(rel, seed) {
     const lib = await loadLibrary()
     return readStructure(await lib.readFile(zp, packs.assets.value))
   }
-  const s = await generateFeature(rel, json, rnd(useSeed), features.resolvePlaced, loadStruct)
+  const s = await generateFeature(rel, json, rnd(useSeed), features.resolvePlaced, loadStruct, { grass: features.grassBiome(rel) })
   return s.blocks.length ? { structure: s, name: rel, rel, feature: true, seed: useSeed } : null
 }
 

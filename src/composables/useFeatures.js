@@ -19,6 +19,7 @@ let featurePath = new Map()
 let defaultSeeds = {}
 let staticSet = new Set()
 let folders = {}
+let biomes = {}
 
 async function populate() {
   const lib = await loadLibrary()
@@ -39,6 +40,9 @@ async function populate() {
   // curated display folders (tools/features/folders.json); unmapped rels list at the root
   const fbuf = await lib.readFile("viewer/feature_folders.json", packs.assets.value)
   folders = fbuf ? JSON.parse(textDecoder.decode(fbuf)) : {}
+  // per-tree home biome for the grass pad, in the lib's biome-arg shape
+  const bbuf = await lib.readFile("viewer/feature_biomes.json", packs.assets.value)
+  biomes = bbuf ? JSON.parse(textDecoder.decode(bbuf)) : {}
   // these names stay in the zip so references resolve; the list keeps them
   // out of the tree (fully removed features never index: no jar source)
   const delisted = new Set()
@@ -105,7 +109,8 @@ const defaultSeed = rel => defaultSeeds[rel] ?? 0
 const isStatic = rel => staticSet.has(rel)
 const has = rel => featurePath.has(rel)
 const folderOf = rel => folders[rel] ?? ""
+const grassBiome = rel => biomes[rel] ?? null
 
 export function useFeatures() {
-  return { state: readonly(state), stateMut: state, refresh, readFeature, resolvePlaced, visibleNames, defaultSeed, isStatic, has, folderOf }
+  return { state: readonly(state), stateMut: state, refresh, readFeature, resolvePlaced, visibleNames, defaultSeed, isStatic, has, folderOf, grassBiome }
 }

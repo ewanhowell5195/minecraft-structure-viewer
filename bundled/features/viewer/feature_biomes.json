@@ -1,0 +1,197 @@
+{
+  "minecraft/acacia": {
+    "temperature": 2,
+    "downfall": 0
+  },
+  "minecraft/azalea_tree": {
+    "temperature": 0.5,
+    "downfall": 0.5
+  },
+  "minecraft/birch": {
+    "temperature": 0.6,
+    "downfall": 0.6
+  },
+  "minecraft/birch_bees_0002": {
+    "temperature": 0.6,
+    "downfall": 0.6
+  },
+  "minecraft/birch_bees_0002_leaf_litter": {
+    "temperature": 0.7,
+    "downfall": 0.8
+  },
+  "minecraft/birch_bees_002": {
+    "temperature": 0.7,
+    "downfall": 0.8
+  },
+  "minecraft/birch_leaf_litter": {
+    "temperature": 0.7,
+    "downfall": 0.8,
+    "tint": "#28340a",
+    "combine": true
+  },
+  "minecraft/cherry": {
+    "tint": "#b6db61"
+  },
+  "minecraft/cherry_bees_005": {
+    "tint": "#b6db61"
+  },
+  "minecraft/dark_oak": {
+    "temperature": 0.7,
+    "downfall": 0.8,
+    "tint": "#28340a",
+    "combine": true
+  },
+  "minecraft/dark_oak_leaf_litter": {
+    "temperature": 0.7,
+    "downfall": 0.8,
+    "tint": "#28340a",
+    "combine": true
+  },
+  "minecraft/fallen_birch_tree": {
+    "temperature": 0.6,
+    "downfall": 0.6
+  },
+  "minecraft/fallen_jungle_tree": {
+    "temperature": 0.95,
+    "downfall": 0.9
+  },
+  "minecraft/fallen_oak_tree": {
+    "temperature": 0.8,
+    "downfall": 0.4
+  },
+  "minecraft/fallen_poplar_tree": {
+    "tint": "#df6827"
+  },
+  "minecraft/fallen_spruce_tree": {
+    "temperature": 0.2,
+    "downfall": 0.3
+  },
+  "minecraft/fallen_super_birch_tree": {
+    "temperature": 0.6,
+    "downfall": 0.6
+  },
+  "minecraft/fancy_oak": {
+    "temperature": 0.2,
+    "downfall": 0.3
+  },
+  "minecraft/fancy_oak_bees": {
+    "temperature": 0.5,
+    "downfall": 0.8
+  },
+  "minecraft/fancy_oak_bees_0002_leaf_litter": {
+    "temperature": 0.7,
+    "downfall": 0.8
+  },
+  "minecraft/fancy_oak_bees_002": {
+    "temperature": 0.7,
+    "downfall": 0.8
+  },
+  "minecraft/fancy_oak_bees_005": {
+    "temperature": 0.8,
+    "downfall": 0.4
+  },
+  "minecraft/fancy_oak_leaf_litter": {
+    "temperature": 0.7,
+    "downfall": 0.8,
+    "tint": "#28340a",
+    "combine": true
+  },
+  "minecraft/jungle_bush": {
+    "temperature": 0.95,
+    "downfall": 0.9
+  },
+  "minecraft/jungle_tree": {
+    "temperature": 0.95,
+    "downfall": 0.9
+  },
+  "minecraft/jungle_tree_no_vine": {
+    "temperature": 0.95,
+    "downfall": 0.9
+  },
+  "minecraft/mangrove": {
+    "tint": "#6a7039"
+  },
+  "minecraft/mega_jungle_tree": {
+    "temperature": 0.95,
+    "downfall": 0.9
+  },
+  "minecraft/mega_pine": {
+    "temperature": 0.3,
+    "downfall": 0.8
+  },
+  "minecraft/mega_spruce": {
+    "temperature": 0.3,
+    "downfall": 0.8
+  },
+  "minecraft/oak": {
+    "temperature": 2,
+    "downfall": 0
+  },
+  "minecraft/oak_bees_0002_leaf_litter": {
+    "temperature": 0.7,
+    "downfall": 0.8
+  },
+  "minecraft/oak_bees_002": {
+    "temperature": 0.7,
+    "downfall": 0.8
+  },
+  "minecraft/oak_bees_005": {
+    "temperature": 0.8,
+    "downfall": 0.4
+  },
+  "minecraft/oak_leaf_litter": {
+    "temperature": 0.7,
+    "downfall": 0.8,
+    "tint": "#28340a",
+    "combine": true
+  },
+  "minecraft/orange_poplar": {
+    "tint": "#df6827"
+  },
+  "minecraft/orange_poplar_leaf_litter": {
+    "tint": "#df6827"
+  },
+  "minecraft/pale_oak": {
+    "tint": "#778272"
+  },
+  "minecraft/pale_oak_bonemeal": {
+    "tint": "#778272"
+  },
+  "minecraft/pale_oak_creaking": {
+    "tint": "#778272"
+  },
+  "minecraft/pine": {
+    "temperature": 0.25,
+    "downfall": 0.8
+  },
+  "minecraft/red_poplar": {
+    "tint": "#df6827"
+  },
+  "minecraft/red_poplar_leaf_litter": {
+    "tint": "#df6827"
+  },
+  "minecraft/spruce": {
+    "temperature": 0.2,
+    "downfall": 0.3
+  },
+  "minecraft/super_birch_bees": {
+    "temperature": 0.5,
+    "downfall": 0.8
+  },
+  "minecraft/super_birch_bees_0002": {
+    "temperature": 0.6,
+    "downfall": 0.6
+  },
+  "minecraft/swamp_oak": {
+    "tint": "#6a7039"
+  },
+  "minecraft/tall_mangrove": {
+    "tint": "#6a7039"
+  },
+  "minecraft/yellow_poplar": {
+    "tint": "#df6827"
+  },
+  "minecraft/yellow_poplar_leaf_litter": {
+    "tint": "#df6827"
+  }
+}

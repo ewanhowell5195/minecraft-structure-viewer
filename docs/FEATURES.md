@@ -35,6 +35,17 @@ features.zip contents:
 - `viewer/default_seeds.json` + `viewer/static_features.json` (section 4)
 - `viewer/feature_folders.json` (flat rel -> folder map for the tree,
   from the hand-curated tools/features/folders.json; section 6)
+- `viewer/feature_biomes.json` (per-tree home-biome grass tint for the
+  grass pad, in the lib's `biome` parse-arg shape: `{ temperature,
+  downfall }` samples the colormap; `{ tint }` for fixed-color biomes
+  (pale garden, cherry grove, dappled forest) and swamp (whose modifier
+  ignores the colormap and noise-picks #4C763C or #6A7039 in game; the
+  pad uses the dominant #6a7039); climate + `tint: "#28340a"` +
+  `combine: true` for dark forest, whose modifier folds a constant onto
+  the sampled color: `(base & 0xFEFEFE) + tint >> 1`. The biome is the
+  most common tint among the biomes that reach the feature, oceans/
+  rivers/beaches filtered; unplaced base trees (dark_oak, plain birch,
+  the poplars) borrow their variants' biomes by name prefix)
 - `viewer/structure_dupes.json` (tools-side record, the viewer ignores it)
 
 The zip is the lowest-priority pack source (`usePacks`: featureBytes next to
@@ -99,6 +110,17 @@ Rules that keep breaking if forgotten:
   matching_fluids (waterlogged counts as water)/matching_block_tag(air
   only). `simple_block` replaces its target like vanilla (no is-empty
   check); the double-plant branch adds the upper half only into air.
+- JS negative zero: `Math.ceil(-0.3)` is `-0`, and `10 / -0` is
+  `-Infinity` where Java's int `0` divides to `+Infinity`. Any ported
+  `(int)` cast whose result can be zero and later divides or sign-gates
+  needs `| 0` (icebergs grew a floating half-plane slab from this).
+- A clamped IntProvider's `minInclusive()`/`maxInclusive()` return the
+  CLAMP fields, not the intersection with the source; providers.js
+  `intBounds` matches that.
+- When a feature renders wrong, don't tweak the approximation: decompile
+  the class (the whole feature package sits decompiled in
+  `tools/builtin/.cache/<version>/ddec/out`) and port `place()` exactly.
+  The 2026-07 audit replaced ~20 approximations this way.
 - New feature type: decompile with Vineflower against the unobfuscated jar
   in the cache, port `place()` into `TYPES`, re-run verify (unsupported
   types fail there with "feature type X isn't supported yet").
@@ -209,6 +231,27 @@ Conventions the current layout follows, keep them:
   bundled zips, never the vanilla jar) and reads the viewer jsons;
   `state.names` excludes delisted names but `featurePath`/`has()` keep
   them resolvable.
+- Feature loads pass `{ grass: grassBiome(rel) }` as generateFeature's
+  `pad` arg: tree/fallen_tree features get a display-only grass_block
+  layer one below origin, and icebergs get ocean water from their keel up
+  to sea level (the origin line), filling the air inside the feature
+  bounds plus a 3-block apron outside them. It consumes NO rand, so
+  seeds/statics are
+  unaffected and the extractor and og-image (which never pad) stay in
+  sync. The declared size stays the tree's own bounds (apron blocks sit
+  at out-of-range positions, which the viewer's map-keyed pipeline
+  handles), so tiles, grids, and packing behave exactly like any other
+  structure and the standard +3 tile border is what the apron fills. The
+  grass palette entry carries `__biome` (the feature_biomes.json value),
+  which useBuild spreads into `parseBlockstate` as the lib's `biome` arg;
+  mergeParts keys palette entries on it so combined loads keep per-tree
+  tints.
+- `generateTree`/`generateFallenTree` accept
+  `opts.runFeature(id, x, y, z)` (tree-local coords): the tree handler
+  queues those calls and awaits them after generation. The pale_moss
+  decorator uses it for pale_moss_patch at the lowest log, passing the
+  origin WITHOUT vanilla's `.above()`, because the adapted
+  vegetation_patch grounds rigidly at origin-1 instead of scanning down.
 - The list renders as a folder tree from `folderOf(rel)` (curated paths,
   section 6); the rel stays the id for URLs, selection, and datapack
   overrides, and unmapped (datapack) features list at the root. Both tabs
@@ -261,3 +304,7 @@ Conventions the current layout follows, keep them:
    entries it reports as stale.
 5. Ewan checks visuals in the browser (a tree, a disk, a delisted selector
    URL); do not build screenshot harnesses.
+6. The grass pad's climate tints need a lib shipping the `biome` parse
+   arg (added after 2.3.0). Until that release, src/lib.js points at
+   localhost:8080 (marked TEMP); revert it to the jsdelivr URL after
+   publishing.

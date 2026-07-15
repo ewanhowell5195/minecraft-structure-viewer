@@ -948,12 +948,13 @@ async function build(structure = source, refit = true, slice = false) {
         try {
           const name = LEGACY_RENAMES[entry.Name.replace("minecraft:", "")] ?? entry.Name
           const props = fixLegacyProps(name.replace("minecraft:", ""), entry.Properties)
-          data = { name, props, models: [await lib.parseBlockstate(assets, name, { data: props ?? {}, ignoreAtlases: true })], buckets: null }
+          const biome = entry.__biome ? { biome: entry.__biome } : null
+          data = { name, props, models: [await lib.parseBlockstate(assets, name, { data: props ?? {}, ignoreAtlases: true, ...biome })], buckets: null }
           if (await hasRandomModels(name)) {
             const byKey = new Map([[JSON.stringify(data.models[0]), 0]])
             const buckets = []
             for (const seed of RSEEDS) {
-              const picked = await lib.parseBlockstate(assets, name, { data: props ?? {}, ignoreAtlases: true, seed })
+              const picked = await lib.parseBlockstate(assets, name, { data: props ?? {}, ignoreAtlases: true, seed, ...biome })
               const k = JSON.stringify(picked)
               let v = byKey.get(k)
               if (v === undefined) {

@@ -2,7 +2,7 @@
 import { nextInt, sampleFloat, sampleInt, sampleState, pickWeighted, intBounds } from "./providers.js"
 import { generateTree, generateFallenTree } from "./tree.js"
 import { runEndSpike } from "../generators/endspikes.js"
-import { DIR, HORIZ, statePicker } from "../transforms.js"
+import { DIR, HORIZ, OPP, statePicker } from "../transforms.js"
 
 const strip = t => (t ?? "").replace("minecraft:", "")
 
@@ -25,9 +25,18 @@ async function generate(world, json, rand, resolvePlaced, ox = 0, oy = 0, oz = 0
 }
 
 const TYPES = {
-  async tree(world, json, rand) {
+  async tree(world, json, rand, resolvePlaced) {
     const sub = makeWorld()
-    generateTree(sub, json, rand)
+    const pending = []
+    const runFeature = (id, x, y, z) => {
+      if (!resolvePlaced) return
+      pending.push((async () => {
+        const inner = await resolvePlaced(id)
+        if (inner) await generate(sub, inner, rand, resolvePlaced, x, y, z)
+      })())
+    }
+    generateTree(sub, json, rand, { runFeature })
+    await Promise.all(pending)
     for (const [k, v] of sub.cells) world.cells.set(k, v)
   },
 
@@ -41,7 +50,7 @@ const TYPES = {
     const state = sampleState(json.to_place, rand)
     if (!state) return
     const name = strip(state.Name)
-    if (/^(tall_grass|large_fern|tall_seagrass|sunflower|lilac|rose_bush|peony|pitcher_plant)$/.test(name)) {
+    if (/^(tall_grass|large_fern|tall_seagrass|sunflower|lilac|rose_bush|peony|pitcher_plant|small_dripleaf)$/.test(name)) {
       world.set(ox, oy, oz, { Name: state.Name, Properties: { ...(state.Properties ?? {}), half: "lower" } })
       if (!world.get(ox, oy + 1, oz)) world.set(ox, oy + 1, oz, { Name: state.Name, Properties: { ...(state.Properties ?? {}), half: "upper" } })
     } else {
@@ -71,24 +80,27 @@ const TYPES = {
       }
     }
     for (let i = 0; i < height; i++) {
-      const top = height - 1 - i
-      const leaves = top === 0 || top === 1 ? "large" : top === 2 ? "small" : "none"
-      world.set(ox, oy + i, oz, { Name: "minecraft:bamboo", Properties: { age: i >= height - 3 ? "1" : "1", leaves, stage: top === 0 ? "1" : "0" } })
+      world.set(ox, oy + i, oz, { Name: "minecraft:bamboo", Properties: { age: "1", leaves: "none", stage: "0" } })
     }
+    world.set(ox, oy + height, oz, { Name: "minecraft:bamboo", Properties: { age: "1", leaves: "large", stage: "1" } })
+    world.set(ox, oy + height - 1, oz, { Name: "minecraft:bamboo", Properties: { age: "1", leaves: "large", stage: "0" } })
+    world.set(ox, oy + height - 2, oz, { Name: "minecraft:bamboo", Properties: { age: "1", leaves: "small", stage: "0" } })
   },
 
   async block_pile(world, json, rand, resolvePlaced, ox, oy, oz) {
-    const rx = nextInt(rand, 2) + 2, rz = nextInt(rand, 2) + 2
-    for (let dx = -rx; dx <= rx; dx++) {
-      for (let dz = -rz; dz <= rz; dz++) {
-        const d = dx * dx + dz * dz
-        if (d > rx * rz) continue
-        if (rand() >= 0.8 - d * 0.1) continue
-        world.set(ox + dx, oy, oz + dz, sampleState(json.state_provider, rand))
-        if (d <= 1 && rand() < 0.5) world.set(ox + dx, oy + 1, oz + dz, sampleState(json.state_provider, rand))
+    const rx = 2 + nextInt(rand, 2), rz = 2 + nextInt(rand, 2)
+    for (let dz = -rz; dz <= rz; dz++) {
+      for (let dy = 0; dy <= 1; dy++) {
+        for (let dx = -rx; dx <= rx; dx++) {
+          const d = dx * dx + dz * dz
+          const hit = d <= rand() * 10 - rand() * 6 || rand() < 0.031
+          if (!hit) continue
+          if (world.get(ox + dx, oy + dy, oz + dz)) continue
+          if (dy === 1 && !world.get(ox + dx, oy, oz + dz)) continue
+          world.set(ox + dx, oy + dy, oz + dz, sampleState(json.state_provider, rand))
+        }
       }
     }
-    world.set(ox, oy, oz, sampleState(json.state_provider, rand))
   },
 
   async huge_red_mushroom(world, json, rand, resolvePlaced, ox, oy, oz) {
@@ -133,48 +145,70 @@ const TYPES = {
 
   async disk(world, json, rand, resolvePlaced, ox, oy, oz) {
     const radius = sampleInt(json.radius, rand)
+    const layers = Math.max(1, json.half_height ?? 0)
     const provider = json.state_provider?.fallback ?? json.state_provider
     for (let dx = -radius; dx <= radius; dx++) for (let dz = -radius; dz <= radius; dz++) {
       if (dx * dx + dz * dz > radius * radius) continue
-      world.set(ox + dx, oy - 1, oz + dz, sampleState(provider, rand))
+      for (let dy = 1; dy <= layers; dy++) {
+        world.set(ox + dx, oy - dy, oz + dz, sampleState(provider, rand))
+      }
     }
   },
 
+  // lifted by the blob's own maximum extent so the body sits on the grid
   async ore(world, json, rand, resolvePlaced, ox, oy, oz) {
-    return TYPES.scattered_ore(world, json, rand, resolvePlaced, ox, oy, oz)
-  },
-
-  async scattered_ore(world, json, rand, resolvePlaced, ox, oy, oz) {
     const size = json.size ?? 9
     const state = json.targets?.[0]?.state ?? sampleState(json.state_provider, rand)
     if (!state) return
-    const angle = rand() * Math.PI
-    const len = size / 8
-    const x1 = Math.sin(angle) * len, z1 = Math.cos(angle) * len
-    const y1 = nextInt(rand, 3) - 2 + size / 16, y2 = nextInt(rand, 3) - 2 + size / 16
+    const dir = rand() * Math.PI
+    const spread = size / 8
+    const maxRadius = Math.ceil((size / 16 * 2 + 1) / 2)
+    const lift = 2 + maxRadius
+    const x0 = Math.sin(dir) * spread, x1 = -Math.sin(dir) * spread
+    const z0 = Math.cos(dir) * spread, z1 = -Math.cos(dir) * spread
+    const y0 = nextInt(rand, 3) - 2, y1 = nextInt(rand, 3) - 2
     let placed = 0
-    for (let i = 0; i <= size; i++) {
-      const t = size ? i / size : 0
-      const cx = x1 - x1 * 2 * t, cz = z1 - z1 * 2 * t
-      const cy = y1 + (y2 - y1) * t
-      const radius = (Math.sin(Math.PI * t) + 1) * (rand() * size / 16) + 0.5
+    for (let i = 0; i < size; i++) {
+      const t = i / size
+      const cx = x0 + (x1 - x0) * t
+      const cy = y0 + (y1 - y0) * t
+      const cz = z0 + (z1 - z0) * t
+      const radius = ((Math.sin(Math.PI * t) + 1) * (rand() * size / 16) + 1) / 2
       const r = Math.ceil(radius)
       for (let dx = -r; dx <= r; dx++) for (let dy = -r; dy <= r; dy++) for (let dz = -r; dz <= r; dz++) {
         const px = Math.floor(cx) + dx, py = Math.floor(cy) + dy, pz = Math.floor(cz) + dz
         const ddx = px + 0.5 - cx, ddy = py + 0.5 - cy, ddz = pz + 0.5 - cz
         if (ddx * ddx + ddy * ddy + ddz * ddz > radius * radius) continue
-        world.set(ox + px, oy + py + Math.floor(size / 8), oz + pz, state)
+        world.set(ox + px, oy + py + lift, oz + pz, state)
         placed++
       }
     }
     if (!placed) world.set(ox, oy, oz, state)
   },
 
+  async scattered_ore(world, json, rand, resolvePlaced, ox, oy, oz) {
+    const size = json.size ?? 9
+    const state = json.targets?.[0]?.state ?? sampleState(json.state_provider, rand)
+    if (!state) return
+    const tries = nextInt(rand, size + 1)
+    let placed = 0
+    for (let i = 0; i < tries; i++) {
+      const d = Math.min(i, 7)
+      const dx = Math.round((rand() - rand()) * d)
+      const dy = Math.round((rand() - rand()) * d)
+      const dz = Math.round((rand() - rand()) * d)
+      if (world.get(ox + dx, oy + dy, oz + dz)) continue
+      world.set(ox + dx, oy + dy, oz + dz, state)
+      placed++
+    }
+    if (!placed) world.set(ox, oy, oz, state)
+  },
+
   async nether_forest_vegetation(world, json, rand, resolvePlaced, ox, oy, oz) {
-    const w = json.spread_width, h = json.spread_height
+    const w = json.spread_width
     for (let i = 0; i < w * w; i++) {
       const dx = nextInt(rand, w) - nextInt(rand, w)
-      const dz = nextInt(rand, h) - nextInt(rand, h)
+      const dz = nextInt(rand, w) - nextInt(rand, w)
       if (world.get(ox + dx, oy, oz + dz)) continue
       const state = sampleState(json.state_provider, rand)
       if (state) world.set(ox + dx, oy, oz + dz, state)
@@ -182,38 +216,70 @@ const TYPES = {
   },
 
   async twisting_vines(world, json, rand, resolvePlaced, ox, oy, oz) {
-    const w = json.spread_width, h = json.spread_height
+    const w = json.spread_width
     for (let i = 0; i < w * w; i++) {
-      const dx = nextInt(rand, w) - nextInt(rand, w)
-      const dz = nextInt(rand, w) - nextInt(rand, w)
+      const dx = nextInt(rand, 2 * w + 1) - w
+      const dz = nextInt(rand, 2 * w + 1) - w
       if (world.get(ox + dx, oy, oz + dz)) continue
-      const height = nextInt(rand, json.max_height ?? 8) + 1
+      let height = nextInt(rand, json.max_height ?? 8) + 1
+      if (nextInt(rand, 6) === 0) height *= 2
+      if (nextInt(rand, 5) === 0) height = 1
       for (let y = 0; y < height; y++) {
         world.set(ox + dx, oy + y, oz + dz, { Name: y === height - 1 ? "minecraft:twisting_vines" : "minecraft:twisting_vines_plant", ...(y === height - 1 ? { Properties: { age: "0" } } : {}) })
       }
     }
   },
 
-  async vegetation_patch(world, json, rand, resolvePlaced, ox, oy, oz) {
+  // ceiling patches hang from a virtual ceiling 10 up, so the vines reach the grid
+  async vegetation_patch(world, json, rand, resolvePlaced, ox, oy, oz, waterlogged) {
+    const ceiling = strip(json.surface ?? "floor") === "ceiling"
+    const dir = ceiling ? 1 : -1
+    const topY = ceiling ? oy + 9 : oy - 1
     const rx = sampleInt(json.xz_radius, rand) + 1
     const rz = sampleInt(json.xz_radius, rand) + 1
-    const columns = new Set()
-    for (let dx = -rx; dx <= rx; dx++) for (let dz = -rz; dz <= rz; dz++) {
-      if (dx * dx + dz * dz > rx * rz) continue
-      if (rand() < (json.extra_edge_column_chance ?? 0.3) && (Math.abs(dx) === rx || Math.abs(dz) === rz)) continue
-      world.set(ox + dx, oy - 1, oz + dz, sampleState(json.ground_state, rand))
-      columns.add((ox + dx) + "," + (oz + dz))
+    const edgeChance = json.extra_edge_column_chance ?? 0.3
+    const cols = []
+    for (let dx = -rx; dx <= rx; dx++) {
+      const xEdge = dx === -rx || dx === rx
+      for (let dz = -rz; dz <= rz; dz++) {
+        const zEdge = dz === -rz || dz === rz
+        if (xEdge && zEdge) continue
+        if ((xEdge || zEdge) && (edgeChance === 0 || rand() > edgeChance)) continue
+        let depth = sampleInt(json.depth, rand)
+        if ((json.extra_bottom_block_chance ?? 0) > 0 && rand() < json.extra_bottom_block_chance) depth++
+        for (let i = 0; i < depth; i++) {
+          world.set(ox + dx, topY + i * dir, oz + dz, sampleState(json.ground_state, rand))
+        }
+        cols.push([dx, dz])
+      }
     }
-    for (const col of columns) {
-      if (rand() >= json.vegetation_chance) continue
-      const [x, z] = col.split(",").map(Number)
+    let surface = cols
+    if (waterlogged) {
+      const placed = new Set(cols.map(([dx, dz]) => dx + "," + dz))
+      surface = cols.filter(([dx, dz]) =>
+        placed.has((dx + 1) + "," + dz) && placed.has((dx - 1) + "," + dz) &&
+        placed.has(dx + "," + (dz + 1)) && placed.has(dx + "," + (dz - 1)))
+      for (const [dx, dz] of surface) {
+        world.set(ox + dx, topY, oz + dz, { Name: "minecraft:water", Properties: { level: "0" } })
+      }
+    }
+    for (const [dx, dz] of surface) {
+      if ((json.vegetation_chance ?? 0) <= 0 || rand() >= json.vegetation_chance) continue
       const inner = await resolvePlaced(json.vegetation_feature)
-      if (inner) await generate(world, inner, rand, resolvePlaced, x, oy, z)
+      if (!inner) continue
+      // waterlogged patches grow the vegetation in the water cell and waterlog it
+      await generate(world, inner, rand, resolvePlaced, ox + dx, waterlogged ? topY : topY - dir, oz + dz)
+      if (waterlogged) {
+        const c = world.get(ox + dx, topY, oz + dz)
+        if (c?.Properties?.waterlogged === "false") {
+          world.set(ox + dx, topY, oz + dz, { Name: c.Name, Properties: { ...c.Properties, waterlogged: "true" } })
+        }
+      }
     }
   },
 
   async waterlogged_vegetation_patch(world, json, rand, resolvePlaced, ox, oy, oz) {
-    return TYPES.vegetation_patch(world, json, rand, resolvePlaced, ox, oy, oz)
+    return TYPES.vegetation_patch(world, json, rand, resolvePlaced, ox, oy, oz, true)
   },
 
   async random_selector(world, json, rand, resolvePlaced, ox, oy, oz) {
@@ -289,7 +355,11 @@ const TYPES = {
           if (isHat(world.get(px, py - 1, pz), json)) world.set(px, py, pz, json.hat_state)
           else if (rand() < 0.15) {
             world.set(px, py, pz, json.hat_state)
-            if (wart && nextInt(rand, 11) === 0) weepingColumn(world, px, py - 1, pz, 1 + nextInt(rand, 5), 23, 25, rand)
+            if (wart && nextInt(rand, 11) === 0) {
+              let len = 1 + nextInt(rand, 5)
+              if (nextInt(rand, 7) === 0) len *= 2
+              weepingColumn(world, px, py - 1, pz, len, 23, 25, rand)
+            }
           }
         } else {
           const [decorP, hatP, vineP] = inside ? [0.1, 0.2, wart ? 0.1 : 0]
@@ -361,20 +431,24 @@ const TYPES = {
   },
 
   async stepped_column_cluster(world, json, rand, resolvePlaced, ox, oy, oz) {
-    const cluster = json.cluster_reach ?? sampleInt(json.column_reach ?? 1, rand)
-    const count = json.column_count ?? 10
-    const column = (x, z, h) => {
-      for (let y = 0; y < h; y++) {
-        if (!world.get(x, oy + y, z)) world.set(x, oy + y, z, sampleState(json.block, rand))
-      }
-    }
-    column(ox, oz, sampleInt(json.height, rand))
+    const columnHeight = sampleInt(json.height, rand)
+    const clusterReach = Math.min(columnHeight, sampleInt(json.cluster_reach, rand))
+    const count = sampleInt(json.column_count, rand)
     for (let i = 0; i < count; i++) {
-      const dx = nextInt(rand, cluster * 2 + 1) - cluster
-      const dz = nextInt(rand, cluster * 2 + 1) - cluster
-      const dist = Math.sqrt(dx * dx + dz * dz)
-      const h = sampleInt(json.height, rand) - Math.floor(dist / 2)
-      if (h > 0) column(ox + dx, oz + dz, h)
+      const dx = nextInt(rand, clusterReach * 2 + 1) - clusterReach
+      const dz = nextInt(rand, clusterReach * 2 + 1) - clusterReach
+      const toPlace = columnHeight - (Math.abs(dx) + Math.abs(dz))
+      if (toPlace < 0) continue
+      const reach = sampleInt(json.column_reach, rand)
+      for (let sx = -reach; sx <= reach; sx++) {
+        for (let sz = -reach; sz <= reach; sz++) {
+          let blocks = toPlace - Math.trunc((Math.abs(sx) + Math.abs(sz)) / 2)
+          const x = ox + dx + sx, z = oz + dz + sz
+          for (let y = oy; blocks >= 0; y++, blocks--) {
+            if (!world.get(x, y, z)) world.set(x, y, z, sampleState(json.block, rand))
+          }
+        }
+      }
     }
   },
 
@@ -404,14 +478,24 @@ const TYPES = {
           if (!(xo === 0 && zo === 0) && fx * fx + fz * fz > scale * scale) continue
           if ((xo === -r || xo === r || zo === -r || zo === r) && rand() > 0.75) continue
           if (!world.get(ox + xo, y0 + yo, oz + zo)) world.set(ox + xo, y0 + yo, oz + zo, json.state)
+          if (yo !== 0 && r > 1) {
+            const py = y0 - yo
+            if (py >= oy && !world.get(ox + xo, py, oz + zo)) world.set(ox + xo, py, oz + zo, json.state)
+          }
         }
       }
     }
     const pw = Math.max(0, Math.min(1, width - 1))
     for (let xo = -pw; xo <= pw; xo++) for (let zo = -pw; zo <= pw; zo++) {
-      for (let py = y0 - 1; py >= oy; py--) {
-        if (world.get(ox + xo, py, oz + zo)) break
+      let py = y0 - 1
+      let run = Math.abs(xo) === 1 && Math.abs(zo) === 1 ? nextInt(rand, 5) : 50
+      while (py >= oy) {
         world.set(ox + xo, py, oz + zo, json.state)
+        py--
+        if (--run <= 0) {
+          py -= nextInt(rand, 5) + 1
+          run = nextInt(rand, 5)
+        }
       }
     }
   },
@@ -535,7 +619,8 @@ const TYPES = {
     for (const [px, py, pz] of potential) {
       const state = placements[nextInt(rand, placements.length)]
       if (!state) continue
-      for (const [name, [dx, dy, dz]] of Object.entries(DIR)) {
+      for (const name of ["down", "up", "north", "south", "west", "east"]) {
+        const [dx, dy, dz] = DIR[name]
         const tx = px + dx, ty = py + dy, tz = pz + dz
         if (world.get(tx, ty, tz)) continue
         const props = { ...(state.Properties ?? {}) }
@@ -597,16 +682,22 @@ Object.assign(TYPES, {
   },
 
   async speleothem(world, json, rand, resolvePlaced, ox, oy, oz) {
-    const spread = (x, y, z, chance) => {
-      if (rand() < chance && !world.get(x, y, z)) world.set(x, y, z, json.base_block)
+    const dirs = Object.keys(DIR)
+    const spread = (x, y, z) => {
+      if (!world.get(x, y, z)) world.set(x, y, z, json.base_block)
     }
     world.set(ox, oy - 1, oz, json.base_block)
     for (const n of HORIZ) {
-      const px = ox + DIR[n][0], pz = oz + DIR[n][2]
-      if (rand() < (json.chance_of_directional_spread ?? 0.7)) {
-        spread(px, oy - 1, pz, 1)
-        if (rand() < (json.chance_of_spread_radius2 ?? 0.5)) spread(px + DIR[n][0], oy - 1, pz + DIR[n][2], 1)
-      }
+      if (rand() > (json.chance_of_directional_spread ?? 0.7)) continue
+      const x1 = ox + DIR[n][0], y1 = oy - 1, z1 = oz + DIR[n][2]
+      spread(x1, y1, z1)
+      if (rand() > (json.chance_of_spread_radius2 ?? 0.5)) continue
+      const m = DIR[dirs[nextInt(rand, dirs.length)]]
+      const x2 = x1 + m[0], y2 = y1 + m[1], z2 = z1 + m[2]
+      spread(x2, y2, z2)
+      if (rand() > (json.chance_of_spread_radius3 ?? 0.5)) continue
+      const k = DIR[dirs[nextInt(rand, dirs.length)]]
+      spread(x2 + k[0], y2 + k[1], z2 + k[2])
     }
     const tall = rand() < (json.chance_of_taller_generation ?? 0.2)
     const tip = json.pointed_block
@@ -618,31 +709,83 @@ Object.assign(TYPES, {
     }
   },
 
+  // synthesized cave like large_dripstone: grid floor, virtual ceiling 7..10 up
   async speleothem_cluster(world, json, rand, resolvePlaced, ox, oy, oz) {
+    const gauss = () => Math.sqrt(-2 * Math.log(Math.max(rand(), 1e-9))) * Math.cos(2 * Math.PI * rand())
+    const clampedMap = (v, a, b, from, to) => v <= a ? from : v >= b ? to : from + (to - from) * (v - a) / (b - a)
+    const height = sampleInt(json.height, rand)
+    const wetness = sampleFloat(json.wetness, rand)
+    const density = sampleFloat(json.density, rand)
     const rx = sampleInt(json.radius, rand), rz = sampleInt(json.radius, rand)
-    const cave = 7 + nextInt(rand, 4)
-    for (let dx = -rx; dx <= rx; dx++) for (let dz = -rz; dz <= rz; dz++) {
-      const d = (dx * dx) / (rx * rx) + (dz * dz) / (rz * rz)
-      if (d > 1) continue
-      const px = ox + dx, pz = oz + dz
-      const t = Math.max(1, sampleInt(json.speleothem_block_layer_thickness, rand) - Math.floor(d * 2))
-      for (let i = 0; i < t; i++) {
-        world.set(px, oy - 1 - i, pz, json.base_block)
-        world.set(px, oy + cave + i, pz, json.base_block)
+    const ceilY = oy + 7 + nextInt(rand, 4)
+    const speleoHeight = (dx, dz, maxH) => {
+      if (rand() > density) return 0
+      const mean = clampedMap(Math.abs(dx) + Math.abs(dz), 0, json.max_distance_from_center_affecting_height_bias, maxH / 2, 0)
+      return Math.trunc(Math.min(maxH, Math.max(0, mean + gauss() * json.height_deviation)))
+    }
+    const isWater = (x, y, z) => strip(world.get(x, y, z)?.Name ?? "") === "water"
+    const poolOk = (x, y, z) => {
+      if (world.get(x, y, z)) return false
+      for (const n of HORIZ) {
+        const c = world.get(x + DIR[n][0], y, z + DIR[n][2])
+        if (c && strip(c.Name) !== "water") return false
       }
-      const density = sampleFloat(json.density, rand)
-      const height = Math.max(1, sampleInt(json.height, rand) - Math.floor(d * (json.height_deviation ?? 3)))
-      if (rand() < density) {
-        for (let i = 0; i < height; i++) {
-          const last = i === height - 1
-          world.set(px, oy + i, pz, { Name: json.pointed_block.Name, Properties: { ...(json.pointed_block.Properties ?? {}), vertical_direction: "up", thickness: last ? "tip" : i === height - 2 ? "frustum" : "middle" } })
-        }
+      return !world.get(x, y - 1, z)
+    }
+    const grow = (x, z, startY, dir, len, merged) => {
+      const states = []
+      if (len >= 3) {
+        states.push("base")
+        for (let i = 0; i < len - 3; i++) states.push("middle")
       }
-      if (rand() < density) {
-        for (let i = 0; i < height; i++) {
-          const last = i === height - 1
-          world.set(px, oy + cave - 1 - i, pz, { Name: json.pointed_block.Name, Properties: { ...(json.pointed_block.Properties ?? {}), vertical_direction: "down", thickness: last ? "tip" : i === height - 2 ? "frustum" : "middle" } })
+      if (len >= 2) states.push("frustum")
+      if (len >= 1) states.push(merged ? "tip_merge" : "tip")
+      let y = startY
+      for (const thickness of states) {
+        const waterlogged = isWater(x, y, z) ? "true" : "false"
+        world.set(x, y, z, { Name: json.pointed_block.Name, Properties: { ...(json.pointed_block.Properties ?? {}), vertical_direction: dir === 1 ? "up" : "down", thickness, waterlogged } })
+        y += dir
+      }
+    }
+    for (let dx = -rx; dx <= rx; dx++) {
+      for (let dz = -rz; dz <= rz; dz++) {
+        const x = ox + dx, z = oz + dz
+        const chance = clampedMap(Math.min(rx - Math.abs(dx), rz - Math.abs(dz)), 0,
+          json.max_distance_from_edge_affecting_chance_of_speleothem, json.chance_of_speleothem_at_max_distance_from_center, 1)
+        let floorY = oy - 1
+        if (rand() < wetness && poolOk(x, floorY, z)) {
+          world.set(x, floorY, z, { Name: "minecraft:water", Properties: { level: "0" } })
+          floorY--
         }
+        let stalac = 0
+        if (rand() < chance) {
+          const thick = sampleInt(json.speleothem_block_layer_thickness, rand)
+          for (let i = 0; i < thick && !world.get(x, ceilY + i, z); i++) {
+            world.set(x, ceilY + i, z, json.base_block)
+          }
+          stalac = speleoHeight(dx, dz, Math.min(height, ceilY - floorY))
+        }
+        let stalag = 0
+        if (rand() < chance) {
+          const thick = sampleInt(json.speleothem_block_layer_thickness, rand)
+          for (let i = 0; i < thick && !world.get(x, floorY - i, z); i++) {
+            world.set(x, floorY - i, z, json.base_block)
+          }
+          const d = json.max_stalagmite_stalactite_height_diff ?? 0
+          stalag = Math.max(0, stalac + nextInt(rand, 2 * d + 1) - d)
+        }
+        let aStalac = stalac, aStalag = stalag
+        if (ceilY - stalac <= floorY + stalag) {
+          const low = Math.max(ceilY - stalac, floorY + 1)
+          const high = Math.min(floorY + stalag, ceilY - 1)
+          const bottom = low + nextInt(rand, high + 2 - low)
+          aStalac = ceilY - bottom
+          aStalag = bottom - 1 - floorY
+        }
+        const coin = rand() < 0.5
+        const merged = coin && aStalac > 0 && aStalag > 0 && aStalac + aStalag === ceilY - floorY - 1
+        grow(x, z, ceilY - 1, -1, aStalac, merged)
+        grow(x, z, floorY + 1, 1, aStalag, merged)
       }
     }
   },
@@ -720,7 +863,7 @@ Object.assign(TYPES, {
     for (let i = 0; i < 200; i++) {
       const dy = nextInt(rand, 5) - nextInt(rand, 6)
       let spread = 3
-      if (dy < 2) spread += Math.floor(dy / 2)
+      if (dy < 2) spread += Math.trunc(dy / 2)
       if (spread < 1) continue
       const px = ox + nextInt(rand, spread) - nextInt(rand, spread)
       const py = oy + dy
@@ -735,30 +878,123 @@ Object.assign(TYPES, {
     }
   },
 
+  // the grid is the waterline; the keel hangs below it (no ocean to sit in)
   async iceberg(world, json, rand, resolvePlaced, ox, oy, oz) {
-    const height = 8 + nextInt(rand, 10)
-    const base = 5 + nextInt(rand, 4)
-    const squashZ = 0.6 + rand() * 0.4
-    const dome = (y0, h, r0, dir) => {
-      for (let i = 0; i < h; i++) {
-        const rr = r0 * (1 - Math.pow(i / h, 1.5))
-        const r = Math.ceil(rr)
-        for (let dx = -r; dx <= r; dx++) for (let dz = -r; dz <= r; dz++) {
-          if (dx * dx + (dz * dz) / (squashZ * squashZ) > rr * rr + rand()) continue
-          world.set(ox + dx, y0 + i * dir, oz + dz, json.state)
+    const ICE = ["packed_ice", "snow_block", "blue_ice"]
+    const snowOnTop = rand() > 0.7
+    const shapeAngle = rand() * 2 * Math.PI
+    const ellipseA = 11 - nextInt(rand, 5)
+    const ellipseCBase = 3 + nextInt(rand, 3)
+    const isEllipse = rand() > 0.7
+    let overH = isEllipse ? nextInt(rand, 6) + 6 : nextInt(rand, 15) + 3
+    if (!isEllipse && rand() > 0.9) overH += nextInt(rand, 19) + 7
+    const underH = Math.min(overH + nextInt(rand, 11), 18)
+    const width = Math.min(overH + nextInt(rand, 7) - nextInt(rand, 5), 11)
+    const a0 = isEllipse ? ellipseA : 11
+    const ellipseC = (yOff, h) => {
+      let c = ellipseCBase
+      if (yOff > 0 && h - yOff <= 3) c -= 4 - (h - yOff)
+      return c
+    }
+    const sdEllipse = (xo, zo, cx, cz, a, c, angle) =>
+      Math.pow(((xo - cx) * Math.cos(angle) - (zo - cz) * Math.sin(angle)) / a, 2) +
+      Math.pow(((xo - cx) * Math.sin(angle) + (zo - cz) * Math.cos(angle)) / c, 2) - 1
+    const sdCircle = (xo, zo, radius) => 10 * Math.min(0.8, Math.max(0.2, rand())) / radius + xo * xo + zo * zo - radius * radius
+    // | 0 kills negative zero: Math.ceil(-0.3) is -0 in js, and 10 / -0 is
+    // -Infinity where java's int 0 gives +Infinity
+    const rRound = (yOff, h) => {
+      const k = 3.5 - rand()
+      let scale = (1 - yOff * yOff / (h * k)) * width
+      if (h > 15 + nextInt(rand, 5)) {
+        const t = yOff < 3 + nextInt(rand, 6) ? Math.trunc(yOff / 2) : yOff
+        scale = (1 - t / (h * k * 0.4)) * width
+      }
+      return Math.ceil(scale / 2) | 0
+    }
+    const rEllipse = (yOff, h) => Math.ceil((1 - yOff * yOff / h) * width / 2) | 0
+    const rSteep = (yOff, h) => Math.ceil((1 - yOff / (h * (1 + rand() / 2))) * width / 2) | 0
+    const setBerg = (x, y, z, hDiff, h) => {
+      const c = world.get(x, y, z)
+      if (c && !["snow_block", "ice"].includes(strip(c.Name))) return
+      const randomness = !isEllipse || rand() > 0.05
+      const divisor = isEllipse ? 3 : 2
+      if (snowOnTop && hDiff <= nextInt(rand, Math.max(1, Math.trunc(h / divisor))) + h * 0.6 && randomness) {
+        world.set(x, y, z, { Name: "minecraft:snow_block" })
+      } else {
+        world.set(x, y, z, json.state)
+      }
+    }
+    const genBlock = (xo, yOff, zo, radius, a, h) => {
+      const sd = isEllipse ? sdEllipse(xo, zo, 0, 0, a, ellipseC(yOff, h), shapeAngle) : sdCircle(xo, zo, radius)
+      if (sd >= 0) return
+      const compareVal = isEllipse ? -0.5 : -6 - nextInt(rand, 3)
+      if (sd > compareVal && rand() > 0.9) return
+      setBerg(ox + xo, oy + yOff, oz + zo, h - yOff, h)
+    }
+    for (let xo = -a0; xo < a0; xo++) {
+      for (let zo = -a0; zo < a0; zo++) {
+        for (let yOff = 0; yOff < overH; yOff++) {
+          const radius = isEllipse ? rEllipse(yOff, overH) : rRound(yOff, overH)
+          if (isEllipse || xo < radius) genBlock(xo, yOff, zo, radius, a0, overH)
         }
       }
     }
-    dome(oy, height, base, 1)
-    dome(oy - 1, Math.floor(height * 0.6), base + 1, -1)
-    if (strip(json.state.Name) === "packed_ice") {
-      for (let dx = -base; dx <= base; dx++) for (let dz = -base; dz <= base; dz++) {
-        for (let y = oy + height + 2; y >= oy; y--) {
-          if (world.get(ox + dx, y, oz + dz)) {
-            if (rand() < 0.5) world.set(ox + dx, y + 1, oz + dz, { Name: "minecraft:snow", Properties: { layers: "1" } })
-            break
+    const aS = isEllipse ? ellipseA : Math.trunc(width / 2)
+    for (let x = -aS; x <= aS; x++) {
+      for (let z = -aS; z <= aS; z++) {
+        for (let yOff = 0; yOff <= overH; yOff++) {
+          const px = ox + x, py = oy + yOff, pz = oz + z
+          const cell = world.get(px, py, pz)
+          if (!cell || !ICE.includes(strip(cell.Name))) continue
+          if (py - 1 >= oy && !world.get(px, py - 1, pz)) {
+            world.remove(px, py, pz)
+            world.remove(px, py + 1, pz)
+          } else {
+            let exposed = 0
+            for (const n of HORIZ) {
+              if (!ICE.includes(strip(world.get(px + DIR[n][0], py, pz + DIR[n][2])?.Name ?? ""))) exposed++
+            }
+            if (exposed >= 3) world.remove(px, py, pz)
           }
         }
+      }
+    }
+    for (let xo = -a0; xo < a0; xo++) {
+      for (let zo = -a0; zo < a0; zo++) {
+        for (let yOff = -1; yOff > -underH; yOff--) {
+          const newA = isEllipse ? Math.ceil(a0 * (1 - yOff * yOff / (underH * 8))) : a0
+          const radius = rSteep(-yOff, underH)
+          if (xo < radius) genBlock(xo, yOff, zo, radius, newA, underH)
+        }
+      }
+    }
+    if (isEllipse ? rand() > 0.1 : rand() > 0.7) {
+      const carve = (radius, yOff, angle, lx, lz) => {
+        const a = radius + 1 + Math.trunc(ellipseA / 3)
+        const c = Math.min(radius - 3, 3) + Math.trunc(ellipseCBase / 2) - 1
+        for (let xo = -a; xo < a; xo++) {
+          for (let zo = -a; zo < a; zo++) {
+            if (sdEllipse(xo, zo, lx, lz, a, c, angle) >= 0) continue
+            const px = ox + xo, py = oy + yOff, pz = oz + zo
+            if (ICE.includes(strip(world.get(px, py, pz)?.Name ?? ""))) world.remove(px, py, pz)
+          }
+        }
+      }
+      const signX = rand() < 0.5 ? -1 : 1
+      const signZ = rand() < 0.5 ? -1 : 1
+      const half = Math.trunc(width / 2)
+      let xOff = nextInt(rand, Math.max(half - 2, 1))
+      if (rand() < 0.5) xOff = half + 1 - nextInt(rand, Math.max(width - half - 1, 1))
+      let zOff = nextInt(rand, Math.max(half - 2, 1))
+      if (rand() < 0.5) zOff = half + 1 - nextInt(rand, Math.max(width - half - 1, 1))
+      if (isEllipse) xOff = zOff = nextInt(rand, Math.max(ellipseA - 5, 1))
+      const lx = signX * xOff, lz = signZ * zOff
+      const angle = isEllipse ? shapeAngle + Math.PI / 2 : rand() * 2 * Math.PI
+      for (let yOff = 0; yOff < overH - 3; yOff++) {
+        carve(rRound(yOff, overH), yOff, angle, lx, lz)
+      }
+      for (let yOff = -1; yOff > -overH + nextInt(rand, 5); yOff--) {
+        carve(rSteep(-yOff, overH), yOff, angle, lx, lz)
       }
     }
   },
@@ -813,8 +1049,10 @@ Object.assign(TYPES, {
         if (world.get(cx, oy, cz)) continue
         let walls = 0, facing = "north"
         for (const n of HORIZ) {
-          if (world.get(cx + DIR[n][0], oy, cz + DIR[n][2])) walls++
-          else facing = n
+          if (world.get(cx + DIR[n][0], oy, cz + DIR[n][2])) {
+            walls++
+            facing = OPP[n]
+          }
         }
         if (walls === 1) {
           world.set(cx, oy, cz, { Name: "minecraft:chest", Properties: { facing, type: "single", waterlogged: "false" } })
@@ -905,7 +1143,7 @@ Object.assign(TYPES, {
   },
 
   async bonus_chest(world, json, rand, resolvePlaced, ox, oy, oz) {
-    world.set(ox, oy, oz, { Name: "minecraft:chest", Properties: { facing: HORIZ[nextInt(rand, 4)], type: "single", waterlogged: "false" } })
+    world.set(ox, oy, oz, { Name: "minecraft:chest", Properties: { facing: "north", type: "single", waterlogged: "false" } })
     for (const n of HORIZ) {
       world.set(ox + DIR[n][0], oy, oz + DIR[n][2], { Name: "minecraft:torch" })
     }
@@ -974,17 +1212,18 @@ Object.assign(TYPES, {
     const r = 2 + Math.min(2, Math.floor((json.charge_count ?? 8) / 5))
     for (let dx = -r; dx <= r; dx++) for (let dz = -r; dz <= r; dz++) {
       if (dx * dx + dz * dz > r * r + rand() * 2) continue
-      world.set(ox + dx, oy, oz + dz, { Name: "minecraft:sculk" })
+      world.set(ox + dx, oy - 1, oz + dz, { Name: "minecraft:sculk" })
       if (rand() < 0.12) {
-        world.set(ox + dx, oy + 1, oz + dz, { Name: "minecraft:sculk_vein", Properties: { down: "true" } })
+        world.set(ox + dx, oy, oz + dz, { Name: "minecraft:sculk_vein", Properties: { down: "true" } })
       }
     }
-    if (rand() < (json.catalyst_chance ?? 0)) world.set(ox, oy + 1, oz, { Name: "minecraft:sculk_catalyst", Properties: { bloom: "false" } })
-    for (let i = 0; i < (json.extra_rare_growths ?? 0); i++) {
-      world.set(ox + nextInt(rand, 3) - 1, oy + 1, oz + nextInt(rand, 3) - 1, { Name: "minecraft:sculk_shrieker", Properties: { can_summon: "true", shrieking: "false", waterlogged: "false" } })
+    if (rand() < (json.catalyst_chance ?? 0)) world.set(ox, oy, oz, { Name: "minecraft:sculk_catalyst", Properties: { bloom: "false" } })
+    const growths = sampleInt(json.extra_rare_growths, rand)
+    for (let i = 0; i < growths; i++) {
+      world.set(ox + nextInt(rand, 5) - 2, oy, oz + nextInt(rand, 5) - 2, { Name: "minecraft:sculk_shrieker", Properties: { can_summon: "true", shrieking: "false", waterlogged: "false" } })
     }
     if ((json.growth_rounds ?? 0) > 0 || rand() < 0.5) {
-      world.set(ox + nextInt(rand, 5) - 2, oy + 1, oz + nextInt(rand, 5) - 2, { Name: "minecraft:sculk_sensor", Properties: { power: "0", sculk_sensor_phase: "inactive", waterlogged: "false" } })
+      world.set(ox + nextInt(rand, 5) - 2, oy, oz + nextInt(rand, 5) - 2, { Name: "minecraft:sculk_sensor", Properties: { power: "0", sculk_sensor_phase: "inactive", waterlogged: "false" } })
     }
   },
 
@@ -1004,7 +1243,7 @@ Object.assign(TYPES, {
       const dx = nextInt(rand, hr) - nextInt(rand, hr)
       const dz = nextInt(rand, hr) - nextInt(rand, hr)
       const dy = -3 - nextInt(rand, json.hanging_roots_vertical_span ?? 2)
-      if (!world.get(ox + dx, oy + dy, oz + dz)) world.set(ox + dx, oy + dy, oz + dz, hangingState())
+      if (!world.get(ox + dx, oy + dy, oz + dz) && world.get(ox + dx, oy + dy + 1, oz + dz)) world.set(ox + dx, oy + dy, oz + dz, hangingState())
     }
     const inner = await resolvePlaced(json.feature)
     if (inner) await generate(world, inner, rand, resolvePlaced, ox, oy, oz)
@@ -1057,8 +1296,8 @@ function testPredicate(world, pred, x, y, z) {
       return !!c && !/(^|:)(water|lava)$/.test(c.Name)
     }
     case "matching_blocks": {
-      const c = world.get(px, py, pz)
-      return !!c && [pred.blocks].flat().map(strip).includes(strip(c.Name))
+      const name = strip(world.get(px, py, pz)?.Name ?? "minecraft:air")
+      return [pred.blocks].flat().map(strip).includes(name)
     }
     case "matching_fluids": {
       const c = world.get(px, py, pz)
@@ -1147,10 +1386,39 @@ function mushroomCap(provider, rand, faces) {
 
 export const SUPPORTED = new Set(Object.keys(TYPES))
 
-export async function generateFeature(name, json, rand, resolvePlaced, loadStruct) {
+export async function generateFeature(name, json, rand, resolvePlaced, loadStruct, pad) {
   const world = makeWorld()
   world.loadStruct = loadStruct
   await generate(world, json, rand, resolvePlaced)
+
+  // display-only (consumes no rand): trees get a grass layer one below origin,
+  // icebergs get ocean from their keel up to sea level (the origin line), each
+  // filling the air across the feature bounds and the 3-block tile border; the
+  // border blocks sit outside the declared size so the tile lays out like any
+  // other structure
+  const type = strip(json.type ?? "")
+  let padded = null
+  if (pad && ["tree", "fallen_tree", "iceberg"].includes(type) && world.cells.size) {
+    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity, y0 = Infinity
+    for (const k of world.cells.keys()) {
+      const [x, y, z] = k.split(",").map(Number)
+      if (x < x0) x0 = x
+      if (x > x1) x1 = x
+      if (z < z0) z0 = z
+      if (z > z1) z1 = z
+      if (y < y0) y0 = y
+    }
+    padded = { x0, x1, z0, z1 }
+    for (let x = x0 - 3; x <= x1 + 3; x++) for (let z = z0 - 3; z <= z1 + 3; z++) {
+      if (type === "iceberg") {
+        for (let y = Math.min(y0, -1); y <= -1; y++) {
+          if (!world.get(x, y, z)) world.set(x, y, z, { Name: "minecraft:water", Properties: { level: "0" } })
+        }
+      } else if (!world.get(x, -1, z)) {
+        world.set(x, -1, z, { Name: "minecraft:grass_block", Properties: { snowy: "false" } })
+      }
+    }
+  }
 
   let minX = 0, minY = 0, minZ = 0, maxX = 0, maxY = 0, maxZ = 0
   for (const k of world.cells.keys()) {
@@ -1162,6 +1430,12 @@ export async function generateFeature(name, json, rand, resolvePlaced, loadStruc
     if (y > maxY) maxY = y
     if (z > maxZ) maxZ = z
   }
+  if (padded) {
+    minX = Math.min(0, padded.x0)
+    maxX = Math.max(0, padded.x1)
+    minZ = Math.min(0, padded.z0)
+    maxZ = Math.max(0, padded.z1)
+  }
 
   const { palette, stateFor } = statePicker()
   const blocks = []
@@ -1169,9 +1443,15 @@ export async function generateFeature(name, json, rand, resolvePlaced, loadStruc
     const [x, y, z] = k.split(",").map(Number)
     blocks.push({ state: stateFor(state.Name, state.Properties), pos: [x - minX, y - minY, z - minZ] })
   }
-  return {
+  const structure = {
     size: [maxX - minX + 1, maxY - minY + 1, maxZ - minZ + 1],
     palette, blocks, entities: [],
     anchor: [-minX, 0, -minZ]
   }
+  if (padded && pad.grass) {
+    for (const e of palette) {
+      if (e.Name === "minecraft:grass_block") e.__biome = pad.grass
+    }
+  }
+  return structure
 }

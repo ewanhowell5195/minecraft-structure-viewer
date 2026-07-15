@@ -46,10 +46,7 @@ export function intBounds(p) {
   if (p == null) return [0, 0]
   switch (strip(p.type)) {
     case "constant": return [p.value, p.value]
-    case "clamped": {
-      const [a, b] = intBounds(p.source)
-      return [Math.max(p.min_inclusive, a), Math.min(p.max_inclusive, b)]
-    }
+    case "clamped": return [p.min_inclusive, p.max_inclusive]
     case "weighted_list": {
       const bounds = p.distribution.map(e => intBounds(e.data))
       return [Math.min(...bounds.map(b => b[0])), Math.max(...bounds.map(b => b[1]))]

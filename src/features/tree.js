@@ -6,6 +6,16 @@ const LEAVES = /(_leaves|azalea)$/
 const HORIZ = HORIZ_NAMES.map(n => [DIR[n][0], DIR[n][2], n, OPP[n]])
 const randDir = rand => HORIZ[nextInt(rand, 4)]
 
+function shuffle(arr, rand) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = nextInt(rand, i + 1); const t = arr[i]; arr[i] = arr[j]; arr[j] = t
+  }
+  return arr
+}
+
+// vanilla shuffles all six directions, then drops the vertical ones
+const shuffledHorizDirs = rand => shuffle([null, null, HORIZ[0], HORIZ[2], HORIZ[3], HORIZ[1]], rand).filter(Boolean)
+
 function isLeaves(cell) { return !!cell && LEAVES.test(cell.Name.replace("minecraft:", "")) }
 
 export function makeTreeCtx(world, config, rand) {
@@ -40,9 +50,23 @@ export function makeTreeCtx(world, config, rand) {
       leafSet.add(x + "," + y + "," + z)
       return true
     },
-    leafAt: (x, y, z) => leafSet.has(x + "," + y + "," + z)
+    leafAt: (x, y, z) => leafSet.has(x + "," + y + "," + z),
+    setState(x, y, z, state) { world.set(x, y, z, state) }
   }
   return ctx
+}
+
+function offsetTreeCtx(ctx, dy) {
+  return {
+    ...ctx,
+    validTreePos: (x, y, z) => ctx.validTreePos(x, y + dy, z),
+    placeLog: (x, y, z, axis) => ctx.placeLog(x, y + dy, z, axis),
+    placeLogIfFree: (x, y, z) => ctx.placeLogIfFree(x, y + dy, z),
+    placeBelowTrunk: (x, y, z) => ctx.placeBelowTrunk(x, y + dy, z),
+    tryPlaceLeaf: (x, y, z) => ctx.tryPlaceLeaf(x, y + dy, z),
+    leafAt: (x, y, z) => ctx.leafAt(x, y + dy, z),
+    setState: (x, y, z, state) => ctx.setState(x, y + dy, z, state)
+  }
 }
 
 const attach = (x, y, z, radiusOffset, opts = {}) => ({
@@ -158,8 +182,8 @@ const TRUNKS = {
       const angle = rand() * 2 * Math.PI
       let bx = 0, bz = 0
       for (let b = 0; b < 5; b++) {
-        bx = Math.floor(1.5 + Math.cos(angle) * b)
-        bz = Math.floor(1.5 + Math.sin(angle) * b)
+        bx = Math.trunc(1.5 + Math.cos(angle) * b)
+        bz = Math.trunc(1.5 + Math.sin(angle) * b)
         ctx.placeLog(bx, branchHeight - 3 + Math.floor(b / 2), bz)
       }
       out.push(attach(bx, branchHeight, bz, -2))
@@ -293,9 +317,9 @@ const TRUNKS = {
     const upToBranches = height - sampleInt(p.trunk_height_above_branches, rand)
     for (let y = 0; y < height; y++) {
       ctx.placeLog(0, y, 0)
+      const dirs = shuffledHorizDirs(rand)
       if (upToBranches - 1 === y) {
         const branches = sampleInt(p.branch_amount, rand)
-        const dirs = [...HORIZ].sort(() => rand() - 0.5)
         for (let i = 0; i < branches; i++) {
           const d = dirs[i]
           ctx.placeLog(d[0], y, d[1], d[0] !== 0 ? "x" : "z")
@@ -438,13 +462,40 @@ const FOLIAGE = {
   poplar_foliage_placer(ctx, fp, a, foliageHeight, radius, offset, rand) {
     const at = { ...a, y: a.y + offset }
     const r = radius + a.radiusOffset - 1
+    const flip = rand() < 0.5
     const h = foliageHeight + a.heightOffset
-    const skip = (dx, y, dz, cr) => dx === cr && dz === cr && (cr > 0 || rand() < (fp.side_hole_chance ?? 0))
-    leavesRow(ctx, fp, at, Math.max(r - 2, 0), h - 1, skip)
-    leavesRow(ctx, fp, at, Math.max(r - 1, 0), h - 2, skip)
-    leavesRow(ctx, fp, at, Math.max(r - 1, 0), h - 3, skip)
+    const partialRow = y => y === h - 1 || y === h - 2
+    const cornerCut = (dx, dz, cr, partial) => {
+      const small = flip ? (dx > 0 && dz > 0) || (dz < 0 && dx < 0) : (dx > 0 && dz < 0) || (dz > 0 && dx < 0)
+      return small ? cr - 1 : partial ? cr + 1 : cr
+    }
+    const inRhombus = (cr, ax, az, cut, extra) => ax + az <= cr * 2 - (cut + extra)
+    const skip = (mx, y, mz, cr, dx, dz) => {
+      const partial = partialRow(y)
+      const cut = cornerCut(dx, dz, cr, partial)
+      const ax = Math.abs(dx), az = Math.abs(dz)
+      if (partial && (ax === cr || az === cr)) return true
+      const extra = rand() <= (fp.side_hole_chance ?? 0) ? 1 : 0
+      return !inRhombus(cr, ax, az, cut, extra)
+    }
+    leavesRow(ctx, fp, at, r - 2, h - 1, skip)
+    leavesRow(ctx, fp, at, r - 1, h - 2, skip)
+    leavesRow(ctx, fp, at, r - 1, h - 3, skip)
     for (let y = h - 4; y >= 1; y--) leavesRow(ctx, fp, at, r, y, skip)
-    leavesRow(ctx, fp, at, Math.max(r - 1, 0), 0, skip)
+    const off = isDouble(at) ? 1 : 0
+    for (let dx = -r; dx <= r + off; dx++) {
+      for (let dz = -r; dz <= r + off; dz++) {
+        const ax = Math.abs(dx), az = Math.abs(dz)
+        if (!inRhombus(r, ax, az, cornerCut(dx, dz, r, partialRow(h - 4)), 2)) continue
+        if (!(az === 0 && r - ax >= 4 || ax === 0 && r - az >= 4)) continue
+        const px = at.x + dx, py = at.y + h - 4, pz = at.z + dz
+        if (!ctx.leafAt(px, py, pz)) continue
+        let state = sampleState(ctx.config.trunk_provider, rand)
+        if (state.Properties && "axis" in state.Properties) state = { Name: state.Name, Properties: { ...state.Properties, axis: az === 0 ? "x" : "z" } }
+        ctx.setState(px, py, pz, state)
+      }
+    }
+    leavesRow(ctx, fp, at, r - 1, 0, skip)
     leavesRow(ctx, fp, at, Math.min(Math.max(r - 2, 1), 2), -1, skip)
   }
 }
@@ -462,7 +513,9 @@ function hangingRow(ctx, fp, a, radius, yo, skip, rand) {
       if (Math.abs(px - a.x) + Math.abs(pz - a.z) + Math.abs(py + 1 - a.y) >= 7) continue
       if (!ctx.leafAt(px, py + 1, pz)) continue
       if (rand() > fp.hanging_leaves_chance) continue
-      if (ctx.tryPlaceLeaf(px, py, pz) && rand() <= fp.hanging_leaves_extension_chance) {
+      if (ctx.tryPlaceLeaf(px, py, pz)
+        && Math.abs(px - a.x) + Math.abs(pz - a.z) + Math.abs(py - a.y) < 7
+        && rand() <= fp.hanging_leaves_extension_chance) {
         ctx.tryPlaceLeaf(px, py - 1, pz)
       }
     }
@@ -485,10 +538,11 @@ function foliageHeightOf(fp, rand, treeHeight) {
 
 // ---- decorators
 
-function decorate(ctx, decorators, rand) {
+function decorate(ctx, decorators, rand, opts) {
   const logs = [...ctx.logs].sort((p, q) => p[1] - q[1])
   const leaves = [...ctx.leaves].sort((p, q) => p[1] - q[1])
   const world = ctx.world
+  const isAir = (x, y, z) => y >= 0 && !world.get(x, y, z)
   const vine = (x, y, z, dir) => {
     if (!world.get(x, y, z) && y >= 0) world.set(x, y, z, { Name: "minecraft:vine", Properties: { [dir]: "true" } })
   }
@@ -540,9 +594,7 @@ function decorate(ctx, decorators, rand) {
           if (y !== hiveY) continue
           for (const [dx, dz] of [[0, 1], [-1, 0], [1, 0]]) spots.push([x + dx, y, z + dz])
         }
-        for (let i = spots.length - 1; i > 0; i--) {
-          const j = nextInt(rand, i + 1); const t = spots[i]; spots[i] = spots[j]; spots[j] = t
-        }
+        shuffle(spots, rand)
         for (const [x, y, z] of spots) {
           if (world.get(x, y, z) || world.get(x, y, z + 1)) continue
           world.set(x, y, z, { Name: "minecraft:bee_nest", Properties: { facing: "south", honey_level: "0" } })
@@ -589,10 +641,7 @@ function decorate(ctx, decorators, rand) {
       }
       case "creaking_heart": {
         if (rand() >= d.probability || !logs.length) break
-        const pool = [...logs]
-        for (let i = pool.length - 1; i > 0; i--) {
-          const j = nextInt(rand, i + 1); const t = pool[i]; pool[i] = pool[j]; pool[j] = t
-        }
+        const pool = shuffle([...logs], rand)
         for (const [x, y, z] of pool) {
           let buried = true
           for (const [dx, dy, dz] of Object.values(DIR)) {
@@ -607,10 +656,7 @@ function decorate(ctx, decorators, rand) {
       }
       case "attached_to_leaves": {
         const blacklist = new Set()
-        const shuffled = [...leaves]
-        for (let i = shuffled.length - 1; i > 0; i--) {
-          const j = nextInt(rand, i + 1); const t = shuffled[i]; shuffled[i] = shuffled[j]; shuffled[j] = t
-        }
+        const shuffled = shuffle([...leaves], rand)
         for (const [x, y, z] of shuffled) {
           const dirName = d.directions[nextInt(rand, d.directions.length)]
           const [dx, dy, dz] = DIR[dirName]
@@ -630,13 +676,147 @@ function decorate(ctx, decorators, rand) {
         }
         break
       }
+      case "attached_to_logs": {
+        for (const [x, y, z] of shuffle([...logs], rand)) {
+          const dirName = d.directions[nextInt(rand, d.directions.length)].replace("minecraft:", "")
+          const [dx, dy, dz] = DIR[dirName]
+          const px = x + dx, py = y + dy, pz = z + dz
+          if (rand() <= d.probability && isAir(px, py, pz)) {
+            const state = sampleState(d.block_provider, rand)
+            if (state) world.set(px, py, pz, state)
+          }
+        }
+        break
+      }
+      case "shelf_mushroom": {
+        if (rand() >= d.probability || !logs.length) break
+        const isShelf = (x, y, z) => world.get(x, y, z)?.Name === "minecraft:shelf_mushroom"
+        const shelfNextTo = (x, y, z) => HORIZ.some(([hx, hz]) => isShelf(x + hx, y, z + hz))
+        const place = (x, y, z, facing) => world.set(x, y, z, { Name: "minecraft:shelf_mushroom", Properties: { age: String(nextInt(rand, 2)), facing } })
+        const first = logs[0], last = logs[logs.length - 1]
+        if (first[1] === last[1]) {
+          const facings = first[0] !== last[0] ? ["north", "south"] : ["east", "west"]
+          for (const [x, y, z] of logs) {
+            for (const facing of facings) {
+              if (rand() > 0.25) continue
+              const px = x + DIR[facing][0], pz = z + DIR[facing][2]
+              if (!isAir(px, y, pz)) continue
+              if (shelfNextTo(px, y, pz) || shelfNextTo(x, y, z)) continue
+              place(px, y, pz, facing)
+            }
+          }
+        } else {
+          const i = nextInt(rand, 4)
+          const facings = [HORIZ_NAMES[i], HORIZ_NAMES[(i + 1) % 4]]
+          const baseY = first[1]
+          for (const [x, y, z] of logs) {
+            if (y - baseY < 1 || y - baseY > 4) continue
+            for (const facing of facings) {
+              if (rand() > 0.25) continue
+              const px = x + DIR[facing][0], pz = z + DIR[facing][2]
+              if (!isAir(px, y, pz) || isShelf(px, y - 1, pz)) continue
+              place(px, y, pz, facing)
+              break
+            }
+          }
+        }
+        break
+      }
+      case "pale_moss": {
+        if (!logs.length) break
+        const shuffled = shuffle([...logs], rand)
+        let origin = shuffled[0]
+        for (const p of shuffled) if (p[1] < origin[1]) origin = p
+        // vanilla runs the patch at origin.above() and lets its ground scan drop
+        // to the soil; our patch grounds at origin-1 directly, so no +1 here
+        if (rand() < d.ground_probability) opts?.runFeature?.("minecraft:pale_moss_patch", origin[0], origin[1], origin[2])
+        const moss = tip => ({ Name: "minecraft:pale_hanging_moss", Properties: { tip: String(tip) } })
+        const hang = (x, y, z) => {
+          while (isAir(x, y - 1, z) && !(rand() < 0.5)) {
+            world.set(x, y, z, moss(false))
+            y--
+          }
+          world.set(x, y, z, moss(true))
+        }
+        for (const [x, y, z] of logs) {
+          if (rand() < d.trunk_probability && isAir(x, y - 1, z)) hang(x, y - 1, z)
+        }
+        for (const [x, y, z] of leaves) {
+          if (rand() < d.leaves_probability && isAir(x, y - 1, z)) hang(x, y - 1, z)
+        }
+        break
+      }
+      // the ground is virtual: podzol lands on the plane just below the trunk base
+      case "alter_ground": {
+        if (!logs.length) break
+        const baseY = logs[0][1]
+        const circle = (cx, cz) => {
+          for (let xx = -2; xx <= 2; xx++) for (let zz = -2; zz <= 2; zz++) {
+            if (Math.abs(xx) === 2 && Math.abs(zz) === 2) continue
+            const state = sampleState(d.provider, rand)
+            if (state) world.set(cx + xx, baseY - 1, cz + zz, state)
+          }
+        }
+        for (const [x, y, z] of logs) {
+          if (y !== baseY) continue
+          circle(x - 1, z - 1)
+          circle(x + 2, z - 1)
+          circle(x - 1, z + 2)
+          circle(x + 2, z + 2)
+          for (let i = 0; i < 5; i++) {
+            const roll = nextInt(rand, 64)
+            const xx = roll % 8, zz = Math.trunc(roll / 8)
+            if (xx === 0 || xx === 7 || zz === 0 || zz === 7) circle(x - 3 + xx, z - 3 + zz)
+          }
+        }
+        break
+      }
+    }
+  }
+}
+
+// ---- root placer: nothing obstructs the walks here except the grid, which
+// ends a branch like unplaceable terrain does in game
+
+function placeMangroveRoots(ctx, rp, trunkY, rand) {
+  const placement = rp.mangrove_root_placement
+  const maxLength = placement.max_root_length
+  const maxWidth = placement.max_root_width
+  const skew = placement.random_skew_chance
+  const roots = [[0, trunkY - 1, 0]]
+  for (const [dx, dz] of HORIZ) {
+    const walk = []
+    const potentials = (x, y, z) => {
+      const below = [x, y - 1, z]
+      const width = Math.abs(x) + Math.abs(y - trunkY) + Math.abs(z)
+      if (width > maxWidth - 3 && width <= maxWidth) return rand() < skew ? [below, [x + dx, y - 1, z + dz]] : [below]
+      if (width > maxWidth) return [below]
+      if (rand() < skew) return [below]
+      return rand() < 0.5 ? [[x + dx, y, z + dz]] : [below]
+    }
+    const step = (x, y, z, layer) => {
+      if (layer === maxLength || walk.length > maxLength) return
+      for (const p of potentials(x, y, z)) {
+        if (p[1] < 0) continue
+        walk.push(p)
+        step(p[0], p[1], p[2], layer + 1)
+      }
+    }
+    step(dx, trunkY, dz, 0)
+    roots.push(...walk, [dx, trunkY, dz])
+  }
+  const arp = rp.above_root_placement
+  for (const [x, y, z] of roots) {
+    ctx.setState(x, y, z, sampleState(rp.root_provider, rand))
+    if (arp && rand() < arp.above_root_placement_chance && !ctx.world.get(x, y + 1, z)) {
+      ctx.setState(x, y + 1, z, sampleState(arp.above_root_provider, rand))
     }
   }
 }
 
 // ---- entry points
 
-export function generateTree(world, config, rand) {
+export function generateTree(world, config, rand, opts) {
   const ctx = makeTreeCtx(world, config, rand)
   const tp = config.trunk_placer
   const trunkType = (tp.type ?? "").replace("minecraft:", "")
@@ -652,14 +832,20 @@ export function generateTree(world, config, rand) {
   const trunkHeight = treeHeight - foliageHeight
   let radius = sampleInt(fp.radius, rand)
   if (foliageType === "pine_foliage_placer") radius += nextInt(rand, Math.max(trunkHeight + 1, 1))
+  let trunkY = 0
+  if (config.root_placer) {
+    trunkY = sampleInt(config.root_placer.trunk_offset_y, rand)
+    placeMangroveRoots(ctx, config.root_placer, trunkY, rand)
+  }
   const offset = sampleInt(fp.offset, rand)
 
-  const attachments = place(ctx, tp, treeHeight, rand)
-  for (const a of attachments) foliage(ctx, fp, a, foliageHeight, radius, offset, rand)
-  decorate(ctx, config.decorators, rand)
+  const tctx = trunkY ? offsetTreeCtx(ctx, trunkY) : ctx
+  const attachments = place(tctx, tp, treeHeight, rand)
+  for (const a of attachments) foliage(tctx, fp, a, foliageHeight, radius, offset, rand)
+  decorate(ctx, config.decorators, rand, opts)
 }
 
-export function generateFallenTree(world, config, rand) {
+export function generateFallenTree(world, config, rand, opts) {
   const ctx = makeTreeCtx(world, { trunk_provider: config.trunk_provider }, rand)
   ctx.placeLog(0, 0, 0)
   const stump = [[0, 0, 0]]
@@ -675,7 +861,7 @@ export function generateFallenTree(world, config, rand) {
   const runDecorators = (decs, positions) => {
     const sub = makeTreeCtx(world, { trunk_provider: config.trunk_provider }, rand)
     sub.logs.push(...positions)
-    decorate(sub, decs, rand)
+    decorate(sub, decs, rand, opts)
   }
   runDecorators(config.stump_decorators, stump)
   runDecorators(config.log_decorators, logSet)
