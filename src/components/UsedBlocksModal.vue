@@ -182,7 +182,7 @@ defineExpose({ open })
         <template v-for="g in blockRows" :key="g.id">
           <div class="row" :class="{ click: expandable(g) }" @click="clickBlock(g)">
             <span class="material-symbols-outlined chev" :class="{ hidden: !expandable(g), open: state.expanded[g.id] }">chevron_right</span>
-            <UsedIcon :id="g.id" :blockstates="g.states[0].props ?? {}" :size="32" />
+            <UsedIcon :id="g.id" :size="32" />
             <span class="name">{{ stripNs(g.id) }}</span>
             <span class="count">×{{ g.count }}<small>{{ fmtPct(g.count) }}</small></span>
           </div>
