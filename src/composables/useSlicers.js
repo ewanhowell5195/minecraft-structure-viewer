@@ -7,7 +7,6 @@ import { useLock } from "./useLock.js"
 
 const AXES = ["x", "y", "z"]
 const DIRS = { x: new THREE.Vector3(1, 0, 0), y: new THREE.Vector3(0, 1, 0), z: new THREE.Vector3(0, 0, 1) }
-// blockbench's axis colours; lightened line variants so they read on the dark scene
 const COLORS = { x: 0xff1242, y: 0x3fc35f, z: 0x0894ed }
 const LINE_COLORS = { x: 0xff6b82, y: 0x6cd186, z: 0x45b1f4 }
 const FILL_COLORS = { x: 0xff4059, y: 0x3fc35f, z: 0x0894ed }
@@ -20,6 +19,31 @@ const state = reactive({
   y: { on: false, i: null, flip: false },
   z: { on: false, i: null, flip: false }
 })
+
+let urlSlice = null
+{
+  const raw = new URLSearchParams(location.search).get("slice")
+  if (raw) for (const part of raw.split(",")) {
+    const m = /^([xyz])(-?\d+)(f)?$/.exec(part)
+    if (m) (urlSlice ??= {})[m[1]] = { on: true, i: +m[2], flip: !!m[3] }
+  }
+}
+
+function restoreUrlSlice() {
+  if (!urlSlice) return
+  for (const a of AXES) if (urlSlice[a]) Object.assign(state[a], urlSlice[a])
+  urlSlice = null
+}
+
+function syncSliceUrl() {
+  const parts = AXES.filter(a => state[a].on && state[a].i != null)
+    .map(a => `${a}${state[a].i}${state[a].flip ? "f" : ""}`)
+  const next = parts.length ? parts.join(",") : null
+  const u = new URL(location)
+  if (u.searchParams.get("slice") === next) return
+  next ? u.searchParams.set("slice", next) : u.searchParams.delete("slice")
+  history.replaceState(null, "", u)
+}
 
 const sceneApi = useScene()
 const { locked } = useLock()
@@ -193,6 +217,7 @@ watch(state, () => {
   }
   refresh()
   useBuild().showFull(sliceKey() !== appliedKey)
+  syncSliceUrl()
   if (!dragA) scheduleRebuild()
 }, { deep: true })
 
@@ -408,5 +433,5 @@ function init() {
 const busy = () => !!(hoverA || dragA)
 
 export function useSlicers() {
-  return { state, init, onBuild, busy, sliceStructure }
+  return { state, init, onBuild, busy, sliceStructure, restoreUrlSlice }
 }
