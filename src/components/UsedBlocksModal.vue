@@ -99,6 +99,9 @@ const entityRows = computed(() => {
   return rows
 })
 
+const anyBlockExpandable = computed(() => blockRows.value.some(expandable))
+const anyEntityExpandable = computed(() => entityRows.value.some(g => !g.allSame))
+
 function fmtPct(n) {
   const p = n / (state.data?.total || 1) * 100
   if (p >= 99.95) return "100%"
@@ -181,10 +184,10 @@ defineExpose({ open })
       <div class="body" v-if="state.tab === 'blocks'">
         <template v-for="g in blockRows" :key="g.id">
           <div class="row" :class="{ click: expandable(g) }" @click="clickBlock(g)">
-            <span class="material-symbols-outlined chev" :class="{ hidden: !expandable(g), open: state.expanded[g.id] }">chevron_right</span>
             <UsedIcon :id="g.id" :size="32" />
             <span class="name">{{ stripNs(g.id) }}</span>
             <span class="count">×{{ g.count }}<small>{{ fmtPct(g.count) }}</small></span>
+            <span v-if="anyBlockExpandable" class="material-symbols-outlined chev" :class="{ hidden: !expandable(g), open: state.expanded[g.id] }">chevron_right</span>
           </div>
           <template v-if="state.expanded[g.id]">
             <template v-for="st in g.states" :key="JSON.stringify(st.props)">
@@ -208,11 +211,11 @@ defineExpose({ open })
       <div class="body" v-else>
         <template v-for="g in entityRows" :key="g.id">
           <div class="row click" @click="clickEntity(g)">
-            <span class="material-symbols-outlined chev" :class="{ hidden: g.allSame, open: state.expanded['e:' + g.id] }">chevron_right</span>
             <UsedIcon kind="entity" :id="g.id" :size="32" />
             <span class="name">{{ stripNs(g.id) }}</span>
             <span v-if="g.allSame" class="material-symbols-outlined data">open_in_new</span>
             <span class="count">×{{ g.count }}</span>
+            <span v-if="anyEntityExpandable" class="material-symbols-outlined chev" :class="{ hidden: g.allSame, open: state.expanded['e:' + g.id] }">chevron_right</span>
           </div>
           <template v-if="!g.allSame && state.expanded['e:' + g.id]">
             <div v-for="(e, i) in g.list" :key="i" class="row sub click" @click="container.openEntity(e)">
