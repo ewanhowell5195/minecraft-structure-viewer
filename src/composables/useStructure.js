@@ -63,7 +63,7 @@ async function encodeRels(rels) {
   return "!" + btoa(s).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "")
 }
 
-export async function decodeVanillaParam(param) {
+export async function decodeStructureParam(param) {
   if (!param) return []
   if (!param.startsWith("!")) return param.split(",")
   try {
@@ -86,11 +86,11 @@ export function parseSeedParam(param) {
 let seededHistory = false
 let navigatingHistory = false
 
-function setVanillaParam(rel, featureRel, featureSeed, featureField) {
+function setStructureParam(rel, featureRel, featureSeed, featureField) {
   if (navigatingHistory) return
   const u = new URL(location)
-  const before = u.searchParams.get("vanilla") + "|" + u.searchParams.get("feature")
-  rel ? u.searchParams.set("vanilla", rel) : u.searchParams.delete("vanilla")
+  const before = u.searchParams.get("structure") + "|" + u.searchParams.get("feature")
+  rel ? u.searchParams.set("structure", rel) : u.searchParams.delete("structure")
   featureRel ? u.searchParams.set("feature", featureRel) : u.searchParams.delete("feature")
   featureRel && featureSeed ? u.searchParams.set("fseed", featureSeed.toString(16)) : u.searchParams.delete("fseed")
   featureRel && featureField ? u.searchParams.set("field", "1") : u.searchParams.delete("field")
@@ -98,7 +98,7 @@ function setVanillaParam(rel, featureRel, featureSeed, featureField) {
   u.searchParams.delete("seed")
   u.searchParams.delete("level")
   u.searchParams.delete("debug")
-  const changed = u.searchParams.get("vanilla") + "|" + u.searchParams.get("feature") !== before
+  const changed = u.searchParams.get("structure") + "|" + u.searchParams.get("feature") !== before
   if (changed && seededHistory) history.pushState(null, "", u)
   else history.replaceState(null, "", u)
   seededHistory = true
@@ -121,7 +121,7 @@ addEventListener("popstate", async () => {
       else await loadFeature(feature, fseed)
       return
     }
-    const rels = (await decodeVanillaParam(params.get("vanilla"))).filter(r => structures.has(r))
+    const rels = (await decodeStructureParam(params.get("structure"))).filter(r => structures.has(r))
     if (rels.length > 1) await loadMany(rels)
     else if (rels.length === 1) await loadVanilla(rels[0])
   } finally {
@@ -279,7 +279,7 @@ async function apply(refit = true) {
   if (state.field) {
     const { rel, base } = state.field
     state.name = `${rel} (field of ${loaded.length})`
-    setVanillaParam(null, rel, base === features.defaultSeed(rel) ? 0 : base, true)
+    setStructureParam(null, rel, base === features.defaultSeed(rel) ? 0 : base, true)
     const s = loaded.length === 1 ? loaded[0].structure : await packField()
     if (await buildApi.build(s, refit) === false) return false
     session.endSession()
@@ -289,11 +289,11 @@ async function apply(refit = true) {
     const { structure: s, name, rel, feature, seed } = loaded[0]
     state.name = name
     if (feature) {
-      setVanillaParam(null, rel, seed === features.defaultSeed(rel) ? 0 : seed)
+      setStructureParam(null, rel, seed === features.defaultSeed(rel) ? 0 : seed)
       if (await buildApi.build(s, refit) === false) return false
       session.endSession()
     } else {
-      if (rel) setVanillaParam(rel)
+      if (rel) setStructureParam(rel)
       if (await buildApi.build(s, refit) === false) return false
       await session.startSession(s, name)
     }
@@ -301,9 +301,9 @@ async function apply(refit = true) {
     const allFeatures = loaded.every(e => e.feature)
     const allStructures = loaded.every(e => e.rel && !e.feature)
     state.name = `${loaded.length} ${allFeatures ? "features" : allStructures ? "structures" : "items"}`
-    if (allFeatures) setVanillaParam(null, loaded.map(e => e.rel).join(","))
-    else if (allStructures) setVanillaParam(await encodeRels(loaded.map(e => e.rel)))
-    else setVanillaParam(null)
+    if (allFeatures) setStructureParam(null, loaded.map(e => e.rel).join(","))
+    else if (allStructures) setStructureParam(await encodeRels(loaded.map(e => e.rel)))
+    else setStructureParam(null)
     if (await buildApi.build(await packLoaded(), refit) === false) return false
     session.endSession()
   }
@@ -543,7 +543,7 @@ function loadDebug(kind) {
     state.error = ""
     const snap = snapshot()
     const name = kind ? `debug (${kind})` : "debug"
-    setVanillaParam(null)
+    setStructureParam(null)
     const u = new URL(location)
     u.searchParams.set("debug", kind || "1")
     history.replaceState(null, "", u)
@@ -561,7 +561,7 @@ function loadFile(file) {
     try {
       const reader = READERS[file.name.split(".").pop().toLowerCase()] ?? readStructure
       const s = await reader(await file.arrayBuffer())
-      setVanillaParam(null)
+      setStructureParam(null)
       state.field = null
       loaded = [{ structure: s, name: file.name.replace(/\.(nbt|litematic|schem|mcstructure)$/i, "") }]
       if (await apply() === false) restore(snap)
@@ -577,7 +577,7 @@ function loadObject(structure, name) {
     state.error = ""
     const snap = snapshot()
     try {
-      setVanillaParam(null)
+      setStructureParam(null)
       state.field = null
       loaded = [{ structure, name }]
       if (await apply() === false) restore(snap)

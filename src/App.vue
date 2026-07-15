@@ -3,7 +3,7 @@ import { computed, onMounted, ref, watch } from "vue"
 import { loadLibrary } from "./lib.js"
 import { usePacks } from "./composables/usePacks.js"
 import { useStructures } from "./composables/useStructures.js"
-import { useStructure, decodeVanillaParam, parseSeedParam } from "./composables/useStructure.js"
+import { useStructure, decodeStructureParam, parseSeedParam } from "./composables/useStructure.js"
 import { useBuild } from "./composables/useBuild.js"
 import { useScene } from "./composables/useScene.js"
 import { useLock } from "./composables/useLock.js"
@@ -71,13 +71,13 @@ onMounted(async () => {
   // or a default so the page never starts empty
   const DEFAULT = "minecraft/village/plains/houses/plains_small_house_1"
   const params = new URLSearchParams(location.search)
-  const vanilla = params.get("vanilla")
+  const structureParam = params.get("structure")
   const debug = params.get("debug")
   const feature = params.get("feature")
   const stop = watch(() => structures.state.names.length, async n => {
     if (!n) return
     stop()
-    const rels = (await decodeVanillaParam(vanilla)).filter(r => structures.has(r))
+    const rels = (await decodeStructureParam(structureParam)).filter(r => structures.has(r))
     if (debug != null) loadDebug(debug)
     else if (feature != null && feature.includes(",")) loadFeatures(feature.split(","))
     else if (feature != null && params.get("field") != null) loadFeatureField(feature, parseSeedParam(params.get("fseed")))
