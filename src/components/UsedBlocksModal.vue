@@ -34,9 +34,15 @@ function compute() {
     let g = groups.get(e.Name)
     if (!g) groups.set(e.Name, g = { id: e.Name, count: 0, states: new Map() })
     g.count++
-    const key = JSON.stringify(e.Properties ?? null)
+    // waterlogged=false is hidden, so drop it up front or its states would duplicate their dry twins
+    let props = e.Properties ?? null
+    if (props?.waterlogged === "false") {
+      const { waterlogged, ...rest } = props
+      props = Object.keys(rest).length ? rest : null
+    }
+    const key = JSON.stringify(props)
     let st = g.states.get(key)
-    if (!st) g.states.set(key, st = { props: e.Properties ?? null, count: 0, blocks: null })
+    if (!st) g.states.set(key, st = { props, count: 0, blocks: null })
     st.count++
     if (isDataName(e.Name) || b.nbt?.LootTable) (st.blocks ??= []).push(b)
   }
@@ -54,7 +60,7 @@ function compute() {
     for (const [k, set] of values) for (const st of g.states) set.add(st.props?.[k] ?? "\0")
     const order = Array.from(values.keys()).sort((a, b) => values.get(b).size - values.get(a).size || a.localeCompare(b))
     for (const st of g.states) {
-      st.label = st.props ? order.filter(k => k in st.props).map(k => `${k}=${st.props[k]}`).join(", ") : "default"
+      st.entries = st.props ? order.filter(k => k in st.props).map(k => [k, st.props[k]]) : null
     }
   }
 
@@ -200,18 +206,19 @@ defineExpose({ open })
           </div>
           <template v-if="state.expanded[g.id]">
             <template v-for="st in g.states" :key="JSON.stringify(st.props)">
-              <div class="line row sub" :class="{ click: hasData(st) }" @click="clickState(g, st)">
+              <div class="line row sub" :class="{ click: hasData(st), reserve: anyBlockExpandable }" @click="clickState(g, st)">
                 <UsedIcon :id="g.id" :blockstates="st.props ?? {}" :size="32" />
-                <span class="nm mono">{{ st.label }}</span>
+                <span v-if="st.entries?.length" class="nm fprops">
+                  <span v-for="[k, v] in st.entries" :key="k" class="fprop"><span class="fpk">{{ k }}</span>{{ v }}</span>
+                </span>
+                <span v-else class="nm mono">default</span>
                 <span v-if="hasData(st)" class="material-symbols-outlined data">{{ sameData(st) ? "open_in_new" : "unfold_more" }}</span>
                 <span class="count">×{{ st.count }}<small>{{ fmtPct(st.count) }}</small></span>
-                <span v-if="anyBlockExpandable" class="material-symbols-outlined chev hidden">chevron_right</span>
               </div>
               <template v-if="hasData(st) && !sameData(st) && state.expandedState[g.id + '|' + JSON.stringify(st.props)]">
-                <div v-for="(b, i) in st.blocks" :key="i" class="line row sub2 click" @click="container.open(b)">
+                <div v-for="(b, i) in st.blocks" :key="i" class="line row sub2 click" :class="{ reserve: anyBlockExpandable }" @click="container.open(b)">
                   <span class="nm mono">{{ posText(b.pos) }}</span>
                   <span class="material-symbols-outlined data">open_in_new</span>
-                  <span v-if="anyBlockExpandable" class="material-symbols-outlined chev hidden">chevron_right</span>
                 </div>
               </template>
             </template>
@@ -229,10 +236,9 @@ defineExpose({ open })
             <span v-if="anyEntityExpandable" class="material-symbols-outlined chev" :class="{ hidden: g.allSame, open: state.expanded['e:' + g.id] }">chevron_right</span>
           </div>
           <template v-if="!g.allSame && state.expanded['e:' + g.id]">
-            <div v-for="(e, i) in g.list" :key="i" class="line row sub click" @click="container.openEntity(e)">
+            <div v-for="(e, i) in g.list" :key="i" class="line row sub click" :class="{ reserve: anyEntityExpandable }" @click="container.openEntity(e)">
               <span class="nm mono">{{ posText(e.pos) }}</span>
               <span class="material-symbols-outlined data">open_in_new</span>
-              <span v-if="anyEntityExpandable" class="material-symbols-outlined chev hidden">chevron_right</span>
             </div>
           </template>
         </div>
@@ -261,7 +267,7 @@ defineExpose({ open })
   display: flex;
   flex-direction: column;
   gap: 10px;
-  width: 460px;
+  width: 584px;
   max-width: calc(100vw - 32px);
 }
 
@@ -282,6 +288,15 @@ header h3 {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+/* matches the 30px close button so hiding the seg never shifts the header */
+.controls .seg { height: 30px; }
+
+.controls .seg button {
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
 }
 
 button.icon {
@@ -328,6 +343,9 @@ button.icon {
   overflow: auto;
   display: flex;
   flex-direction: column;
+  /* scrollbar sits on the modal edge instead of inside the padding */
+  margin-right: -14px;
+  padding-right: 14px;
 }
 
 .item-row.group {
@@ -349,10 +367,32 @@ button.icon {
 }
 
 .row.click { cursor: pointer; }
-.row.click:hover { background: #ffffff0a; }
+.row.click:not(.sub):not(.sub2):hover { background: #ffffff0a; }
 
-.row.sub { padding-left: 24px; }
-.row.sub2 { padding-left: 48px; }
+.row.click:hover .nm:not(.fprops) { color: var(--accent); }
+
+.row.click:hover .chev,
+.row.click:hover .data { color: var(--text); }
+
+/* indent via margin so the divider spans only the content width;
+   each level steps in by the parent's icon (32px) + half the gap (5px) */
+.row.sub {
+  margin-left: 43px;
+  margin-right: 6px;
+  padding-left: 0;
+  padding-right: 0;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+}
+
+.row.sub2 {
+  margin-left: 80px;
+  margin-right: 6px;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.nm.fprops { padding: 6px 0; }
 
 .chev {
   font-size: 18px;
@@ -363,6 +403,12 @@ button.icon {
 
 .chev.hidden { visibility: hidden; }
 .chev.open { transform: rotate(90deg); }
+
+/* chevron column (18px + half the gap) reserved without a placeholder element */
+.row.reserve {
+  margin-right: 29px;
+  padding-right: 5px;
+}
 
 .nm.mono {
   font-family: ui-monospace, monospace;

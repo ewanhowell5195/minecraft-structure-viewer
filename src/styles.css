@@ -153,3 +153,26 @@ aside section .check {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* shared blockstate chips: jigsaw "Turns into" facts and used blocks breakdowns */
+.fprops {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.fprop {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: #ffffff08;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 2px 7px;
+  font-family: ui-monospace, monospace;
+  font-size: 11.5px;
+}
+
+.fpk {
+  color: var(--text-dim);
+}

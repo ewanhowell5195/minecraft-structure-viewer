@@ -8,6 +8,8 @@ import { useWalk } from "../composables/useWalk.js"
 import { getFont, measure, drawText } from "../mcfont.js"
 import { describeTable, prettyName } from "../loot.js"
 import ItemIcon from "./ItemIcon.vue"
+import UsedIcon from "./UsedIcon.vue"
+import NbtTree from "./NbtTree.vue"
 
 const packs = usePacks()
 const container = useContainer()
@@ -196,15 +198,21 @@ watch(() => [state.open, state.stacks, state.gui], () => {
             <div class="facts" :class="{ two: facts.some(f => f.full) }" v-if="facts.length">
               <div v-for="r in facts" :key="r.label" class="fact" :class="{ full: r.full }">
                 <div class="fl">{{ r.label }}</div>
-                <div class="fv" :class="{ mono: r.mono }">{{ r.value }}</div>
-                <div v-if="r.props" class="fprops">
-                  <span v-for="(v, k) in r.props" :key="k" class="fprop"><span class="fpk">{{ k }}</span>{{ v }}</span>
+                <div class="fbody">
+                  <UsedIcon v-if="r.block" :id="r.block" :blockstates="r.props ?? {}" :size="32" />
+                  <div class="fcol">
+                    <div class="fv" :class="{ mono: r.mono }">{{ r.value }}</div>
+                    <div v-if="r.props" class="fprops">
+                      <span v-for="(v, k) in r.props" :key="k" class="fprop"><span class="fpk">{{ k }}</span>{{ v }}</span>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
             <div v-for="r in wides" :key="r.label" class="wide-card">
               <div class="fl">{{ r.label }}</div>
-              <pre>{{ r.value }}</pre>
+              <NbtTree v-if="r.tree" :value="r.tree" />
+              <pre v-else>{{ r.value }}</pre>
             </div>
             <div v-if="state.poolId" class="pool-card">
               <div class="ph">
@@ -382,6 +390,9 @@ button.icon {
 
 .body {
   overflow: auto;
+  /* scrollbar sits on the modal edge instead of inside the padding */
+  margin-right: -14px;
+  padding-right: 14px;
 }
 
 .pane.data { gap: 8px; }
@@ -416,8 +427,16 @@ button.icon {
   padding: 8px 10px;
 }
 
-.fact .fv {
+.fact .fbody {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   margin-top: 3px;
+}
+
+.fact .fcol { min-width: 0; }
+
+.fact .fv {
   overflow-wrap: anywhere;
 }
 
@@ -426,28 +445,7 @@ button.icon {
   font-size: 12.5px;
 }
 
-.fprops {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 6px;
-}
-
-.fprop {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  background: #ffffff08;
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  padding: 2px 7px;
-  font-family: ui-monospace, monospace;
-  font-size: 11.5px;
-}
-
-.fpk {
-  color: var(--text-dim);
-}
+.fact .fprops { margin-top: 6px; }
 
 .wide-card {
   background: #ffffff05;

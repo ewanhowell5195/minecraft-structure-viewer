@@ -90,7 +90,7 @@ function dataRowsFor(name, p, nbt) {
     add("Name", stripNs(nbt?.name), true)
     add("Target", stripNs(nbt?.target), true)
     const fin = parseState(typeof nbt?.final_state === "string" ? nbt.final_state : "")
-    rows.push({ label: "Turns into", value: stripNs(fin.Name), mono: true, props: fin.Properties, full: true })
+    rows.push({ label: "Turns into", value: stripNs(fin.Name), mono: true, props: fin.Properties, full: true, block: /(^|:)air$/.test(fin.Name) ? null : fin.Name })
     add("Joint", nbt?.joint)
     add("Orientation", p.orientation, true)
     if (nbt?.selection_priority) add("Selection priority", nbt.selection_priority)
@@ -321,11 +321,7 @@ function openEntity(e) {
   if (vd?.type) rows.push({ label: "Variant", value: prettyName(stripNs(vd.type)) })
   const rest = filterDefaultNbt(e.nbt ?? {})
   for (const k of ["id", "Pos", "Rotation", "UUID"]) delete rest[k]
-  if (Object.keys(rest).length) {
-    // nbt longs parse as BigInt, which JSON.stringify refuses
-    const safe = (k, v) => typeof v === "bigint" ? (v >= Number.MIN_SAFE_INTEGER && v <= Number.MAX_SAFE_INTEGER ? Number(v) : v.toString()) : v
-    rows.push({ label: "NBT", value: JSON.stringify(rest, safe, 2), mono: true, wide: true })
-  }
+  if (Object.keys(rest).length) rows.push({ label: "NBT", tree: rest, wide: true })
   state.dataRows = rows
   openSeq++
   state.open = true
