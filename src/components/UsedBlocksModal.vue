@@ -307,6 +307,7 @@ button.icon {
   padding: 5px 8px;
   border-radius: 6px;
   font-size: 13px;
+  user-select: none;
 }
 
 .row.click { cursor: pointer; }
