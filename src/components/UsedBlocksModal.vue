@@ -3,6 +3,7 @@ import { computed, reactive, watch, onMounted, onBeforeUnmount } from "vue"
 import { useBuild } from "../composables/useBuild.js"
 import { useContainer } from "../composables/useContainer.js"
 import { isInspectable } from "../loot.js"
+import Modal from "./Modal.vue"
 import UsedIcon from "./UsedIcon.vue"
 
 const AIR = /(^|:)(air|cave_air|void_air|structure_void)$/
@@ -34,7 +35,7 @@ function compute() {
     let g = groups.get(e.Name)
     if (!g) groups.set(e.Name, g = { id: e.Name, count: 0, states: new Map() })
     g.count++
-    // waterlogged=false is hidden, so drop it up front or its states would duplicate their dry twins
+    // waterlogged=false is hidden, so strip it before keying or its states would duplicate
     let props = e.Properties ?? null
     if (props?.waterlogged === "false") {
       const { waterlogged, ...rest } = props
@@ -51,7 +52,7 @@ function compute() {
     count: g.count,
     states: Array.from(g.states.values()).sort((a, b) => b.count - a.count)
   }))
-  // most-varying properties lead each row, so a constant waterlogged=false trails
+  // most-varying properties lead each row
   for (const g of blocks) {
     const values = new Map()
     for (const st of g.states) for (const k of Object.keys(st.props ?? {})) {
@@ -177,119 +178,72 @@ defineExpose({ open })
 </script>
 
 <template>
-  <div v-if="state.open" class="ub-backdrop" @pointerdown.self="close">
-    <div class="ub-panel">
-      <header>
-        <h3>{{ state.data?.blocks.length || !state.data?.entities.length ? "Used blocks" : "Used entities" }}</h3>
-        <div class="controls">
-          <div class="seg" :class="{ ghost: !sortsDiffer }">
-            <button :class="{ active: state.sort === 'count' }" @click="state.sort = 'count'">Most common</button>
-            <button :class="{ active: state.sort === 'abc' }" @click="state.sort = 'abc'">A–Z</button>
-          </div>
-          <button class="icon" @click="close" aria-label="Close">
-            <span class="material-symbols-outlined">close</span>
-          </button>
-        </div>
-      </header>
-      <div class="seg tabs" v-if="state.data?.entities.length && state.data?.blocks.length">
-        <button :class="{ active: state.tab === 'blocks' }" @click="state.tab = 'blocks'">Blocks ({{ state.data.blocks.length }})</button>
-        <button :class="{ active: state.tab === 'entities' }" @click="state.tab = 'entities'">Entities ({{ state.data.entities.length }})</button>
+  <Modal v-if="state.open" :width="584" :z="90" @close="close">
+    <template #title>
+      <h3>{{ state.data?.blocks.length || !state.data?.entities.length ? "Used blocks" : "Used entities" }}</h3>
+    </template>
+    <template #controls>
+      <div class="seg" :class="{ ghost: !sortsDiffer }">
+        <button :class="{ active: state.sort === 'count' }" @click="state.sort = 'count'">Most common</button>
+        <button :class="{ active: state.sort === 'abc' }" @click="state.sort = 'abc'">A–Z</button>
       </div>
+    </template>
+    <div class="seg tabs" v-if="state.data?.entities.length && state.data?.blocks.length">
+      <button :class="{ active: state.tab === 'blocks' }" @click="state.tab = 'blocks'">Blocks ({{ state.data.blocks.length }})</button>
+      <button :class="{ active: state.tab === 'entities' }" @click="state.tab = 'entities'">Entities ({{ state.data.entities.length }})</button>
+    </div>
 
-      <div class="body" v-if="state.tab === 'blocks'">
-        <div v-for="g in blockRows" :key="g.id" class="item-row group">
-          <div class="line row" :class="{ click: expandable(g) }" @click="clickBlock(g)">
-            <UsedIcon :id="g.id" :size="32" />
-            <span class="nm">{{ stripNs(g.id) }}</span>
-            <span class="count">×{{ g.count }}<small>{{ fmtPct(g.count) }}</small></span>
-            <span v-if="anyBlockExpandable" class="material-symbols-outlined chev" :class="{ hidden: !expandable(g), open: state.expanded[g.id] }">chevron_right</span>
-          </div>
-          <template v-if="state.expanded[g.id]">
-            <template v-for="st in g.states" :key="JSON.stringify(st.props)">
-              <div class="line row sub" :class="{ click: hasData(st), reserve: anyBlockExpandable }" @click="clickState(g, st)">
-                <UsedIcon :id="g.id" :blockstates="st.props ?? {}" :size="32" />
-                <span v-if="st.entries?.length" class="nm fprops">
-                  <span v-for="[k, v] in st.entries" :key="k" class="fprop"><span class="fpk">{{ k }}</span>{{ v }}</span>
-                </span>
-                <span v-else class="nm mono">default</span>
-                <span v-if="hasData(st)" class="material-symbols-outlined data">{{ sameData(st) ? "open_in_new" : "unfold_more" }}</span>
-                <span class="count">×{{ st.count }}<small>{{ fmtPct(st.count) }}</small></span>
+    <div class="body" v-if="state.tab === 'blocks'">
+      <div v-for="g in blockRows" :key="g.id" class="item-row group">
+        <div class="line row" :class="{ click: expandable(g) }" @click="clickBlock(g)">
+          <UsedIcon :id="g.id" :size="32" />
+          <span class="nm">{{ stripNs(g.id) }}</span>
+          <span class="count">×{{ g.count }}<small>{{ fmtPct(g.count) }}</small></span>
+          <span v-if="anyBlockExpandable" class="material-symbols-outlined chev" :class="{ hidden: !expandable(g), open: state.expanded[g.id] }">chevron_right</span>
+        </div>
+        <template v-if="state.expanded[g.id]">
+          <template v-for="st in g.states" :key="JSON.stringify(st.props)">
+            <div class="line row sub" :class="{ click: hasData(st), reserve: anyBlockExpandable }" @click="clickState(g, st)">
+              <UsedIcon :id="g.id" :blockstates="st.props ?? {}" :size="32" />
+              <span v-if="st.entries?.length" class="nm fprops">
+                <span v-for="[k, v] in st.entries" :key="k" class="fprop"><span class="fpk">{{ k }}</span>{{ v }}</span>
+              </span>
+              <span v-else class="nm mono">default</span>
+              <span v-if="hasData(st)" class="material-symbols-outlined data">{{ sameData(st) ? "open_in_new" : "unfold_more" }}</span>
+              <span class="count">×{{ st.count }}<small>{{ fmtPct(st.count) }}</small></span>
+            </div>
+            <template v-if="hasData(st) && !sameData(st) && state.expandedState[g.id + '|' + JSON.stringify(st.props)]">
+              <div v-for="(b, i) in st.blocks" :key="i" class="line row sub2 click" :class="{ reserve: anyBlockExpandable }" @click="container.open(b)">
+                <span class="nm mono">{{ posText(b.pos) }}</span>
+                <span class="material-symbols-outlined data">open_in_new</span>
               </div>
-              <template v-if="hasData(st) && !sameData(st) && state.expandedState[g.id + '|' + JSON.stringify(st.props)]">
-                <div v-for="(b, i) in st.blocks" :key="i" class="line row sub2 click" :class="{ reserve: anyBlockExpandable }" @click="container.open(b)">
-                  <span class="nm mono">{{ posText(b.pos) }}</span>
-                  <span class="material-symbols-outlined data">open_in_new</span>
-                </div>
-              </template>
             </template>
           </template>
-        </div>
-      </div>
-
-      <div class="body" v-else>
-        <div v-for="g in entityRows" :key="g.id" class="item-row group">
-          <div class="line row click" @click="clickEntity(g)">
-            <UsedIcon kind="entity" :id="g.id" :size="32" />
-            <span class="nm">{{ stripNs(g.id) }}</span>
-            <span v-if="g.allSame" class="material-symbols-outlined data">open_in_new</span>
-            <span class="count">×{{ g.count }}</span>
-            <span v-if="anyEntityExpandable" class="material-symbols-outlined chev" :class="{ hidden: g.allSame, open: state.expanded['e:' + g.id] }">chevron_right</span>
-          </div>
-          <template v-if="!g.allSame && state.expanded['e:' + g.id]">
-            <div v-for="(e, i) in g.list" :key="i" class="line row sub click" :class="{ reserve: anyEntityExpandable }" @click="container.openEntity(e)">
-              <span class="nm mono">{{ posText(e.pos) }}</span>
-              <span class="material-symbols-outlined data">open_in_new</span>
-            </div>
-          </template>
-        </div>
+        </template>
       </div>
     </div>
-  </div>
+
+    <div class="body" v-else>
+      <div v-for="g in entityRows" :key="g.id" class="item-row group">
+        <div class="line row click" @click="clickEntity(g)">
+          <UsedIcon kind="entity" :id="g.id" :size="32" />
+          <span class="nm">{{ stripNs(g.id) }}</span>
+          <span v-if="g.allSame" class="material-symbols-outlined data">open_in_new</span>
+          <span class="count">×{{ g.count }}</span>
+          <span v-if="anyEntityExpandable" class="material-symbols-outlined chev" :class="{ hidden: g.allSame, open: state.expanded['e:' + g.id] }">chevron_right</span>
+        </div>
+        <template v-if="!g.allSame && state.expanded['e:' + g.id]">
+          <div v-for="(e, i) in g.list" :key="i" class="line row sub click" :class="{ reserve: anyEntityExpandable }" @click="container.openEntity(e)">
+            <span class="nm mono">{{ posText(e.pos) }}</span>
+            <span class="material-symbols-outlined data">open_in_new</span>
+          </div>
+        </template>
+      </div>
+    </div>
+  </Modal>
 </template>
 
 <style scoped>
-.ub-backdrop {
-  position: fixed;
-  inset: 0;
-  background: #00000080;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 90;
-}
-
-.ub-panel {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 14px;
-  max-height: 88vh;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  width: 584px;
-  max-width: calc(100vw - 32px);
-}
-
-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-header h3 {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 600;
-}
-
-.controls {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
 /* matches the 30px close button so hiding the seg never shifts the header */
 .controls .seg { height: 30px; }
 
@@ -299,53 +253,12 @@ header h3 {
   padding: 0 10px;
 }
 
-button.icon {
-  display: flex;
-  align-items: center;
-  padding: 4px;
-}
-
-.seg {
-  display: flex;
-  gap: 4px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 3px;
-}
-
-.seg button {
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  padding: 4px 10px;
-  color: var(--text-dim);
-  font-size: 12.5px;
-}
-
-.seg.tabs button { flex: 1; }
-
 /* hidden, not removed, so the header keeps its height */
 .seg.ghost { visibility: hidden; }
 
-.seg button:hover:not(.active) {
-  background: #ffffff0a;
-  color: var(--text);
-}
-
-.seg button.active {
-  background: var(--panel-2);
-  border-color: var(--border);
-  color: var(--text);
-}
-
 .body {
-  overflow: auto;
   display: flex;
   flex-direction: column;
-  /* scrollbar sits on the modal edge instead of inside the padding */
-  margin-right: -14px;
-  padding-right: 14px;
 }
 
 .item-row.group {
@@ -374,8 +287,7 @@ button.icon {
 .row.click:hover .chev,
 .row.click:hover .data { color: var(--text); }
 
-/* indent via margin so the divider spans only the content width;
-   each level steps in by the parent's icon (32px) + half the gap (5px) */
+/* margins, not padding, so dividers span only the content; levels step by icon + half gap */
 .row.sub {
   margin-left: 43px;
   margin-right: 6px;
@@ -404,7 +316,7 @@ button.icon {
 .chev.hidden { visibility: hidden; }
 .chev.open { transform: rotate(90deg); }
 
-/* chevron column (18px + half the gap) reserved without a placeholder element */
+/* reserves the chevron column */
 .row.reserve {
   margin-right: 29px;
   padding-right: 5px;

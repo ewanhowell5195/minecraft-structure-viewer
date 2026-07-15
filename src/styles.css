@@ -154,6 +154,98 @@ aside section .check {
   white-space: nowrap;
 }
 
+/* shared modal shell (Modal.vue) */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: #00000080;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  gap: var(--modal-gap, 10px);
+  max-width: calc(100vw - 32px);
+}
+
+.modal-panel > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.modal-panel .titles { align-self: flex-start; }
+
+.modal-panel header h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.modal-panel .controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.modal-panel button.icon {
+  display: flex;
+  align-items: center;
+  padding: 4px;
+}
+
+/* negative margin puts the scrollbar on the modal edge instead of inside the padding */
+.modal-panel .body {
+  overflow: auto;
+  margin-right: -14px;
+  padding-right: 14px;
+}
+
+/* segmented controls: tab bars and sort toggles */
+.seg {
+  display: flex;
+  gap: 4px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 3px;
+}
+
+.seg button {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 4px 10px;
+  color: var(--text-dim);
+  font-size: 12.5px;
+}
+
+.seg.tabs button {
+  flex: 1;
+  padding: 5px 0;
+  font-size: 13px;
+}
+
+.seg button:hover:not(.active) {
+  background: #ffffff0a;
+  color: var(--text);
+}
+
+.seg button.active {
+  background: var(--panel-2);
+  border-color: var(--border);
+  color: var(--text);
+}
+
 /* shared blockstate chips: jigsaw "Turns into" facts and used blocks breakdowns */
 .fprops {
   display: flex;

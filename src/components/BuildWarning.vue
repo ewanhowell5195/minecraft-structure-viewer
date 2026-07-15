@@ -1,6 +1,7 @@
 <script setup>
 import { computed } from "vue"
 import { useBuild } from "../composables/useBuild.js"
+import Modal from "./Modal.vue"
 
 const buildApi = useBuild()
 const { state } = buildApi
@@ -13,34 +14,19 @@ const time = computed(() => {
 </script>
 
 <template>
-  <div v-if="state.warn" class="bw-backdrop">
-    <div class="bw-panel">
-      <h3>Large build</h3>
-      <p>This structure is estimated to take <strong>{{ time }}</strong> to build on this machine.</p>
-      <div class="row">
-        <button class="primary" @click="buildApi.answerWarn(true)">Build anyway</button>
-        <button @click="buildApi.answerWarn(false)">Cancel</button>
-      </div>
+  <Modal v-if="state.warn" :width="340" :z="250" :closable="false" :dismissable="false" style="--modal-gap: 0px" class="bw">
+    <h3>Large build</h3>
+    <p>This structure is estimated to take <strong>{{ time }}</strong> to build on this machine.</p>
+    <div class="row">
+      <button class="primary" @click="buildApi.answerWarn(true)">Build anyway</button>
+      <button @click="buildApi.answerWarn(false)">Cancel</button>
     </div>
-  </div>
+  </Modal>
 </template>
 
 <style scoped>
-.bw-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 250;
-  background: #00000080;
-  display: grid;
-  place-items: center;
-}
-
-.bw-panel {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 10px;
+.bw :deep(.modal-panel) {
   padding: 18px 20px;
-  width: 340px;
   box-shadow: 0 10px 40px #00000080;
 }
 

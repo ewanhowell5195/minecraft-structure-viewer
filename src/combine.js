@@ -52,8 +52,7 @@ export function combine(pieces) {
         continue
       }
       if (SB.test(e.Name)) {
-        // DATA markers survive assembly (processed as their own session level);
-        // __rot preserves the piece rotation for facing-sensitive markers
+        // DATA markers survive assembly; __rot keeps the piece rotation for facing-sensitive markers
         if (b.nbt?.mode !== "DATA") continue
         const nbt = rot ? { ...b.nbt, __rot: rot & 3 } : b.nbt
         cells.set(key, { Name: e.Name, Properties: e.Properties, nbt })

@@ -86,8 +86,7 @@ export function parseSeedParam(param) {
 let seededHistory = false
 let navigatingHistory = false
 
-// the implicit start-up structure keeps the URL pristine; only a manual pick
-// or a session change writes params
+// the implicit start-up structure keeps the URL pristine
 const DEFAULT_REL = "minecraft/village/plains/houses/plains_small_house_1"
 let implicitLoad = false
 

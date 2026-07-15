@@ -7,6 +7,7 @@ import { useStructure } from "../composables/useStructure.js"
 import { useWalk } from "../composables/useWalk.js"
 import { getFont, measure, drawText } from "../mcfont.js"
 import { describeTable, prettyName } from "../loot.js"
+import Modal from "./Modal.vue"
 import ItemIcon from "./ItemIcon.vue"
 import UsedIcon from "./UsedIcon.vue"
 import NbtTree from "./NbtTree.vue"
@@ -167,20 +168,14 @@ watch(() => [state.open, state.stacks, state.gui], () => {
 </script>
 
 <template>
-  <div v-if="state.open" class="ct-backdrop" @pointerdown.self="close">
-    <div class="ct-panel">
-      <header>
-        <div class="titles">
-          <h3>{{ state.blockName }}</h3>
-          <span class="tid">{{ state.tableId }}</span>
-        </div>
-        <button class="icon" title="Close" @click="close">
-          <span class="material-symbols-outlined">close</span>
-        </button>
-      </header>
+  <Modal v-if="state.open" :width="584" style="--modal-gap: 12px" @close="close">
+    <template #title>
+      <h3>{{ state.blockName }}</h3>
+      <span class="tid">{{ state.tableId }}</span>
+    </template>
       <div v-if="state.error" class="err">{{ state.error }}</div>
       <template v-else>
-        <nav class="tabs" v-if="TABS.length">
+        <nav class="seg tabs" v-if="TABS.length">
           <button v-for="t in TABS" :key="t.id" :class="{ active: state.tab === t.id }"
             @click="container.setTab(t.id)">{{ t.label }}</button>
         </nav>
@@ -223,7 +218,7 @@ watch(() => [state.open, state.stacks, state.gui], () => {
                 <span v-else class="fl phl">Template pool</span>
                 <span class="pid">{{ state.poolId }}</span>
               </div>
-              <div v-for="(p, i) in state.poolEntries ?? []" :key="i" class="pe"
+              <div v-for="(p, i) in state.poolEntries ?? []" :key="i" class="item-row pe"
                 :class="{ clickable: p.clickable }" :title="p.clickable ? 'Load ' + p.label : ''"
                 @click="p.clickable && loadPoolStructure(p.rel)">
                 <span class="nm mono-nm">{{ poolLeaf(p.label) }}</span>
@@ -305,94 +300,14 @@ watch(() => [state.open, state.stacks, state.gui], () => {
           </div>
         </div>
       </template>
-    </div>
-  </div>
+  </Modal>
 </template>
 
 <style scoped>
-.ct-backdrop {
-  position: fixed;
-  inset: 0;
-  background: #00000080;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 100;
-}
-
-.ct-panel {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 14px;
-  max-height: 88vh;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  width: 584px;
-  max-width: calc(100vw - 32px);
-}
-
-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.titles h3 {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 600;
-}
-
 .tid {
   font-size: 12px;
   color: var(--text-dim);
   font-family: ui-monospace, monospace;
-}
-
-button.icon {
-  display: flex;
-  align-items: center;
-  padding: 4px;
-}
-
-.tabs {
-  display: flex;
-  gap: 4px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 3px;
-}
-
-.tabs button {
-  flex: 1;
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  padding: 5px 0;
-  color: var(--text-dim);
-  font-size: 13px;
-}
-
-.tabs button:hover:not(.active) {
-  background: #ffffff0a;
-  color: var(--text);
-}
-
-.tabs button.active {
-  background: var(--panel-2);
-  border-color: var(--border);
-  color: var(--text);
-}
-
-.body {
-  overflow: auto;
-  /* scrollbar sits on the modal edge instead of inside the padding */
-  margin-right: -14px;
-  padding-right: 14px;
 }
 
 .pane.data { gap: 8px; }
@@ -486,17 +401,13 @@ button.icon {
 }
 
 .pool-card .pe {
-  display: flex;
-  align-items: center;
-  gap: 10px;
   padding: 5px 10px;
+  border-radius: 0;
 }
 
-.pool-card .pe:nth-child(even) { background: #ffffff05; }
 .pool-card .pe.clickable { cursor: pointer; }
 .pool-card .pe.clickable:hover { background: #ffffff0d; }
 .pool-card .pe.clickable:hover .nm { color: var(--accent); }
-.pool-card .pe .nm { flex: 1; }
 
 .pool-card .pfb {
   display: flex;

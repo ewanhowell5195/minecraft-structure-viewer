@@ -151,7 +151,6 @@ async function regenerate() {
 function syncUrl() {
   const u = new URL(location)
   if (state.active && state.level > 0 && state.seed != null) {
-    // an implicit default load leaves the URL pristine until the session changes it
     if (baseName && !u.searchParams.get("structure")) u.searchParams.set("structure", baseName)
     u.searchParams.set("seed", state.seed.toString(16))
     u.searchParams.set("level", String(state.level + 1))
