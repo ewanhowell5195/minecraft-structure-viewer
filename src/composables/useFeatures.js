@@ -85,7 +85,7 @@ const nsPath = ref => ref.includes(":") ? ref.replace(":", "/") : "minecraft/" +
 async function resolvePlaced(ref) {
   if (ref == null) return null
   if (typeof ref === "object") {
-    if (ref.feature !== undefined) return resolveFeatureRef(ref.feature)
+    if (ref.type === undefined && ref.feature !== undefined) return resolveFeatureRef(ref.feature)
     return ref
   }
   const rel = nsPath(ref)
@@ -96,7 +96,7 @@ async function resolvePlaced(ref) {
 
 async function resolveFeatureRef(ref) {
   if (ref == null) return null
-  if (typeof ref === "object") return ref.feature !== undefined ? resolveFeatureRef(ref.feature) : ref
+  if (typeof ref === "object") return ref.type === undefined && ref.feature !== undefined ? resolveFeatureRef(ref.feature) : ref
   return readFeature(nsPath(ref))
 }
 

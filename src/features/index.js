@@ -2,7 +2,7 @@
 import { nextInt, sampleFloat, sampleInt, sampleState, pickWeighted, intBounds } from "./providers.js"
 import { generateTree, generateFallenTree } from "./tree.js"
 import { runEndSpike } from "../generators/endspikes.js"
-import { DIR, HORIZ, OPP, statePicker } from "../transforms.js"
+import { DIR, HORIZ, OPP, shuffle, statePicker } from "../transforms.js"
 
 const strip = t => (t ?? "").replace("minecraft:", "")
 
@@ -636,6 +636,60 @@ const TYPES = {
 
 Object.assign(TYPES, {
   async no_op() {},
+
+  async coral_claw(world, json, rand, resolvePlaced, ox, oy, oz) {
+    if (!(await placeCoral(world, json.feature, rand, resolvePlaced, ox, oy, oz))) return
+    const claw = HORIZ[nextInt(rand, 4)]
+    const count = nextInt(rand, 2) + 2
+    const dirs = shuffle([claw, HORIZ[(HORIZ.indexOf(claw) + 1) & 3], HORIZ[(HORIZ.indexOf(claw) + 3) & 3]], rand).slice(0, count)
+    for (const branch of dirs) {
+      let x = ox + DIR[branch][0], y = oy, z = oz + DIR[branch][2]
+      const sideway = nextInt(rand, 2) + 1
+      let seg, inway
+      if (branch === claw) {
+        seg = claw
+        inway = nextInt(rand, 3) + 2
+      } else {
+        y += 1
+        seg = [branch, "up"][nextInt(rand, 2)]
+        inway = nextInt(rand, 3) + 3
+      }
+      for (let i = 0; i < sideway && await placeCoral(world, json.feature, rand, resolvePlaced, x, y, z); i++) {
+        x += DIR[seg][0]; y += DIR[seg][1]; z += DIR[seg][2]
+      }
+      x -= DIR[seg][0]; y -= DIR[seg][1]; z -= DIR[seg][2]
+      y += 1
+      for (let i = 0; i < inway; i++) {
+        x += DIR[claw][0]; z += DIR[claw][2]
+        if (!(await placeCoral(world, json.feature, rand, resolvePlaced, x, y, z))) break
+        if (rand() < 0.25) y += 1
+      }
+    }
+  },
+
+  async coral_tree(world, json, rand, resolvePlaced, ox, oy, oz) {
+    let y = oy
+    const trunk = nextInt(rand, 3) + 1
+    for (let i = 0; i < trunk; i++) {
+      if (!(await placeCoral(world, json.feature, rand, resolvePlaced, ox, y, oz))) return
+      y += 1
+    }
+    const count = nextInt(rand, 3) + 2
+    const dirs = shuffle(HORIZ, rand).slice(0, count)
+    for (const branch of dirs) {
+      let bx = ox + DIR[branch][0], by = y, bz = oz + DIR[branch][2]
+      const height = nextInt(rand, 5) + 2
+      let seg = 0
+      for (let j = 0; j < height && await placeCoral(world, json.feature, rand, resolvePlaced, bx, by, bz); j++) {
+        seg++
+        by += 1
+        if (j === 0 || (seg >= 2 && rand() < 0.25)) {
+          bx += DIR[branch][0]; bz += DIR[branch][2]
+          seg = 0
+        }
+      }
+    }
+  },
 
   async overlay(world, json, rand, resolvePlaced, ox, oy, oz) {
     for (const entry of json.features) {
@@ -1311,6 +1365,20 @@ function testPredicate(world, pred, x, y, z) {
   return true
 }
 
+// coral units never replace already-placed blocks, like the game only replacing water
+async function placeCoral(world, placed, rand, resolvePlaced, x, y, z) {
+  const inner = await resolvePlaced(placed)
+  if (!inner) return false
+  const pos = placed && typeof placed === "object" && placed.placement
+    ? applyPlacement(world, placed.placement, rand, x, y, z)
+    : [x, y, z]
+  if (!pos || world.get(...pos)) return false
+  const guarded = Object.create(world)
+  guarded.set = (gx, gy, gz, s) => { if (!world.get(gx, gy, gz)) world.set(gx, gy, gz, s) }
+  await generate(guarded, inner, rand, resolvePlaced, ...pos)
+  return !!world.get(...pos)
+}
+
 // only offsets, scans and rarity matter for a single showcase placement;
 // counts and biome/height filters have no meaning here
 function applyPlacement(world, mods, rand, x, y, z) {
@@ -1321,6 +1389,9 @@ function applyPlacement(world, mods, rand, x, y, z) {
         break
       case "rarity_filter":
         if (nextInt(rand, mod.chance) !== 0) return null
+        break
+      case "random_chance":
+        if (rand() >= mod.chance) return null
         break
       case "environment_scan": {
         const step = strip(mod.direction_of_search) === "down" ? -1 : 1

@@ -86,8 +86,14 @@ export function sampleState(p, rand) {
     case "simple_state_provider": return p.state
     case "weighted_state_provider": return pickWeighted(p.entries, rand).data
     case "rotated_block_provider": {
-      const axis = ["x", "y", "z"][nextInt(rand, 3)]
-      return { Name: p.state.Name, Properties: { ...(p.state.Properties ?? {}), axis } }
+      const dirs = ["down", "up", "north", "south", "west", "east"]
+      const dir = p.direction ? strip(p.direction) : dirs[nextInt(rand, 6)]
+      const base = p.state?.type ? sampleState(p.state, rand) : p.state
+      if (!base?.Name) return base
+      const props = { ...(base.Properties ?? {}) }
+      if ("axis" in props) props.axis = dir === "down" || dir === "up" ? "y" : dir === "north" || dir === "south" ? "z" : "x"
+      else if (("facing" in props || /_wall_fan$/.test(strip(base.Name))) && dir !== "up" && dir !== "down") props.facing = dir
+      return { Name: base.Name, Properties: props }
     }
     case "randomized_int_state_provider": {
       const s = sampleState(p.source, rand)
@@ -110,7 +116,9 @@ export function sampleState(p, rand) {
       return states[nextInt(rand, states.length)]
     }
     case "random_block_provider": {
-      const pool = TAG_POOLS[p.blocks] ?? (Array.isArray(p.blocks) ? p.blocks.map(b => b.replace("minecraft:", "")) : null)
+      const pool = Array.isArray(p.blocks)
+        ? p.blocks.map(b => b.replace("minecraft:", ""))
+        : TAG_POOLS[String(p.blocks).replace(/^#/, "")] ?? null
       return pool ? { Name: "minecraft:" + pool[nextInt(rand, pool.length)] } : null
     }
   }
