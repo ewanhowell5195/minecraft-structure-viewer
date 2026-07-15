@@ -11,6 +11,7 @@ import { makeSignTexts, plainText } from "../signs.js"
 import { JIGSAW, parseState } from "../transforms.js"
 import { isInspectable, readTrialSpawnerConfig } from "../loot.js"
 import { getFont, measure, drawText } from "../mcfont.js"
+import { drawFakeMap } from "../fakemap.js"
 
 const packs = usePacks()
 const sceneApi = useScene()
@@ -375,6 +376,53 @@ async function attachEntityTag(nbt, wx, topY, wz) {
   return 1
 }
 
+const FRAME = /(^|:)(glow_)?item_frame$/
+const FACING6 = ["down", "up", "north", "south", "west", "east"]
+const FRAME_ROT = { south: [0, Math.PI], west: [0, Math.PI / 2], east: [0, -Math.PI / 2], up: [Math.PI / 2, 0], down: [-Math.PI / 2, 0] }
+const MAP_OFF = 6.85
+const MAP_DIR = { north: [0, 0, 1], south: [0, 0, -1], east: [-1, 0, 0], west: [1, 0, 0], up: [0, -1, 0], down: [0, 1, 0] }
+
+function placeFakeMap(f) {
+  const d = MAP_DIR[f.facing]
+  f.mesh.position.set(f.bx * 16 + d[0] * f.off, f.by * 16 + d[1] * f.off, f.bz * 16 + d[2] * f.off)
+}
+
+function mapIdOf(it) {
+  const n = Number(it?.components?.["minecraft:map_id"] ?? it?.tag?.map)
+  return Number.isFinite(n) ? n : null
+}
+
+const MAP_GEO = {
+  north: g => g.rotateY(Math.PI),
+  south: g => g,
+  east: g => g.rotateY(Math.PI / 2),
+  west: g => g.rotateY(-Math.PI / 2),
+  up: g => g.rotateX(-Math.PI / 2),
+  down: g => g.rotateX(Math.PI / 2)
+}
+const MAP_SAMPLE = {
+  north: (bx, by, bz, cx, cy) => [bx * 128 + 127 - cx, by * 128 + 127 - cy],
+  south: (bx, by, bz, cx, cy) => [bx * 128 + cx, by * 128 + 127 - cy],
+  east: (bx, by, bz, cx, cy) => [bz * 128 + 127 - cx, by * 128 + 127 - cy],
+  west: (bx, by, bz, cx, cy) => [bz * 128 + cx, by * 128 + 127 - cy],
+  up: (bx, by, bz, cx, cy) => [bx * 128 + cx, bz * 128 + cy],
+  down: (bx, by, bz, cx, cy) => [bx * 128 + cx, bz * 128 + 127 - cy]
+}
+
+async function makeFakeMap(bx, by, bz, facing, id, off = MAP_OFF) {
+  const canvas = document.createElement("canvas")
+  canvas.width = canvas.height = 128
+  await drawFakeMap(canvas, (cx, cy) => MAP_SAMPLE[facing](bx, by, bz, cx, cy), id)
+  const tex = new THREE.CanvasTexture(canvas)
+  tex.colorSpace = THREE.SRGBColorSpace
+  tex.magFilter = THREE.NearestFilter
+  const geo = MAP_GEO[facing](new THREE.PlaneGeometry(16, 16))
+  const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: tex }))
+  const f = { mesh, tex, facing, bx, by, bz, off }
+  placeFakeMap(f)
+  return f
+}
+
 async function attachEntities(structure, lib, assets) {
   let draws = 0
   const groupCache = new Map()
@@ -385,11 +433,17 @@ async function attachEntities(structure, lib, assets) {
     const id = e.nbt?.id
     if (typeof id !== "string") continue
     const [ns, name] = id.includes(":") ? id.split(":") : ["minecraft", id]
+    const frame = FRAME.test(id)
     const yaw = Number(e.nbt.Rotation?.[0] ?? 0)
-    const facing = ["south", "west", "north", "east"][((Math.floor(yaw / 90 + 0.5) % 4) + 4) % 4]
+    let facing = ["south", "west", "north", "east"][((Math.floor(yaw / 90 + 0.5) % 4) + 4) % 4]
+    if (frame) facing = FACING6[Number(e.nbt.Facing ?? 3)] ?? facing
     const data = { facing }
     for (const [k, v] of Object.entries(e.nbt)) if (typeof v === "string" && k !== "id") data[k] = v
-    const key = id + "|" + JSON.stringify(data)
+    const frameItem = frame ? e.nbt.Item?.id : null
+    const frameMap = typeof frameItem === "string" && /(^|:)filled_map$/.test(frameItem)
+    if (frameMap) data.map = "true"
+    const invisible = frame && Number(e.nbt.Invisible ?? 0) === 1
+    const key = id + "|" + JSON.stringify(data) + (frame ? `|${frameItem ?? ""}|${e.nbt.ItemRotation ?? 0}|${invisible ? 1 : 0}` : "")
     let template = groupCache.get(key)
     if (template === undefined) {
       template = null
@@ -403,23 +457,56 @@ async function attachEntities(structure, lib, assets) {
         if (blockId) {
           const g = new THREE.Group()
           g.userData.daytime = daytimeUniform
-          for (const model of await lib.parseBlockstate(assets, blockId, { data, ignoreAtlases: true })) {
-            const data = await lib.resolveModelData(assets, model)
-            await lib.loadModel(g, assets, data, { display: {}, lighting: state.lighting, light: sceneLight, animate: false })
+          if (!invisible) {
+            for (const model of await lib.parseBlockstate(assets, blockId, { data, ignoreAtlases: true })) {
+              const data = await lib.resolveModelData(assets, model)
+              await lib.loadModel(g, assets, data, { display: {}, lighting: state.lighting, light: sceneLight, animate: false })
+            }
           }
-          if (g.children.length) template = g
+          if (frame && frameItem && !frameMap) {
+            try {
+              const disp = { type: "fallback", display: "fixed" }
+              const itemGroup = new THREE.Group()
+              for (const m of await lib.parseItemDefinition(assets, frameItem, { data: e.nbt.Item.components ?? {}, display: disp, ignoreAtlases: true })) {
+                const resolved = await lib.resolveModelData(assets, m)
+                await lib.loadModel(itemGroup, assets, resolved, { display: disp, lighting: state.lighting, light: sceneLight, animate: false })
+              }
+              if (itemGroup.children.length) {
+                itemGroup.position.z = invisible ? 8 : 7
+                itemGroup.scale.setScalar(0.5)
+                itemGroup.rotation.z = -Number(e.nbt.ItemRotation ?? 0) * Math.PI / 4
+                g.add(itemGroup)
+              }
+            } catch {}
+          }
+          if (frame && FRAME_ROT[facing]) g.rotation.set(FRAME_ROT[facing][0], FRAME_ROT[facing][1], 0)
+          if (g.children.length || invisible) template = g
         }
       } catch {}
       groupCache.set(key, template)
     }
-    // cells centre at pos*16 and span +-8, so a point maps to pos*16 - 8; templates bottom at -8, so y stays
-    const wx = e.pos[0] * 16 - 8, wy = e.pos[1] * 16, wz = e.pos[2] * 16 - 8
+    const wx = frame ? Math.floor(e.pos[0]) * 16 : e.pos[0] * 16 - 8
+    const wy = frame ? Math.floor(e.pos[1]) * 16 : e.pos[1] * 16
+    const wz = frame ? Math.floor(e.pos[2]) * 16 : e.pos[2] * 16 - 8
     if (template) {
       const g = groupCache.get(key).clone()
       g.position.set(wx, wy, wz)
+      const box = new THREE.Box3().setFromObject(g)
       root.add(g)
       g.traverse(o => { if (o.isMesh) draws++ })
-      draws += await attachEntityTag(e.nbt, wx, new THREE.Box3().setFromObject(g).max.y, wz)
+      if (frameMap) {
+        try {
+          const fake = await makeFakeMap(Math.floor(e.pos[0]), Math.floor(e.pos[1]), Math.floor(e.pos[2]), facing, mapIdOf(e.nbt.Item), invisible ? 7.85 : MAP_OFF)
+          root.add(fake.mesh)
+          markerTextures.push(fake.tex)
+          draws++
+        } catch {}
+      }
+      const noBox = box.isEmpty()
+      entityMarkers.push(noBox
+        ? { stack: [e], x: wx, y: wy - 8, z: wz }
+        : { stack: [e], x: wx, y: box.min.y, z: wz, h: box.max.y - box.min.y, ...(frame ? { box } : null) })
+      draws += await attachEntityTag(e.nbt, wx, noBox ? wy + 8 : box.max.y, wz)
       continue
     }
     sprites.push({ e, name, wx, wy, wz })
@@ -506,6 +593,7 @@ async function attachSpawnerEggs(structure, lib, assets) {
 }
 
 function boxForEntity(m) {
+  if (m.box) return _aimBox.copy(m.box).translate(root.position)
   _aimBox.min.set(m.x - ENTITY_BOX / 2, m.y, m.z - ENTITY_BOX / 2)
   _aimBox.max.set(m.x + ENTITY_BOX / 2, m.y + (m.h ?? ENTITY_BOX), m.z + ENTITY_BOX / 2)
   _aimBox.translate(root.position)
