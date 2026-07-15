@@ -210,7 +210,7 @@ const NBT_ZERO_DEFAULTS = new Set([
   "HurtTime", "DeathTime", "HurtByTimestamp", "AbsorptionAmount", "FallFlying",
   "Invulnerable", "PortalCooldown", "fall_distance", "FallDistance", "OnGround",
   "InLove", "Age", "ForcedAge", "AgeLocked", "CanPickUpLoot", "PersistenceRequired",
-  "LeftHanded", "NoAI", "Leashed", "Dimension", "Sitting",
+  "LeftHanded", "NoAI", "Leashed", "Dimension", "Sitting", "PlayerCreated",
   "current_impulse_context_reset_grace_time"
 ])
 const emptyObj = v => !!v && typeof v === "object" && !Array.isArray(v) && !Object.keys(v).length
