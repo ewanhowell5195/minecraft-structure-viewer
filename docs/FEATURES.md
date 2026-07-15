@@ -243,9 +243,9 @@ Conventions the current layout follows, keep them:
   handles), so tiles, grids, and packing behave exactly like any other
   structure and the standard +3 tile border is what the apron fills. The
   grass palette entry carries `__biome` (the feature_biomes.json value),
-  which useBuild spreads into `parseBlockstate` as the lib's `biome` arg;
-  mergeParts keys palette entries on it so combined loads keep per-tree
-  tints.
+  which useBuild passes as the per-block `biome` in its `createScene`
+  call; mergeParts keys palette entries on it so combined loads keep
+  per-tree tints.
 - `generateTree`/`generateFallenTree` accept
   `opts.runFeature(id, x, y, z)` (tree-local coords): the tree handler
   queues those calls and awaits them after generation. The pale_moss

@@ -5,7 +5,6 @@ import { usePacks } from "./usePacks.js"
 import { useScene } from "./useScene.js"
 import { useSlicers } from "./useSlicers.js"
 import { useLock } from "./useLock.js"
-import { optimise } from "../optimise.js"
 import { yieldTask } from "../yield.js"
 import { exportScene } from "../export.js"
 import { makeSignTexts, plainText } from "../signs.js"
@@ -69,58 +68,6 @@ function fixLegacyProps(name, props) {
     return p
   }
   return props
-}
-
-async function remapFluidStates(structure, lib, assets) {
-  const byPos = new Map()
-  for (const b of structure.blocks) byPos.set(b.pos.join(","), b)
-  const byKey = new Map()
-  structure.palette.forEach((e, i) => { if (e?.__fluidKey) byKey.set(e.__fluidKey, i) })
-  // hot caches resolve awaits as microtasks: force real yields or heavy loads freeze the page
-  let seen = 0
-  for (const b of structure.blocks) {
-    if (++seen % 2000 === 0) {
-      state.status = `water surfaces… ${seen}/${structure.blocks.length}`
-      // the water pass is the front of the build bar's unified 0..10000 sweep
-      state.progress = { phase: "build", done: Math.round(seen / structure.blocks.length * 1500), total: 10000 }
-      await yieldTask()
-      if (cancelBuild) return
-    }
-    const e = structure.palette[b.state]
-    if (!e?.Name) continue
-    const type = lib.fluidTypeOf?.(e.Name, e.Properties) ?? null
-    if (!type) continue
-    const [bx, by, bz] = b.pos
-    const neighbors = {}
-    for (let dy = -1; dy <= 1; dy++) for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
-      const nb = byPos.get((bx + dx) + "," + (by + dy) + "," + (bz + dz))
-      const ne = nb && structure.palette[nb.state]
-      if (!ne?.Name) continue
-      let k = !dx && !dy && !dz ? "self" : dy === 1 ? "up" : dy === -1 ? "down" : ""
-      if (dx || dy || dz) {
-        if (dz === -1) k += (k ? "_" : "") + "north"
-        else if (dz === 1) k += (k ? "_" : "") + "south"
-        if (dx === -1) k += (k ? "_" : "") + "west"
-        else if (dx === 1) k += (k ? "_" : "") + "east"
-      }
-      neighbors[k] = { id: ne.Name, ...(ne.Properties ?? {}) }
-    }
-    const h = await lib.fluidHeights(assets, type, neighbors)
-    const ov = h.overlay ? (h.overlay.north ? "n" : "") + (h.overlay.south ? "s" : "") + (h.overlay.east ? "e" : "") + (h.overlay.west ? "w" : "") : ""
-    const sm = h.same ? (h.same.north ? "n" : "") + (h.same.south ? "s" : "") + (h.same.east ? "e" : "") + (h.same.west ? "w" : "") + (h.same.up ? "u" : "") + (h.same.down ? "d" : "") : ""
-    const key = `${e.Name}|${JSON.stringify(e.Properties ?? null)}|${h.nw.toFixed(3)},${h.ne.toFixed(3)},${h.sw.toFixed(3)},${h.se.toFixed(3)}|${h.full ? 1 : 0}|${h.angle == null ? "" : h.angle.toFixed(2)}|${ov}|${sm}`
-    let idx = byKey.get(key)
-    if (idx === undefined) {
-      idx = structure.palette.length
-      const entry = { Name: e.Name }
-      if (e.Properties) entry.Properties = e.Properties
-      entry.__fluidHeights = h
-      entry.__fluidKey = key
-      structure.palette.push(entry)
-      byKey.set(key, idx)
-    }
-    b.state = idx
-  }
 }
 
 async function remapLoaderStates(structure, lib, assets) {
@@ -219,7 +166,10 @@ function answerWarn(ok) {
 
 // seeded into template userData so the library shares one live uniform: daytime changes re-light with no rebuild
 const daytimeUniform = { value: NOON }
-watch(() => state.daytime, v => { daytimeUniform.value = v })
+watch(() => state.daytime, v => {
+  daytimeUniform.value = v
+  if (sceneHandle?.group.userData.daytime) sceneHandle.group.userData.daytime.value = v
+})
 
 let savedDaytime = NOON
 watch(() => state.fullbright, on => {
@@ -243,11 +193,13 @@ function sameProps(a, b) {
 const current = shallowRef(null)
 let source = null // the structure as loaded/combined; current may be a display strip of it
 let root = null
+let sceneHandle = null
+let inputIdxOf = null // structure block index -> createScene input index, -1 for door/loader/air
+let nonSolidPalette = new Set() // handle palette indices with all-plane models
 if (typeof window !== "undefined") window.__vroot = () => root
 let animator = null
 let templates = null
 let nonSolid = new Set()
-let atlasTextures = []
 let sceneLight = null
 let entityMarkers = [] // root-local coords
 let markerTextures = []
@@ -627,27 +579,42 @@ function templateBoxes(tmpl, arr) {
   })
   return arr
 }
-function collisionBoxes(stateIdx) {
-  let arr = collBoxCache.get(stateIdx)
+function templateFor(i, stateIdx) {
+  if (sceneHandle && inputIdxOf) {
+    const ii = i != null ? inputIdxOf[i] : -1
+    if (ii >= 0) {
+      const ti = sceneHandle.blockTemplate[ii]
+      if (ti !== 0xFFFFFFFF) {
+        const t = sceneHandle.templates[ti]
+        return { key: "t" + ti, tmpl: t.group, soft: nonSolidPalette.has(t.palette) }
+      }
+    }
+  }
+  const tmpl = templates?.get(stateIdx)
+  return tmpl ? { key: "s" + stateIdx, tmpl, soft: nonSolid.has(stateIdx) } : null
+}
+
+function collisionBoxesFor(i, stateIdx) {
+  const t = templateFor(i, stateIdx)
+  if (!t) return []
+  let arr = collBoxCache.get(t.key)
   if (arr) return arr
   arr = []
-  let tmpl = templates.get(stateIdx)
-  for (let v = 1; !tmpl && v < 17; v++) tmpl = templates.get(stateIdx + ":" + v)
-  if (tmpl && !nonSolid.has(stateIdx)) templateBoxes(tmpl, arr)
-  collBoxCache.set(stateIdx, arr)
+  if (!t.soft) templateBoxes(t.tmpl, arr)
+  collBoxCache.set(t.key, arr)
   return arr
 }
 
-function aimBoxes(stateIdx) {
-  const coll = collisionBoxes(stateIdx)
-  if (coll.length || !nonSolid.has(stateIdx)) return coll
-  let arr = aimBoxCache.get(stateIdx)
+function aimBoxesFor(i, stateIdx) {
+  const t = templateFor(i, stateIdx)
+  if (!t) return []
+  const coll = collisionBoxesFor(i, stateIdx)
+  if (coll.length || !t.soft) return coll
+  let arr = aimBoxCache.get(t.key)
   if (arr) return arr
   arr = []
-  let tmpl = templates.get(stateIdx)
-  for (let v = 1; !tmpl && v < 17; v++) tmpl = templates.get(stateIdx + ":" + v)
-  if (tmpl) templateBoxes(tmpl, arr)
-  aimBoxCache.set(stateIdx, arr)
+  templateBoxes(t.tmpl, arr)
+  aimBoxCache.set(t.key, arr)
   return arr
 }
 
@@ -698,7 +665,7 @@ function rayHit(ox, oy, oz, dx, dy, dz, REACH = 80) {
       return entT < t ? { entity: entM } : { container: b }
     }
     const cx = bx * 16 + rx, cy = by * 16 + ry, cz = bz * 16 + rz
-    for (const s of aimBoxes(b.state)) {
+    for (const s of aimBoxesFor(i, b.state)) {
       const th = rayBoxT(ox, oy, oz, dx, dy, dz, s[0] + cx, s[1] + cy, s[2] + cz, s[3] + cx, s[4] + cy, s[5] + cz)
       if (th != null && th <= REACH) return entT < th ? { entity: entM } : { block: b }
     }
@@ -777,18 +744,19 @@ function blockBoxes(b) {
   const structure = current.value
   const out = []
   if (!structure || !root) return out
-  if (nonSolid.has(b.state) || gateOpen(structure.palette[b.state])) return out
+  if (gateOpen(structure.palette[b.state])) return out
+  const i = cellIndex().get(b.pos.join(","))
   const p = root.position
   const ox = p.x + b.pos[0] * 16, oy = p.y + b.pos[1] * 16, oz = p.z + b.pos[2] * 16
   const key = b.pos.join(",")
-  for (const l of collisionBoxes(b.state)) out.push({ nx: l[0] + ox, ny: l[1] + oy, nz: l[2] + oz, px: l[3] + ox, py: l[4] + oy, pz: l[5] + oz, key })
+  for (const l of collisionBoxesFor(i, b.state)) out.push({ nx: l[0] + ox, ny: l[1] + oy, nz: l[2] + oz, px: l[3] + ox, py: l[4] + oy, pz: l[5] + oz, key })
   return out
 }
 
 function currentBoxes() {
   const structure = current.value
   const out = []
-  if (!structure || !root || !templates) return out
+  if (!structure || !root) return out
   for (const b of structure.blocks) out.push(...blockBoxes(b))
   return out
 }
@@ -810,7 +778,7 @@ function disposeGroup(g) {
 function disposeBundle(b) {
   sceneApi.animators.delete(b.animator)
   disposeGroup(b.group)
-  for (const t of b.atlasTextures) t.dispose()
+  b.handle?.dispose()
   for (const t of b.markerTextures) t.dispose()
   b.sceneLight?.dispose()
 }
@@ -832,8 +800,8 @@ function showFull(on) {
 
 function restoreFull() {
   if (!fullBundle || state.building) return false
-  const old = root, oldTex = atlasTextures, oldMarkerTex = markerTextures, oldAnimator = animator, oldLight = sceneLight
-  ;({ group: root, atlasTextures, markerTextures, animator, entityMarkers, doorByCell, sceneLight } = fullBundle)
+  const old = root, oldHandle = sceneHandle, oldMarkerTex = markerTextures, oldAnimator = animator, oldLight = sceneLight
+  ;({ group: root, handle: sceneHandle, inputIdxOf, nonSolidPalette, markerTextures, animator, entityMarkers, doorByCell, sceneLight } = fullBundle)
   current.value = fullBundle.structure
   state.info = fullBundle.info
   root.visible = true
@@ -842,11 +810,13 @@ function restoreFull() {
   sceneApi.animators.add(animator)
   fullBundle = null
   rootSliced = false
+  collBoxCache = new Map()
+  aimBoxCache = new Map()
   if (old) {
     sceneApi.contentRoots.delete(old)
     sceneApi.animators.delete(oldAnimator)
     disposeGroup(old)
-    for (const t of oldTex) t.dispose()
+    oldHandle?.dispose()
     for (const t of oldMarkerTex) t.dispose()
     oldLight?.dispose()
   }
@@ -867,7 +837,8 @@ async function build(structure = source, refit = true, slice = false) {
   state.building = true
   cancelBuild = false
   lock(true)
-  const prevCurrent = current.value, prevSource = source, prevHasSB = state.hasStructureBlocks, prevInfo = state.info
+  const prevCurrent = current.value, prevSource = source, prevHasSB = state.hasStructureBlocks, prevInfo = state.info,
+    prevInputIdx = inputIdxOf, prevNonSolidPalette = nonSolidPalette
   let newLight = null
   function abort() {
     newLight?.dispose()
@@ -916,103 +887,53 @@ async function build(structure = source, refit = true, slice = false) {
 
     templates = new Map()
     nonSolid = new Set()
+    nonSolidPalette = new Set()
     collBoxCache = new Map()
     aimBoxCache = new Map()
     const isPlane = el => el.from[0] === el.to[0] || el.from[1] === el.to[1] || el.from[2] === el.to[2]
 
-    // seeded rotations: states whose blockstate has weighted arrays get one
-    // template per distinct pick across 16 probe seeds, chosen per position
-    const RSEEDS = Array.from({ length: 16 }, (_, i) => Math.imul(i + 1, 0x9E3779B1) >>> 0)
-    const randomStates = new Map()
-    async function hasRandomModels(name) {
-      if (randomStates.has(name)) return randomStates.get(name)
-      let random = false
-      try {
-        const [ns, block] = name.includes(":") ? name.split(":") : ["minecraft", name]
-        const buf = await lib.readFile(`assets/${ns}/blockstates/${block}.json`, assets)
-        if (buf) {
-          const json = JSON.parse(new TextDecoder().decode(buf))
-          if (json.variants) random = Object.values(json.variants).some(v => Array.isArray(v) && v.length > 1)
-          else if (json.multipart) random = json.multipart.some(p => Array.isArray(p.apply) && p.apply.length > 1)
-        }
-      } catch {}
-      randomStates.set(name, random)
-      return random
-    }
-    const statePicks = new Map()
-    async function picks(stateIdx) {
-      if (statePicks.has(stateIdx)) return statePicks.get(stateIdx)
+    // doors and loader-variant states keep their own templates outside createScene
+    async function buildStateTemplate(stateIdx) {
+      if (templates.has(stateIdx)) return templates.get(stateIdx)
       const entry = structure.palette[stateIdx]
-      let data = null
-      if (entry && !AIR.test(entry.Name)) {
-        try {
-          const name = LEGACY_RENAMES[entry.Name.replace("minecraft:", "")] ?? entry.Name
-          const props = fixLegacyProps(name.replace("minecraft:", ""), entry.Properties)
-          const biome = entry.__biome ? { biome: entry.__biome } : null
-          data = { name, props, models: [await lib.parseBlockstate(assets, name, { data: props ?? {}, ignoreAtlases: true, ...biome })], buckets: null }
-          if (await hasRandomModels(name)) {
-            const byKey = new Map([[JSON.stringify(data.models[0]), 0]])
-            const buckets = []
-            for (const seed of RSEEDS) {
-              const picked = await lib.parseBlockstate(assets, name, { data: props ?? {}, ignoreAtlases: true, seed, ...biome })
-              const k = JSON.stringify(picked)
-              let v = byKey.get(k)
-              if (v === undefined) {
-                v = data.models.length
-                byKey.set(k, v)
-                data.models.push(picked)
-              }
-              buckets.push(v)
-            }
-            if (data.models.length > 1) data.buckets = buckets
-          }
-        } catch { data = null }
-      }
-      statePicks.set(stateIdx, data)
-      return data
-    }
-    function posHash(x, y, z) {
-      const h = Math.imul(x, 3129871) ^ Math.imul(z, 116129781) ^ y
-      return (Math.imul(Math.imul(h, h), 42317861) + Math.imul(h, 11) | 0) >>> 16
-    }
-    function variantAt(stateIdx, pos) {
-      const p = statePicks.get(stateIdx)
-      return p?.buckets ? p.buckets[posHash(pos[0], pos[1], pos[2]) & 15] : 0
-    }
-    const tmplKey = (stateIdx, variant) => variant ? stateIdx + ":" + variant : stateIdx
-    async function template(stateIdx, variant = 0) {
-      const key = tmplKey(stateIdx, variant)
-      if (templates.has(key)) return templates.get(key)
-      const p = await picks(stateIdx)
+      const g = new THREE.Group()
+      g.userData.daytime = daytimeUniform
       let tmpl = null
-      if (p) {
-        const entry = structure.palette[stateIdx]
-        const g = new THREE.Group()
-        g.userData.daytime = daytimeUniform
-        try {
-          // plain blocks need a block too, for the library's light emission
-          const block = entry.__block ?? { id: p.name, properties: p.props ?? {} }
-          // all-plane models (plants, vines, rails) have no collision in game
-          let any = false, allPlanes = true
-          for (const model of p.models[variant]) {
-            const data = await lib.resolveModelData(assets, model)
-            await lib.loadModel(g, assets, data, { display: {}, lighting: state.lighting, light: newLight, animate: false, fluidHeights: entry.__fluidHeights, block, neighbors: block.neighbors })
-            for (const el of data?.elements ?? []) { any = true; if (!isPlane(el)) allPlanes = false }
-          }
-          if (any && allPlanes) nonSolid.add(stateIdx)
-        } catch {}
+      try {
+        const name = LEGACY_RENAMES[entry.Name.replace("minecraft:", "")] ?? entry.Name
+        const props = fixLegacyProps(name.replace("minecraft:", ""), entry.Properties)
+        const block = entry.__block ?? { id: name, properties: props ?? {} }
+        const biome = entry.__biome ? { biome: entry.__biome } : null
+        let any = false, allPlanes = true
+        for (const model of await lib.parseBlockstate(assets, name, { data: props ?? {}, ignoreAtlases: true, ...biome })) {
+          const data = await lib.resolveModelData(assets, model)
+          await lib.loadModel(g, assets, data, { display: {}, lighting: state.lighting, light: newLight, animate: false, block, neighbors: block.neighbors })
+          for (const el of data?.elements ?? []) { any = true; if (!isPlane(el)) allPlanes = false }
+        }
+        if (any && allPlanes) nonSolid.add(stateIdx)
         if (g.children.length) tmpl = g
-      }
-      templates.set(key, tmpl)
+      } catch {}
+      templates.set(stateIdx, tmpl)
       return tmpl
     }
+    if (lib.ModelLoader) await remapLoaderStates(structure, lib, assets)
+    if (cancelBuild) return abort()
 
-    const isAirState = structure.palette.map(e => !e?.Name || AIR.test(e.Name))
-    const solid = []
-    for (const b of structure.blocks) {
-      if (!isAirState[b.state]) solid.push(b)
+    const inputBlocks = []
+    const inputIdx = new Int32Array(structure.blocks.length).fill(-1)
+    for (let i = 0; i < structure.blocks.length; i++) {
+      const b = structure.blocks[i]
+      const e = structure.palette[b.state]
+      if (!e?.Name || AIR.test(e.Name) || isOpenable(e) || e.__loaderKey) continue
+      const name = LEGACY_RENAMES[e.Name.replace("minecraft:", "")] ?? e.Name
+      const props = fixLegacyProps(name.replace("minecraft:", ""), e.Properties)
+      const entry = { id: name, pos: b.pos }
+      if (props) entry.properties = props
+      if (e.__biome) entry.biome = e.__biome
+      inputIdx[i] = inputBlocks.length
+      inputBlocks.push(entry)
     }
-    const total = solid.length
+    const total = inputBlocks.length
 
     const perfCal = loadPerf()
     let warnedOnce = false
@@ -1024,45 +945,60 @@ async function build(structure = source, refit = true, slice = false) {
       }
     }
     const tBuild = performance.now()
+    let tOpt = null
 
-    if (lib.fluidHeights) await remapFluidStates(structure, lib, assets)
-    if (lib.ModelLoader) await remapLoaderStates(structure, lib, assets)
-
-    let placedCount = 0
-    let sampleAt = null, tSample = 0
-    state.progress = { phase: "build", done: 1500, total: 10000 }
-    for (let i = 0; i < total; i++) {
-      await picks(solid[i].state)
-      if (await template(solid[i].state, variantAt(solid[i].state, solid[i].pos))) placedCount++
-      if (i % 400 === 399) {
-        state.status = `building… ${i + 1}/${total}`
-        state.progress = { phase: "build", done: 1500 + Math.round((i + 1) / total * 8500), total: 10000 }
-        await yieldTask()
-        if (cancelBuild) return abort()
-        if (!warnedOnce && !perfCal) {
-          // marginal rate after the cold start: a cumulative average projects absurd totals
-          if (sampleAt === null) {
-            if (performance.now() - tBuild > 400) {
-              sampleAt = i + 1
-              tSample = performance.now()
-            }
-          } else if (i + 1 - sampleAt >= 4000) {
-            const rate = (i + 1 - sampleAt) / (performance.now() - tSample) // blocks per ms
-            const elapsed = performance.now() - tBuild
-            // the optimise pass usually dominates: assume 3x the template pass
-            const projected = elapsed + (total - (i + 1)) / rate + 3 * total / rate
-            if (projected > WARN_MS) {
-              warnedOnce = true
-              if (!await askWarn(projected)) return abort()
-            } else {
-              warnedOnce = true
-            }
+    const handle = await lib.createScene(assets, inputBlocks, {
+      lighting: state.lighting,
+      light: state.lighting === "world" ? (newLight ?? false) : undefined,
+      daytime: state.daytime,
+      keepTemplates: true,
+      ignoreAtlases: true,
+      animate: false,
+      onProgress: (stage, done, tot) => {
+        if (stage.name === "optimize") {
+          tOpt ??= performance.now()
+          state.status = `optimising… ${Math.round(done / tot * 100)}%`
+          state.progress = { phase: "optimise", done, total: tot }
+        } else if (stage.name === "light") {
+          state.status = "lighting…"
+          state.progress = { phase: "light", done, total: tot }
+        } else {
+          const f = stage.name === "parse" ? done / tot * 0.15 : 0.15 + done / tot * 0.85
+          state.status = `building… ${Math.round(f * 100)}%`
+          state.progress = { phase: "build", done: Math.round(f * 10000), total: 10000 }
+        }
+        // uncalibrated runs project from live progress; declining the dialog cancels the build
+        if (!warnedOnce && !perfCal && stage.name !== "optimize") {
+          const elapsed = performance.now() - tBuild
+          const overall = (stage.index + done / tot) / stage.count
+          if (elapsed > 1500 && overall > 0.02) {
+            warnedOnce = true
+            const projected = elapsed / overall
+            if (projected > WARN_MS) askWarn(projected).then(ok => { if (!ok) cancelBuild = true })
           }
         }
-      }
+      },
+      shouldCancel: () => cancelBuild
+    })
+    if (!handle || cancelBuild) {
+      handle?.dispose()
+      return abort()
     }
-    state.progress = { phase: "build", done: 10000, total: 10000 }
-    if (cancelBuild) return abort()
+
+    for (let pi = 0; pi < handle.palette.length; pi++) {
+      try {
+        let any = false, allPlanes = true
+        for (const model of handle.palette[pi].models) {
+          const data = await lib.resolveModelData(assets, model)
+          for (const el of data?.elements ?? []) { any = true; if (!isPlane(el)) allPlanes = false }
+        }
+        if (any && allPlanes) nonSolidPalette.add(pi)
+      } catch {}
+    }
+    if (cancelBuild) {
+      handle.dispose()
+      return abort()
+    }
 
     // a centre ≡ 8 (mod 16) keeps block-centred templates on the grid lattice
     const gridCentre = v => Math.round((v - 8) / 16) * 16 + 8
@@ -1074,10 +1010,13 @@ async function build(structure = source, refit = true, slice = false) {
       if (!isOpenable(structure.palette[b.state])) continue
       const openIdx = stateWithOpen(structure, b.state, "true")
       const closedIdx = stateWithOpen(structure, b.state, "false")
-      await template(openIdx)
-      await template(closedIdx)
+      await buildStateTemplate(openIdx)
+      await buildStateTemplate(closedIdx)
       doorEntries.push({ b, openIdx, closedIdx })
-      if (cancelBuild) return abort()
+      if (cancelBuild) {
+        handle.dispose()
+        return abort()
+      }
     }
 
     // multi-part states and uvlock rotations (baked UVs) can't share: per-state fallback
@@ -1120,41 +1059,39 @@ async function build(structure = source, refit = true, slice = false) {
       }
     }
 
-    const optStruct = doorEntries.length ? { ...structure, blocks: structure.blocks.filter(b => !isOpenable(structure.palette[b.state])) } : structure
-
-    // culling must see the renamed blocks: a legacy name's missing-model fallback occludes like a full cube
-    function legacyCull(name, props) {
-      const renamed = LEGACY_RENAMES[name.replace("minecraft:", "")] ?? name
-      return [renamed, fixLegacyProps(renamed.replace("minecraft:", ""), props)]
+    let loaderDraws = 0, loaderTris = 0, loaderCount = 0
+    for (const b of structure.blocks) {
+      if (!structure.palette[b.state]?.__loaderKey) continue
+      const tmpl = await buildStateTemplate(b.state)
+      if (cancelBuild) {
+        handle.dispose()
+        return abort()
+      }
+      if (!tmpl) continue
+      const inst = tmpl.clone()
+      inst.position.set(b.pos[0] * 16, b.pos[1] * 16, b.pos[2] * 16)
+      handle.group.add(inst)
+      loaderCount++
+      inst.traverse(o => {
+        if (!o.isMesh) return
+        loaderDraws++
+        loaderTris += (o.geometry.index?.count ?? o.geometry.attributes.position?.count ?? 0) / 3
+      })
     }
-    const buildMs = performance.now() - tBuild
-    const tOpt = performance.now()
-    const opt = await optimise(optStruct, templates, position, {
-      lib,
-      templateKey: b => tmplKey(b.state, variantAt(b.state, b.pos)),
-      getCullFaces: opts => {
-        const [id, blockstates] = legacyCull(opts.id, opts.blockstates)
-        const neighbors = {}
-        for (const [dir, n] of Object.entries(opts.neighbors ?? {})) {
-          const { id: nid, ...props } = n
-          const [rid, rprops] = legacyCull(nid, props)
-          neighbors[dir] = { id: rid, ...(rprops ?? {}) }
-        }
-        return lib.getCullFaces({ id, blockstates, neighbors, assets })
-      },
-      setStatus: s => { state.status = s },
-      setProgress: (done, total) => { state.progress = { phase: "optimise", done, total } },
-      shouldCancel: () => cancelBuild
-    })
-    if (!opt) return abort()
-    // tiny builds are all fixed cost and would poison the per-block rates
-    if (total >= 2000) savePerf(buildMs / total, (performance.now() - tOpt) / total)
-    const { group: next, atlasTextures: pending, drawCalls, tris } = opt
 
-    const old = root, oldTex = atlasTextures, oldMarkerTex = markerTextures,
+    // tiny builds are all fixed cost and would poison the per-block rates
+    if (total >= 2000 && tOpt) savePerf((tOpt - tBuild) / total, (performance.now() - tOpt) / total)
+    handle.group.position.copy(position)
+    const next = handle.group
+    const drawCalls = handle.drawCalls + loaderDraws
+    const tris = handle.tris + loaderTris
+    const placedCount = total + doorEntries.length + loaderCount
+
+    const old = root, oldHandle = sceneHandle, oldMarkerTex = markerTextures,
       oldAnimator = animator, oldMarkers = entityMarkers, oldDoors = doorByCell, oldLight = sceneLight
     root = next
-    atlasTextures = pending
+    sceneHandle = handle
+    inputIdxOf = inputIdx
     sceneLight = newLight
     markerTextures = []
     sceneApi.scene.add(root)
@@ -1214,7 +1151,7 @@ async function build(structure = source, refit = true, slice = false) {
     state.info = {
       size: `${sx}×${sy}×${sz}`,
       blocks: placedCount,
-      palette: statePicks.size,
+      palette: handle.palette.length,
       draws: drawCalls + doorDraws + entityDraws,
       tris
     }
@@ -1224,12 +1161,13 @@ async function build(structure = source, refit = true, slice = false) {
     if (slicedApplied && old && prevSource === source && !rootSliced && !fullBundle) {
       old.visible = false
       fullBundle = {
-        group: old, atlasTextures: oldTex, markerTextures: oldMarkerTex, animator: oldAnimator,
+        group: old, handle: oldHandle, inputIdxOf: prevInputIdx, nonSolidPalette: prevNonSolidPalette,
+        markerTextures: oldMarkerTex, animator: oldAnimator,
         structure: prevCurrent, info: prevInfo, entityMarkers: oldMarkers, doorByCell: oldDoors, sceneLight: oldLight
       }
     } else if (old) {
       disposeGroup(old)
-      for (const t of oldTex) t.dispose()
+      oldHandle?.dispose()
       for (const t of oldMarkerTex) t.dispose()
       oldLight?.dispose()
     }
