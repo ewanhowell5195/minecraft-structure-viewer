@@ -18,10 +18,13 @@ const state = container.state
 const walk = useWalk()
 const bgEl = ref(null)
 const itemsEl = ref(null)
+const hlBackEl = ref(null)
+const hlFrontEl = ref(null)
+const hoverSlot = ref(-1)
 const rendering = ref(false)
 const S = 3
 
-const TABS = computed(() => state.dataRows ? [] : state.table
+const TABS = computed(() => state.dataRows || state.item ? [] : state.table
   ? [
     { id: "loot", label: "Chest" },
     { id: "list", label: "List" },
@@ -74,11 +77,83 @@ const wides = computed(() => (state.dataRows ?? []).filter(r => r.wide))
 
 addEventListener("keydown", e => {
   if (e.key === "Escape" && state.open) {
+    if (state.item) return container.itemBack()
     // relock on keyup: relocking mid-press lets the browser treat the same Esc as the exit gesture
     container.close()
     addEventListener("keyup", () => walk.resume(), { once: true })
   }
 })
+
+function slotAt(ev) {
+  const K = state.gui
+  if (!K || !itemsEl.value) return -1
+  const r = itemsEl.value.getBoundingClientRect()
+  const x = (ev.clientX - r.left) / S, y = (ev.clientY - r.top) / S
+  const col = Math.floor((x - K.ox) / 18), row = Math.floor((y - K.oy) / 18)
+  if (col < 0 || col >= K.cols || row < 0 || row >= K.rows) return -1
+  return row * K.cols + col
+}
+
+function clickGui(ev) {
+  const st = state.stacks.find(s => s.slot === slotAt(ev))
+  if (st) container.openItem(st)
+}
+
+const hoverHasStack = computed(() => state.stacks.some(s => s.slot === hoverSlot.value))
+
+// modern items carry components; pre-flattening structures store a tag compound
+const itemData = computed(() => {
+  const it = state.item
+  if (it?.components && Object.keys(it.components).length) return { label: "Components", value: it.components }
+  if (it?.tag && Object.keys(it.tag).length) return { label: "NBT", value: it.tag }
+  return null
+})
+
+const isMapItem = computed(() => /(^|:)filled_map$/.test(state.item?.id ?? ""))
+
+let hlImgs = null, hlAssets = null
+async function loadHl() {
+  const assets = packs.assets.value
+  if (hlImgs && hlAssets === assets) return hlImgs
+  const lib = await loadLibrary()
+  const load = async name => {
+    const buf = await lib.readFile(`assets/minecraft/textures/gui/sprites/container/${name}.png`, assets)
+    return buf ? createImageBitmap(new Blob([buf], { type: "image/png" })) : null
+  }
+  hlImgs = { back: await load("slot_highlight_back"), front: await load("slot_highlight_front") }
+  hlAssets = assets
+  return hlImgs
+}
+
+function moveGui(ev) {
+  const slot = slotAt(ev)
+  if (slot === hoverSlot.value) return
+  hoverSlot.value = slot
+  drawHl()
+}
+
+function leaveGui() {
+  hoverSlot.value = -1
+  drawHl()
+}
+
+async function drawHl() {
+  const K = state.gui, bc = hlBackEl.value, fc = hlFrontEl.value
+  if (!K || !bc || !fc) return
+  bc.width = fc.width = 176 * S
+  bc.height = fc.height = (bodyH(K) + 7) * S
+  const slot = hoverSlot.value
+  if (slot < 0 || !state.stacks.some(s => s.slot === slot)) return
+  const imgs = await loadHl()
+  if (slot !== hoverSlot.value) return
+  const [ix, iy] = inner(K, slot)
+  for (const [c, img] of [[bc, imgs.back], [fc, imgs.front]]) {
+    if (!img) continue
+    const ctx = c.getContext("2d")
+    ctx.imageSmoothingEnabled = false
+    ctx.drawImage(img, (ix - 4) * S, (iy - 4) * S, 24 * S, 24 * S)
+  }
+}
 
 const inner = (K, slot) => [K.ox + (slot % K.cols) * 18 + 1, K.oy + (slot / K.cols | 0) * 18 + 1]
 
@@ -160,6 +235,8 @@ async function drawItemsInner(c, K, seq) {
 }
 
 watch(() => [state.open, state.gui, state.guiTitle], () => {
+  hoverSlot.value = -1
+  if (state.open) nextTick(drawHl)
   if (state.open) nextTick(drawBg)
 })
 watch(() => [state.open, state.stacks, state.gui], () => {
@@ -233,29 +310,56 @@ watch(() => [state.open, state.stacks, state.gui], () => {
             </div>
           </div>
 
-          <div v-show="state.tab === 'loot' && !state.dataRows" class="pane loot">
-            <div class="gui">
+          <div v-if="state.item" class="pane item-view">
+            <button class="iback" @click="container.itemBack()">
+              <span class="material-symbols-outlined">arrow_back</span>
+              Back
+            </button>
+            <div class="item-row">
+              <ItemIcon :id="state.item.id" :components="state.item.components" :size="32" />
+              <div class="ittl">
+                <span class="nm" :title="stackName(state.item)">{{ stackName(state.item) }}</span>
+                <span class="iid">{{ state.item.id.replace(/^minecraft:/, "") }}</span>
+              </div>
+              <span class="cntv big" v-if="state.item.count > 1">×{{ state.item.count }}</span>
+            </div>
+            <div v-if="itemData" class="wide-card">
+              <div class="fl">{{ itemData.label }}</div>
+              <NbtTree :value="itemData.value" />
+            </div>
+            <div v-else class="empty">No item data.</div>
+            <p v-if="isMapItem" class="map-note">
+              The shown map previews here are generated stand-ins. Minecraft keeps map artwork in the
+              world save, so the real map image is not available in a structure file.
+            </p>
+          </div>
+
+          <div v-show="state.tab === 'loot' && !state.dataRows && !state.item" class="pane loot">
+            <div class="gui" :style="{ cursor: hoverHasStack ? 'pointer' : '' }"
+              @click="clickGui" @pointermove="moveGui" @pointerleave="leaveGui">
               <canvas ref="bgEl"></canvas>
-              <canvas ref="itemsEl" class="items"></canvas>
+              <canvas ref="hlBackEl" class="overlay"></canvas>
+              <canvas ref="itemsEl" class="overlay"></canvas>
+              <canvas ref="hlFrontEl" class="overlay"></canvas>
             </div>
             <div v-if="state.note" class="note-line">{{ state.note }}</div>
           </div>
 
-          <div v-if="state.tab === 'list'" class="pane">
+          <div v-if="state.tab === 'list' && !state.item" class="pane">
             <div v-if="!listStacks.length" class="empty">Empty.</div>
-            <div v-for="(s, i) in listStacks" :key="i" class="item-row">
+            <div v-for="(s, i) in listStacks" :key="i" class="item-row clickable" @click="container.openItem(s)">
               <ItemIcon :id="s.id" :components="s.components" :size="32" />
               <span class="nm" :title="stackName(s)">{{ stackName(s) }}</span>
               <span class="cntv big">×{{ s.count }}</span>
             </div>
           </div>
 
-          <div v-if="state.tab === 'odds'" class="pane">
+          <div v-if="state.tab === 'odds' && !state.item" class="pane">
             <div v-if="state.oddsBusy" class="empty">Measuring drop rates over 10,000 opens…</div>
             <div v-else-if="state.odds && !state.odds.length" class="empty">This table never drops anything.</div>
             <template v-else-if="state.odds">
               <div class="cols"><span class="nm">Item · most common first</span><span class="chance-h">Chance</span><span class="cnt-h">Amount</span></div>
-              <div v-for="o in state.odds" :key="o.id + JSON.stringify(o.components ?? null)" class="item-row">
+              <div v-for="o in state.odds" :key="o.id + JSON.stringify(o.components ?? null)" class="item-row clickable" @click="container.openItem(o)">
                 <ItemIcon :id="o.id" :components="o.components" :size="32" />
                 <span class="nm" :title="stackName(o)">{{ stackName(o) }}</span>
                 <span class="meter"><i :style="{ width: Math.max(o.chance * 100, 1.5) + '%' }"></i></span>
@@ -265,7 +369,7 @@ watch(() => [state.open, state.stacks, state.gui], () => {
             </template>
           </div>
 
-          <div v-if="state.tab === 'rules'" class="pane rules">
+          <div v-if="state.tab === 'rules' && !state.item" class="pane rules">
             <div v-for="(pool, pi) in rules" :key="pi" class="pool">
               <div class="pool-head">
                 Pool {{ pi + 1 }} · {{ pool.rolls }} roll{{ pool.rolls === "1" ? "" : "s" }}<template v-if="pool.bonus"> (+{{ pool.bonus }} bonus)</template><template v-if="pool.chance"> · {{ pool.chance }}</template>
@@ -280,7 +384,7 @@ watch(() => [state.open, state.stacks, state.gui], () => {
           </div>
 
         </div>
-        <div class="actions" v-if="state.table && (state.tab === 'loot' || state.tab === 'list')">
+        <div class="actions" v-if="state.table && !state.item && (state.tab === 'loot' || state.tab === 'list')">
           <button :disabled="rendering" @click="container.reroll()">
             <span class="material-symbols-outlined">shuffle</span>
             Re-roll
@@ -457,6 +561,51 @@ watch(() => [state.open, state.stacks, state.gui], () => {
   padding-top: 6px;
 }
 
+.item-row.clickable { cursor: pointer; }
+.item-row.clickable:hover .nm { color: var(--accent); }
+
+.pane.item-view { gap: 8px; }
+
+.iback {
+  background: transparent;
+  border: none;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 12px;
+  width: fit-content;
+}
+
+.iback:hover { color: var(--text); background: transparent; }
+.iback .material-symbols-outlined { font-size: 16px; }
+
+.ittl {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.iid {
+  font-family: ui-monospace, monospace;
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+
+.map-note {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px dashed #d9a13f;
+  border-radius: 8px;
+  background: #d9a13f14;
+  color: #e5c07b;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .gui {
   position: relative;
   width: fit-content;
@@ -465,9 +614,10 @@ watch(() => [state.open, state.stacks, state.gui], () => {
 
 .gui canvas { display: block; }
 
-.gui .items {
+.gui .overlay {
   position: absolute;
   inset: 0;
+  pointer-events: none;
 }
 
 .actions {

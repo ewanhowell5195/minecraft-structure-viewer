@@ -43,7 +43,8 @@ async function render() {
   try {
     if (props.kind === "entity") {
       const bare = props.id.replace(/^minecraft:/, "")
-      for (const item of [bare + "_spawn_egg", bare]) {
+      const candidates = bare === "cushion" ? ["red_cushion"] : [bare + "_spawn_egg", bare]
+      for (const item of candidates) {
         if (!await lib.readFile(`assets/minecraft/items/${item}.json`, assets)) continue
         await lib.renderItem({ id: item, assets, width: size, height: size, canvas: c })
         return

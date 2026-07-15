@@ -162,6 +162,7 @@ function open() {
 function close() {
   state.open = false
   state.data = null
+  container.refreshHover()
 }
 
 watch(build.current, () => {

@@ -48,6 +48,7 @@ const state = reactive({
   pileTotal: 0,
   gui: null,
   guiTitle: "",
+  item: null,
   dataRows: null,
   blurb: "",
   poolId: "",
@@ -301,6 +302,8 @@ function openEntity(e) {
   state.pick = null
   state.error = ""
   state.note = ""
+  state.item = null
+  state.tab = ""
   state.blockName = prettyName(id)
   state.blurb = ""
   state.tableId = ""
@@ -312,6 +315,22 @@ function openEntity(e) {
   state.poolEntries = null
   state.poolFallback = ""
   state.poolStack = []
+  if (/^(glow_)?item_frame$/.test(id) && e.nbt.Item?.id) {
+    const it = e.nbt.Item
+    state.dataRows = null
+    state.tab = "loot"
+    state.odds = null
+    state.oddsBusy = false
+    state.rolls = 0
+    state.pileTotal = 0
+    state.kind = KINDS.dispenser
+    state.gui = KINDS.dispenser
+    state.guiTitle = state.blockName
+    state.stacks = [{ id: it.id, count: Number(it.count ?? it.Count ?? 1), components: it.components, tag: it.tag, slot: 4 }]
+    openSeq++
+    state.open = true
+    return
+  }
   const rows = [{ label: "Entity", value: id, mono: true }]
   if (e.pos) rows.push({ label: "Position", value: e.pos.map(v => +(+v).toFixed(3)).join(", "), mono: true })
   const yaw = e.nbt?.Rotation?.[0]
@@ -345,9 +364,18 @@ function openEntityMarker(m) {
   state.poolEntries = null
   state.poolFallback = ""
   state.poolStack = []
+  state.item = null
   state.pick = stack.map(e => ({ e, label: prettyName(stripNs(e.nbt?.id ?? "entity")) }))
   openSeq++
   state.open = true
+}
+
+function openItem(stack) {
+  state.item = stack
+}
+
+function itemBack() {
+  state.item = null
 }
 
 async function open(block) {
@@ -356,6 +384,7 @@ async function open(block) {
   state.pick = null
   state.error = ""
   state.note = ""
+  state.item = null
   state.blockName = prettyName(name)
   state.kind = kindOf(name)
   state.dataRows = null
@@ -366,6 +395,7 @@ async function open(block) {
   state.poolStack = []
   const bare = stripNs(name)
   if (/(^|_)(command_block|structure_block|jigsaw|spawner)$/.test(bare)) {
+    state.tab = ""
     state.tableId = ""
     state.table = null
     state.stacks = []
@@ -407,6 +437,7 @@ async function open(block) {
         id: it.id,
         count: it.count ?? it.Count ?? 1,
         components: it.components,
+        tag: it.tag,
         slot: Math.min(cap - 1, Math.max(0, it.Slot ?? 0))
       }))
       state.note = "Fixed contents stored in the structure."
@@ -490,6 +521,17 @@ async function addRoll(n = 1) {
 function close() {
   state.open = false
   state.pick = null
+  state.item = null
+  refreshHover()
+}
+
+let lastX = -1, lastY = -1, pickCanvas = null
+function refreshHover() {
+  requestAnimationFrame(() => {
+    if (!pickCanvas || state.open) return
+    if (document.elementFromPoint(lastX, lastY) !== pickCanvas) return
+    hoverCheck({ clientX: lastX, clientY: lastY, buttons: 0 }, pickCanvas)
+  })
 }
 
 // grid march instead of a triangle raycast: scanning every merged triangle per event stutters on huge scenes
@@ -549,6 +591,11 @@ function hoverCheck(e, canvas) {
 }
 
 function initPicking(canvas) {
+  pickCanvas = canvas
+  addEventListener("pointermove", e => {
+    lastX = e.clientX
+    lastY = e.clientY
+  })
   canvas.addEventListener("contextmenu", e => e.preventDefault())
   canvas.addEventListener("pointerdown", e => {
     downX = e.clientX
@@ -579,5 +626,5 @@ function initPicking(canvas) {
 }
 
 export function useContainer() {
-  return { state: readonly(state), open, openEntity, openEntityMarker, close, reroll, addRoll, setTab, ensureOdds, openFallbackPool, poolBack, initPicking }
+  return { state: readonly(state), open, openEntity, openEntityMarker, openItem, itemBack, close, reroll, addRoll, setTab, ensureOdds, openFallbackPool, poolBack, initPicking, refreshHover }
 }
