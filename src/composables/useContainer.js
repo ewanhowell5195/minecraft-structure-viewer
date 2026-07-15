@@ -292,7 +292,11 @@ function openEntity(e) {
   if (vd?.type) rows.push({ label: "Variant", value: prettyName(stripNs(vd.type)) })
   const rest = filterDefaultNbt(e.nbt ?? {})
   for (const k of ["id", "Pos", "Rotation", "UUID"]) delete rest[k]
-  if (Object.keys(rest).length) rows.push({ label: "NBT", value: JSON.stringify(rest, null, 2), mono: true, wide: true })
+  if (Object.keys(rest).length) {
+    // nbt longs parse as BigInt, which JSON.stringify refuses
+    const safe = (k, v) => typeof v === "bigint" ? (v >= Number.MIN_SAFE_INTEGER && v <= Number.MAX_SAFE_INTEGER ? Number(v) : v.toString()) : v
+    rows.push({ label: "NBT", value: JSON.stringify(rest, safe, 2), mono: true, wide: true })
+  }
   state.dataRows = rows
   openSeq++
   state.open = true

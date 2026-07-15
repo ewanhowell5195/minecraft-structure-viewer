@@ -19,6 +19,7 @@ const state = reactive({
 })
 
 const stripNs = id => id.replace(/^minecraft:/, "")
+const json = v => JSON.stringify(v, (k, x) => typeof x === "bigint" ? x.toString() + "n" : x)
 const isDataName = name => isInspectable(name) || /(^|[:_])spawner$/.test(stripNs(name))
 
 function compute() {
@@ -68,7 +69,7 @@ function compute() {
   }
   const entityKey = e => {
     const { Pos, UUID, TileX, TileY, TileZ, ...rest } = e.nbt ?? {}
-    return JSON.stringify(rest)
+    return json(rest)
   }
   const entityGroups = Array.from(entities.values(), g => ({
     ...g,
@@ -112,7 +113,7 @@ function expandable(g) {
 }
 
 const hasData = st => !!st.blocks?.length
-const sameData = st => st.blocks.every(b => JSON.stringify(b.nbt ?? null) === JSON.stringify(st.blocks[0].nbt ?? null))
+const sameData = st => st.blocks.every(b => json(b.nbt ?? null) === json(st.blocks[0].nbt ?? null))
 
 function clickBlock(g) {
   if (!expandable(g)) return
