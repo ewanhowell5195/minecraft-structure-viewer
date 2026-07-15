@@ -44,6 +44,18 @@ function compute() {
     count: g.count,
     states: Array.from(g.states.values()).sort((a, b) => b.count - a.count)
   }))
+  // most-varying properties lead each row, so a constant waterlogged=false trails
+  for (const g of blocks) {
+    const values = new Map()
+    for (const st of g.states) for (const k of Object.keys(st.props ?? {})) {
+      if (!values.has(k)) values.set(k, new Set())
+    }
+    for (const [k, set] of values) for (const st of g.states) set.add(st.props?.[k] ?? "\0")
+    const order = Array.from(values.keys()).sort((a, b) => values.get(b).size - values.get(a).size || a.localeCompare(b))
+    for (const st of g.states) {
+      st.label = st.props ? order.filter(k => k in st.props).map(k => `${k}=${st.props[k]}`).join(", ") : "default"
+    }
+  }
 
   const entities = new Map()
   for (const e of s.entities ?? []) {
@@ -93,7 +105,6 @@ function fmtPct(n) {
   return p.toFixed(1).replace(/\.0$/, "") + "%"
 }
 
-const propsText = p => p ? Object.entries(p).map(([k, v]) => `${k}=${v}`).join(", ") : "default"
 const posText = pos => pos.map(v => Math.round(v * 100) / 100).join(", ")
 
 function expandable(g) {
@@ -177,8 +188,8 @@ defineExpose({ open })
           <template v-if="state.expanded[g.id]">
             <template v-for="st in g.states" :key="JSON.stringify(st.props)">
               <div class="row sub" :class="{ click: hasData(st) }" @click="clickState(g, st)">
-                <UsedIcon :id="g.id" :blockstates="st.props ?? {}" :size="24" />
-                <span class="name mono">{{ propsText(st.props) }}</span>
+                <UsedIcon :id="g.id" :blockstates="st.props ?? {}" :size="32" />
+                <span class="name mono">{{ st.label }}</span>
                 <span v-if="hasData(st)" class="material-symbols-outlined data">{{ sameData(st) ? "open_in_new" : "unfold_more" }}</span>
                 <span class="count">×{{ st.count }}<small>{{ fmtPct(st.count) }}</small></span>
               </div>
