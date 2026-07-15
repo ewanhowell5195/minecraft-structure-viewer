@@ -618,24 +618,6 @@ button.icon {
 .cols .chance-h { width: 118px; text-align: right; flex-shrink: 0; }
 .cols .cnt-h { width: 118px; text-align: right; flex-shrink: 0; }
 
-.item-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 3px 6px;
-  border-radius: 6px;
-}
-
-.item-row:nth-child(even) { background: #ffffff06; }
-
-.nm {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .note { opacity: 0.7; }
 
 .meter {

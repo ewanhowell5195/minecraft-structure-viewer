@@ -102,6 +102,15 @@ const entityRows = computed(() => {
 const anyBlockExpandable = computed(() => blockRows.value.some(expandable))
 const anyEntityExpandable = computed(() => entityRows.value.some(g => !g.allSame))
 
+const sortsDiffer = computed(() => {
+  const d = state.data
+  if (!d) return false
+  const rows = state.tab === "blocks" ? d.blocks : d.entities
+  const abc = rows.slice().sort((a, b) => stripNs(a.id).localeCompare(stripNs(b.id)))
+  const count = rows.slice().sort((a, b) => b.count - a.count || stripNs(a.id).localeCompare(stripNs(b.id)))
+  return count.some((r, i) => r.id !== abc[i].id)
+})
+
 function fmtPct(n) {
   const p = n / (state.data?.total || 1) * 100
   if (p >= 99.95) return "100%"
@@ -167,7 +176,7 @@ defineExpose({ open })
       <header>
         <h3>{{ state.data?.blocks.length || !state.data?.entities.length ? "Used blocks" : "Used entities" }}</h3>
         <div class="controls">
-          <div class="seg">
+          <div class="seg" :class="{ ghost: !sortsDiffer }">
             <button :class="{ active: state.sort === 'count' }" @click="state.sort = 'count'">Most common</button>
             <button :class="{ active: state.sort === 'abc' }" @click="state.sort = 'abc'">A–Z</button>
           </div>
@@ -182,48 +191,51 @@ defineExpose({ open })
       </div>
 
       <div class="body" v-if="state.tab === 'blocks'">
-        <template v-for="g in blockRows" :key="g.id">
-          <div class="row" :class="{ click: expandable(g) }" @click="clickBlock(g)">
+        <div v-for="g in blockRows" :key="g.id" class="item-row group">
+          <div class="line row" :class="{ click: expandable(g) }" @click="clickBlock(g)">
             <UsedIcon :id="g.id" :size="32" />
-            <span class="name">{{ stripNs(g.id) }}</span>
+            <span class="nm">{{ stripNs(g.id) }}</span>
             <span class="count">×{{ g.count }}<small>{{ fmtPct(g.count) }}</small></span>
             <span v-if="anyBlockExpandable" class="material-symbols-outlined chev" :class="{ hidden: !expandable(g), open: state.expanded[g.id] }">chevron_right</span>
           </div>
           <template v-if="state.expanded[g.id]">
             <template v-for="st in g.states" :key="JSON.stringify(st.props)">
-              <div class="row sub" :class="{ click: hasData(st) }" @click="clickState(g, st)">
+              <div class="line row sub" :class="{ click: hasData(st) }" @click="clickState(g, st)">
                 <UsedIcon :id="g.id" :blockstates="st.props ?? {}" :size="32" />
-                <span class="name mono">{{ st.label }}</span>
+                <span class="nm mono">{{ st.label }}</span>
                 <span v-if="hasData(st)" class="material-symbols-outlined data">{{ sameData(st) ? "open_in_new" : "unfold_more" }}</span>
                 <span class="count">×{{ st.count }}<small>{{ fmtPct(st.count) }}</small></span>
+                <span v-if="anyBlockExpandable" class="material-symbols-outlined chev hidden">chevron_right</span>
               </div>
               <template v-if="hasData(st) && !sameData(st) && state.expandedState[g.id + '|' + JSON.stringify(st.props)]">
-                <div v-for="(b, i) in st.blocks" :key="i" class="row sub2 click" @click="container.open(b)">
-                  <span class="name mono">{{ posText(b.pos) }}</span>
+                <div v-for="(b, i) in st.blocks" :key="i" class="line row sub2 click" @click="container.open(b)">
+                  <span class="nm mono">{{ posText(b.pos) }}</span>
                   <span class="material-symbols-outlined data">open_in_new</span>
+                  <span v-if="anyBlockExpandable" class="material-symbols-outlined chev hidden">chevron_right</span>
                 </div>
               </template>
             </template>
           </template>
-        </template>
+        </div>
       </div>
 
       <div class="body" v-else>
-        <template v-for="g in entityRows" :key="g.id">
-          <div class="row click" @click="clickEntity(g)">
+        <div v-for="g in entityRows" :key="g.id" class="item-row group">
+          <div class="line row click" @click="clickEntity(g)">
             <UsedIcon kind="entity" :id="g.id" :size="32" />
-            <span class="name">{{ stripNs(g.id) }}</span>
+            <span class="nm">{{ stripNs(g.id) }}</span>
             <span v-if="g.allSame" class="material-symbols-outlined data">open_in_new</span>
             <span class="count">×{{ g.count }}</span>
             <span v-if="anyEntityExpandable" class="material-symbols-outlined chev" :class="{ hidden: g.allSame, open: state.expanded['e:' + g.id] }">chevron_right</span>
           </div>
           <template v-if="!g.allSame && state.expanded['e:' + g.id]">
-            <div v-for="(e, i) in g.list" :key="i" class="row sub click" @click="container.openEntity(e)">
-              <span class="name mono">{{ posText(e.pos) }}</span>
+            <div v-for="(e, i) in g.list" :key="i" class="line row sub click" @click="container.openEntity(e)">
+              <span class="nm mono">{{ posText(e.pos) }}</span>
               <span class="material-symbols-outlined data">open_in_new</span>
+              <span v-if="anyEntityExpandable" class="material-symbols-outlined chev hidden">chevron_right</span>
             </div>
           </template>
-        </template>
+        </div>
       </div>
     </div>
   </div>
@@ -298,6 +310,9 @@ button.icon {
 
 .seg.tabs button { flex: 1; }
 
+/* hidden, not removed, so the header keeps its height */
+.seg.ghost { visibility: hidden; }
+
 .seg button:hover:not(.active) {
   background: #ffffff0a;
   color: var(--text);
@@ -315,12 +330,20 @@ button.icon {
   flex-direction: column;
 }
 
-.row {
+.item-row.group {
+  display: block;
+  padding: 0;
+}
+
+.line {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 5px 8px;
+  padding: 3px 6px;
   border-radius: 6px;
+}
+
+.row {
   font-size: 13px;
   user-select: none;
 }
@@ -328,8 +351,8 @@ button.icon {
 .row.click { cursor: pointer; }
 .row.click:hover { background: #ffffff0a; }
 
-.row.sub { padding-left: 40px; }
-.row.sub2 { padding-left: 76px; }
+.row.sub { padding-left: 24px; }
+.row.sub2 { padding-left: 48px; }
 
 .chev {
   font-size: 18px;
@@ -341,15 +364,7 @@ button.icon {
 .chev.hidden { visibility: hidden; }
 .chev.open { transform: rotate(90deg); }
 
-.name {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.name.mono {
+.nm.mono {
   font-family: ui-monospace, monospace;
   font-size: 12px;
   color: var(--text-dim);

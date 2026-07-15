@@ -134,3 +134,22 @@ aside section .check {
   color: var(--text);
   user-select: none;
 }
+
+/* shared icon/name/count list rows: chest list and odds panes, used blocks and entities */
+.item-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 3px 6px;
+  border-radius: 6px;
+}
+
+.item-row:nth-child(even) { background: #ffffff06; }
+
+.nm {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
