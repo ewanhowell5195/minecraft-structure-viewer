@@ -16,7 +16,7 @@ const time = computed(() => {
 <template>
   <Modal v-if="state.warn" :width="340" :z="250" :closable="false" :dismissable="false" style="--modal-gap: 0px" class="bw">
     <h3>{{ state.warn.selection ? "Large selection" : "Large build" }}</h3>
-    <p v-if="state.warn.selection">Your selection contains <strong>{{ state.warn.blocks.toLocaleString() }} blocks</strong>. Load it now?</p>
+    <p v-if="state.warn.selection">Your selection contains <strong>{{ (state.warn.approx ? "~" : "") + state.warn.blocks.toLocaleString() }} blocks</strong>. Load it now?</p>
     <p v-else-if="state.warn.blocks">This page links to a large build (<strong>{{ state.warn.blocks.toLocaleString() }}+ blocks</strong>). Load it now?</p>
     <p v-else>This structure is estimated to take <strong>{{ time }}</strong> to build on this machine.</p>
     <div class="row">

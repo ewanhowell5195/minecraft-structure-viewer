@@ -258,7 +258,7 @@ function plain(v) {
   return v
 }
 
-export async function buildSelection(world, selected, { yMin = -Infinity, yMax = Infinity, budget = Infinity, cap = Infinity, countOnly = false } = {}, onProgress) {
+export async function buildSelection(world, selected, { yMin = -Infinity, yMax = Infinity, budget = Infinity, cap = Infinity } = {}, onProgress) {
   const chunks = world.chunks.filter(c => selected.has(c.cx + "," + c.cz))
   if (!chunks.length) throw new Error("no chunks selected")
 
@@ -299,43 +299,6 @@ export async function buildSelection(world, selected, { yMin = -Infinity, yMax =
   const x0 = minCx * 16, z0 = minCz * 16
   const y0 = Math.max(minSec * 16, Math.ceil(yMin))
   const yTop = Math.min(maxSec * 16 + 15, Math.floor(yMax))
-
-  if (countOnly) {
-    const relTop = yTop - y0
-    let count = 0
-    for (const c of chunks) {
-      if (onProgress?.(done++, total) === false) throw new Error("cancelled")
-      const nbt = await readChunk(world, c)
-      for (const s of nbt.sections ?? []) {
-        if (s.Y < minSec || s.Y > maxSec || !inRange(s)) continue
-        const bs = s.block_states
-        const pal = bs?.palette
-        if (!pal) continue
-        const sy = s.Y * 16 - y0
-        const air = pal.map(e => AIR.test(e.Name))
-        if (pal.length === 1) {
-          if (air[0]) continue
-          for (let row = 0; row < 16; row++) {
-            const y = sy + row
-            if (y >= 0 && y <= relTop) count += 256
-          }
-          continue
-        }
-        const data = bs.data ?? []
-        const bits = Math.max(4, 32 - Math.clz32(pal.length - 1))
-        const vpl = Math.floor(64 / bits)
-        const bigBits = BigInt(bits), mask = (1n << bigBits) - 1n
-        for (let i = 0; i < 4096; i++) {
-          const l = data[(i / vpl) | 0]
-          if (l === undefined) break
-          const y = sy + (i >> 8)
-          if (y < 0 || y > relTop) continue
-          if (!air[Number(BigInt.asUintN(64, l) >> (BigInt(i % vpl) * bigBits) & mask)]) count++
-        }
-      }
-    }
-    return { count, oldSkipped, chunksTotal: chunks.length }
-  }
 
   const palette = [], palIdx = new Map()
   const stateFor = e => {
