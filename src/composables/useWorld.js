@@ -1,5 +1,5 @@
 import { reactive, readonly } from "vue"
-import { readWorldZip, readRegionFile, buildSelection, unzipEntry, chunkSurface } from "../world.js"
+import { readWorldZip, readRegionFile, buildSelection, unzipEntry, chunkSurface, readChunk } from "../world.js"
 import { useStructure } from "./useStructure.js"
 import { useBuild } from "./useBuild.js"
 import { useStructures } from "./useStructures.js"
@@ -15,6 +15,7 @@ const state = reactive({
   loading: null,
   memWarn: false,
   stopped: null,
+  oldWorld: false,
   regionFile: false,
   rev: 0,
   yMin: 60,
@@ -114,6 +115,16 @@ async function openWorld(file, cacheIt = true) {
     state.name = world.name || file.name.replace(/\.(zip|mca)$/i, "")
     state.chunkCount = world.chunks.length
     state.selCount = 0
+    for (const c of world.chunks.slice(0, 8)) {
+      try {
+        const nbt = await readChunk(world, c)
+        if (nbt.sections) break
+        if (nbt.Level) {
+          state.oldWorld = true
+          break
+        }
+      } catch {}
+    }
     useStructures().setWorldStructures([...world.structures.keys()])
     if (cacheIt) cacheFile("world", file)
   } catch (err) {
@@ -213,7 +224,10 @@ async function restoreLoad(wy, wsel) {
   state.rev++
   if (!selected.size) return
   let probe
-  try { probe = await buildSelection(world, selected, { yMin: state.yMin, yMax: state.yMax, cap: 24000 }) } catch { return }
+  try { probe = await buildSelection(world, selected, { yMin: state.yMin, yMax: state.yMax, cap: 24000 }) } catch (err) {
+    if (err?.oldChunks) state.oldWorld = true
+    return
+  }
   if (probe.capped && !await useBuild().restoreGateCheck(probe.blocks.length)) return
   await loadSelected()
 }
@@ -248,7 +262,8 @@ async function loadSelected() {
     if (s.truncated) state.stopped = { loaded: s.chunksLoaded, total: s.chunksTotal }
     setWorldParams(true)
   } catch (err) {
-    if (err?.message !== "cancelled") state.error = String(err.message ?? err)
+    if (err?.oldChunks) state.oldWorld = true
+    else if (err?.message !== "cancelled") state.error = String(err.message ?? err)
   } finally {
     state.busy = false
     sApi.setReading(null)
@@ -266,6 +281,7 @@ function closeWorld() {
   state.selCount = 0
   state.error = ""
   state.stopped = null
+  state.oldWorld = false
   useStructures().setWorldStructures([])
   uncache("world")
   setWorldParams(false)
@@ -294,6 +310,7 @@ export function useWorld() {
     hasStructure, readStructureBytes, setYRange,
     getChunks: () => world?.chunks ?? [],
     setScanFocus, fillGridWindow, loadForecast, answerMemWarn, restoreLoad,
-    dismissStopped: () => { state.stopped = null }
+    dismissStopped: () => { state.stopped = null },
+    dismissOldWorld: () => { state.oldWorld = false }
   }
 }

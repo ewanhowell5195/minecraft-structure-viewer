@@ -299,6 +299,13 @@ function onDblClick() {
         <button class="primary" @click="world.dismissStopped()">OK</button>
       </div>
     </Modal>
+    <Modal v-if="state.oldWorld" :width="340" :z="250" :closable="false" :dismissable="false" style="--modal-gap: 0px" class="mw">
+      <h3>World too old</h3>
+      <p>This world's chunks use a pre-1.18 format that can't be read. Open the world in Minecraft 1.18 or newer to upgrade it, then reload it here.</p>
+      <div class="mrow">
+        <button class="primary" @click="world.dismissOldWorld()">OK</button>
+      </div>
+    </Modal>
   </section>
 </template>
 

@@ -98,7 +98,7 @@ async function readChunkFrom(bytes, index) {
   throw new Error(`unsupported chunk compression ${method}`)
 }
 
-const readChunk = (world, chunk) => readChunkFrom(world.regionBufs.get(chunk.region), chunk.index)
+export const readChunk = (world, chunk) => readChunkFrom(world.regionBufs.get(chunk.region), chunk.index)
 
 const PLANTS = new Set(["poppy", "dandelion", "oxeye_daisy", "azure_bluet", "cornflower", "allium",
   "lilac", "peony", "sunflower", "wither_rose", "wheat", "beetroots", "carrots", "potatoes",
@@ -276,7 +276,14 @@ export async function buildSelection(world, selected, { yMin = -Infinity, yMax =
   for (const c of chunks) {
     if (onProgress?.(done++, total) === false) throw new Error("cancelled")
     const nbt = await readChunk(world, c)
-    if (!nbt.sections) throw new Error("this world's chunks are too old (1.18+ only)")
+    if (!nbt.sections) {
+      if (nbt.Level) {
+        const err = new Error("this world's chunks are too old (1.18+ only)")
+        err.oldChunks = true
+        throw err
+      }
+      continue
+    }
     for (const s of nbt.sections) {
       const pal = s.block_states?.palette
       if (!inRange(s) || !pal || pal.every(e => AIR.test(e.Name))) continue
@@ -337,7 +344,7 @@ export async function buildSelection(world, selected, { yMin = -Infinity, yMax =
       beMap.set(`${x - x0},${y - y0},${z - z0}`, plain(rest))
     }
     const bx = c.cx * 16 - x0, bz = c.cz * 16 - z0
-    for (const s of nbt.sections) {
+    for (const s of nbt.sections ?? []) {
       if (s.Y < minSec || s.Y > maxSec || !inRange(s)) continue
       const bs = s.block_states
       const pal = bs?.palette
