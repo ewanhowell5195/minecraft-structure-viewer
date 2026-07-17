@@ -6,6 +6,7 @@ import { useContainer } from "../composables/useContainer.js"
 import { useStructure } from "../composables/useStructure.js"
 import { useWalk } from "../composables/useWalk.js"
 import { getFont, measure, drawText } from "../mcfont.js"
+import { drawTooltip, MARGIN } from "../tooltip.js"
 import { describeTable, prettyName } from "../loot.js"
 import Modal from "./Modal.vue"
 import ItemIcon from "./ItemIcon.vue"
@@ -96,7 +97,10 @@ function slotAt(ev) {
 
 function clickGui(ev) {
   const st = state.stacks.find(s => s.slot === slotAt(ev))
-  if (st) container.openItem(st)
+  if (st) {
+    hideTip()
+    container.openItem(st)
+  }
 }
 
 const hoverHasStack = computed(() => state.stacks.some(s => s.slot === hoverSlot.value))
@@ -127,14 +131,55 @@ async function loadHl() {
 
 function moveGui(ev) {
   const slot = slotAt(ev)
-  if (slot === hoverSlot.value) return
-  hoverSlot.value = slot
-  drawHl()
+  if (slot !== hoverSlot.value) {
+    hoverSlot.value = slot
+    drawHl()
+  }
+  updateTip(ev)
 }
 
 function leaveGui() {
   hoverSlot.value = -1
+  hideTip()
   drawHl()
+}
+
+const tipEl = ref(null)
+const tipShow = ref(false)
+let tipStack = null, tipX = 0, tipY = 0
+
+function hideTip() {
+  tipShow.value = false
+  tipStack = null
+}
+
+async function updateTip(ev) {
+  tipX = ev.clientX
+  tipY = ev.clientY
+  const stack = state.stacks.find(s => s.slot === hoverSlot.value)
+  if (!stack) return hideTip()
+  if (stack !== tipStack) {
+    tipStack = stack
+    tipShow.value = false
+    try {
+      if (!await drawTooltip(tipEl.value, stack, S)) return
+    } catch { return }
+    if (stack !== tipStack) return
+    tipShow.value = true
+  }
+  placeTip()
+}
+
+function placeTip() {
+  const c = tipEl.value
+  if (!c || !tipShow.value) return
+  const m = (3 + MARGIN) * S
+  const w = c.width - 2 * m, h = c.height - 2 * m
+  let x = tipX + 12 * S
+  if (x + w > innerWidth - 4) x = Math.max(tipX - 12 * S - w, 4)
+  const y = Math.min(Math.max(tipY - 12 * S, 4), innerHeight - h - 4)
+  c.style.left = x - m + "px"
+  c.style.top = y - m + "px"
 }
 
 async function drawHl() {
@@ -236,10 +281,12 @@ async function drawItemsInner(c, K, seq) {
 
 watch(() => [state.open, state.gui, state.guiTitle], () => {
   hoverSlot.value = -1
+  hideTip()
   if (state.open) nextTick(drawHl)
   if (state.open) nextTick(drawBg)
 })
 watch(() => [state.open, state.stacks, state.gui], () => {
+  hideTip()
   if (state.open) nextTick(drawItems)
 })
 </script>
@@ -342,6 +389,9 @@ watch(() => [state.open, state.stacks, state.gui], () => {
               <canvas ref="itemsEl" class="overlay"></canvas>
               <canvas ref="hlFrontEl" class="overlay"></canvas>
             </div>
+            <Teleport to="body">
+              <canvas ref="tipEl" v-show="tipShow" class="tooltip"></canvas>
+            </Teleport>
             <div v-if="state.note" class="note-line">{{ state.note }}</div>
           </div>
 
@@ -617,6 +667,12 @@ watch(() => [state.open, state.stacks, state.gui], () => {
 .gui .overlay {
   position: absolute;
   inset: 0;
+  pointer-events: none;
+}
+
+.tooltip {
+  position: fixed;
+  z-index: 1000;
   pointer-events: none;
 }
 
