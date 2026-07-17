@@ -11,7 +11,7 @@ import { makeSignTexts, plainText } from "../signs.js"
 import { JIGSAW, parseState } from "../transforms.js"
 import { isInspectable, readTrialSpawnerConfig } from "../loot.js"
 import { getFont, measure, drawText } from "../mcfont.js"
-import { drawFakeMap } from "../fakemap.js"
+import { drawFakeMap, randomiseFakeMapWorld } from "../mapgen.js"
 
 const packs = usePacks()
 const sceneApi = useScene()
@@ -167,9 +167,12 @@ function answerWarn(ok) {
 
 // seeded into template userData so the library shares one live uniform: daytime changes re-light with no rebuild
 const daytimeUniform = { value: NOON }
+let clockTimer = null
 watch(() => state.daytime, v => {
   daytimeUniform.value = v
   if (sceneHandle?.group.userData.daytime) sceneHandle.group.userData.daytime.value = v
+  clearTimeout(clockTimer)
+  clockTimer = setTimeout(updateClocks, 150)
 })
 
 let savedDaytime = NOON
@@ -378,7 +381,7 @@ async function attachEntityTag(nbt, wx, topY, wz) {
 
 const FRAME = /(^|:)(glow_)?item_frame$/
 const FACING6 = ["down", "up", "north", "south", "west", "east"]
-const FRAME_ROT = { south: [0, Math.PI], west: [0, Math.PI / 2], east: [0, -Math.PI / 2], up: [Math.PI / 2, 0], down: [-Math.PI / 2, 0] }
+const FRAME_ROT = { south: [0, Math.PI], west: [0, Math.PI / 2], east: [0, -Math.PI / 2], up: [-Math.PI / 2, Math.PI], down: [Math.PI / 2, Math.PI] }
 const MAP_OFF = 6.85
 const MAP_DIR = { north: [0, 0, 1], south: [0, 0, -1], east: [-1, 0, 0], west: [1, 0, 0], up: [0, -1, 0], down: [0, 1, 0] }
 
@@ -400,6 +403,46 @@ const MAP_GEO = {
   up: g => g.rotateX(-Math.PI / 2),
   down: g => g.rotateX(Math.PI / 2)
 }
+const COMPASS_2D = { south: 0, west: 1, north: 2, east: 3 }
+function compassValue(facing, rot) {
+  const corr = facing === "up" ? 90 : facing === "down" ? -90 : 0
+  const yDeg = 180 + (COMPASS_2D[facing] ?? -1) * 90 + rot * 45 + corr
+  return ((0.5 - yDeg / 360) % 1 + 1) % 1
+}
+
+function clockValue(daytime) {
+  const u = (((daytime - 6000) / 24000) % 1 + 1) % 1
+  let lo = 0, hi = 1
+  for (let i = 0; i < 24; i++) {
+    const s = (lo + hi) / 2
+    const x = 3 * s * (1 - s) * (1 - s) * 0.362 + 3 * s * s * (1 - s) * 0.638 + s * s * s
+    if (x < u) lo = s; else hi = s
+  }
+  const s = (lo + hi) / 2
+  return 3 * s * (1 - s) * (1 - s) * 0.241 + 3 * s * s * (1 - s) * 0.759 + s * s * s
+}
+
+let clockFrames = []
+let frameCtx = null
+async function updateClocks() {
+  if (!frameCtx || !clockFrames.length) return
+  const { lib, assets } = frameCtx
+  const disp = { type: "fallback", display: "fixed" }
+  const v = clockValue(state.daytime)
+  for (const cf of clockFrames) {
+    if (!cf.holder) continue
+    try {
+      const tmp = new THREE.Group()
+      for (const m of await lib.parseItemDefinition(assets, cf.item, { data: { ...cf.components, "minecraft:time": v }, display: disp, ignoreAtlases: true })) {
+        const resolved = await lib.resolveModelData(assets, m)
+        await lib.loadModel(tmp, assets, resolved, { display: disp, lighting: state.lighting, light: sceneLight, animate: false })
+      }
+      cf.holder.clear()
+      for (const c of Array.from(tmp.children)) cf.holder.add(c)
+    } catch {}
+  }
+}
+
 const MAP_SAMPLE = {
   north: (bx, by, bz, cx, cy) => [bx * 128 + 127 - cx, by * 128 + 127 - cy],
   south: (bx, by, bz, cx, cy) => [bx * 128 + cx, by * 128 + 127 - cy],
@@ -409,14 +452,23 @@ const MAP_SAMPLE = {
   down: (bx, by, bz, cx, cy) => [bx * 128 + cx, bz * 128 + 127 - cy]
 }
 
-async function makeFakeMap(bx, by, bz, facing, id, off = MAP_OFF) {
-  const canvas = document.createElement("canvas")
-  canvas.width = canvas.height = 128
-  await drawFakeMap(canvas, (cx, cy) => MAP_SAMPLE[facing](bx, by, bz, cx, cy), id)
+let mapArtCache = new Map()
+
+async function makeFakeMap(bx, by, bz, facing, id, rot = 0, off = MAP_OFF) {
+  let canvas = id == null ? null : mapArtCache.get(id)
+  if (!canvas) {
+    canvas = document.createElement("canvas")
+    canvas.width = canvas.height = 128
+    await drawFakeMap(canvas, (cx, cy) => MAP_SAMPLE[facing](bx, by, bz, cx, cy), id)
+    if (id != null) mapArtCache.set(id, canvas)
+  }
   const tex = new THREE.CanvasTexture(canvas)
   tex.colorSpace = THREE.SRGBColorSpace
   tex.magFilter = THREE.NearestFilter
-  const geo = MAP_GEO[facing](new THREE.PlaneGeometry(16, 16))
+  const geo = new THREE.PlaneGeometry(16, 16)
+  const spin = (((rot % 4) + 4) % 4) * Math.PI / 2
+  if (spin) geo.rotateZ(spin)
+  MAP_GEO[facing](geo)
   const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: tex }))
   const f = { mesh, tex, facing, bx, by, bz, off }
   placeFakeMap(f)
@@ -429,6 +481,10 @@ async function attachEntities(structure, lib, assets) {
   const texCache = new Map()
   const sprites = []
   entityMarkers = []
+  mapArtCache = new Map()
+  randomiseFakeMapWorld()
+  clockFrames = []
+  frameCtx = { lib, assets }
   for (const e of structure.entities ?? []) {
     const id = e.nbt?.id
     if (typeof id !== "string") continue
@@ -467,14 +523,18 @@ async function attachEntities(structure, lib, assets) {
             try {
               const disp = { type: "fallback", display: "fixed" }
               const itemGroup = new THREE.Group()
-              for (const m of await lib.parseItemDefinition(assets, frameItem, { data: e.nbt.Item.components ?? {}, display: disp, ignoreAtlases: true })) {
+              const itemData = { ...(e.nbt.Item.components ?? {}) }
+              if (/(^|:)compass$/.test(frameItem)) itemData["minecraft:compass"] = compassValue(facing, Number(e.nbt.ItemRotation ?? 0))
+              if (/(^|:)clock$/.test(frameItem)) itemData["minecraft:time"] = clockValue(state.daytime)
+              for (const m of await lib.parseItemDefinition(assets, frameItem, { data: itemData, display: disp, ignoreAtlases: true })) {
                 const resolved = await lib.resolveModelData(assets, m)
                 await lib.loadModel(itemGroup, assets, resolved, { display: disp, lighting: state.lighting, light: sceneLight, animate: false })
               }
               if (itemGroup.children.length) {
+                itemGroup.name = "frameItem"
                 itemGroup.position.z = invisible ? 8 : 7
                 itemGroup.scale.setScalar(0.5)
-                itemGroup.rotation.z = -Number(e.nbt.ItemRotation ?? 0) * Math.PI / 4
+                itemGroup.rotation.z = Number(e.nbt.ItemRotation ?? 0) * Math.PI / 4
                 g.add(itemGroup)
               }
             } catch {}
@@ -496,11 +556,14 @@ async function attachEntities(structure, lib, assets) {
       g.traverse(o => { if (o.isMesh) draws++ })
       if (frameMap) {
         try {
-          const fake = await makeFakeMap(Math.floor(e.pos[0]), Math.floor(e.pos[1]), Math.floor(e.pos[2]), facing, mapIdOf(e.nbt.Item), invisible ? 7.85 : MAP_OFF)
+          const fake = await makeFakeMap(Math.floor(e.pos[0]), Math.floor(e.pos[1]), Math.floor(e.pos[2]), facing, mapIdOf(e.nbt.Item), Number(e.nbt.ItemRotation ?? 0), invisible ? 7.85 : MAP_OFF)
           root.add(fake.mesh)
           markerTextures.push(fake.tex)
           draws++
         } catch {}
+      }
+      if (frame && typeof frameItem === "string" && /(^|:)clock$/.test(frameItem)) {
+        clockFrames.push({ holder: g.getObjectByName("frameItem"), item: frameItem, components: e.nbt.Item.components ?? {} })
       }
       const noBox = box.isEmpty()
       entityMarkers.push(noBox
