@@ -120,10 +120,7 @@ async function loadHl() {
   const assets = packs.assets.value
   if (hlImgs && hlAssets === assets) return hlImgs
   const lib = await loadLibrary()
-  const load = async name => {
-    const buf = await lib.readFile(`assets/minecraft/textures/gui/sprites/container/${name}.png`, assets)
-    return buf ? createImageBitmap(new Blob([buf], { type: "image/png" })) : null
-  }
+  const load = name => lib.loadAnimatedTexture(`assets/minecraft/textures/gui/sprites/container/${name}.png`, assets)
   hlImgs = { back: await load("slot_highlight_back"), front: await load("slot_highlight_front") }
   hlAssets = assets
   return hlImgs
@@ -146,11 +143,12 @@ function leaveGui() {
 
 const tipEl = ref(null)
 const tipShow = ref(false)
-let tipStack = null, tipX = 0, tipY = 0
+let tipStack = null, tipX = 0, tipY = 0, tipTimer = null
 
 function hideTip() {
   tipShow.value = false
   tipStack = null
+  clearTimeout(tipTimer)
 }
 
 async function updateTip(ev) {
@@ -161,13 +159,22 @@ async function updateTip(ev) {
   if (stack !== tipStack) {
     tipStack = stack
     tipShow.value = false
-    try {
-      if (!await drawTooltip(tipEl.value, stack, S)) return
-    } catch { return }
-    if (stack !== tipStack) return
+    clearTimeout(tipTimer)
+    let r
+    try { r = await drawTooltip(tipEl.value, stack, S) } catch { return }
+    if (!r || stack !== tipStack) return
     tipShow.value = true
+    if (r.animated) animateTip()
   }
   placeTip()
+}
+
+function animateTip() {
+  tipTimer = setTimeout(async () => {
+    if (!tipShow.value || !tipStack || !tipEl.value) return
+    try { await drawTooltip(tipEl.value, tipStack, S) } catch {}
+    animateTip()
+  }, 50)
 }
 
 function placeTip() {
@@ -182,7 +189,9 @@ function placeTip() {
   c.style.top = y - m + "px"
 }
 
+let hlTimer = null
 async function drawHl() {
+  clearTimeout(hlTimer)
   const K = state.gui, bc = hlBackEl.value, fc = hlFrontEl.value
   if (!K || !bc || !fc) return
   bc.width = fc.width = 176 * S
@@ -192,12 +201,14 @@ async function drawHl() {
   const imgs = await loadHl()
   if (slot !== hoverSlot.value) return
   const [ix, iy] = inner(K, slot)
-  for (const [c, img] of [[bc, imgs.back], [fc, imgs.front]]) {
-    if (!img) continue
+  const tick = performance.now() / 50
+  for (const [c, spr] of [[bc, imgs.back], [fc, imgs.front]]) {
+    if (!spr) continue
     const ctx = c.getContext("2d")
     ctx.imageSmoothingEnabled = false
-    ctx.drawImage(img, (ix - 4) * S, (iy - 4) * S, 24 * S, 24 * S)
+    ctx.drawImage(spr.frameAt(tick), (ix - 4) * S, (iy - 4) * S, 24 * S, 24 * S)
   }
+  if (imgs.back?.animated || imgs.front?.animated) hlTimer = setTimeout(drawHl, 50)
 }
 
 const inner = (K, slot) => [K.ox + (slot % K.cols) * 18 + 1, K.oy + (slot / K.cols | 0) * 18 + 1]

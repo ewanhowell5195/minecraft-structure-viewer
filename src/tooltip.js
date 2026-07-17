@@ -26,15 +26,8 @@ function loadSprites() {
     const lib = await loadLibrary()
     const assets = packs.assets.value
     const load = async name => {
-      const base = `assets/minecraft/textures/gui/sprites/tooltip/${name}.png`
-      const buf = await lib.readFile(base, assets)
-      if (!buf) return null
-      let scaling = null
-      const metaBuf = await lib.readFile(base + ".mcmeta", assets)
-      if (metaBuf) {
-        try { scaling = JSON.parse(new TextDecoder().decode(metaBuf)).gui?.scaling ?? null } catch {}
-      }
-      return { img: await createImageBitmap(new Blob([buf], { type: "image/png" })), scaling }
+      const anim = await lib.loadAnimatedTexture(`assets/minecraft/textures/gui/sprites/tooltip/${name}.png`, assets)
+      return anim && { anim, scaling: anim.meta?.gui?.scaling ?? null }
     }
     return { background: await load("background"), frame: await load("frame") }
   })()
@@ -51,8 +44,7 @@ function tileInto(ctx, img, sx, sy, sw, sh, dx, dy, dw, dh, S) {
   }
 }
 
-function drawSprite(ctx, sprite, x, y, w, h, S) {
-  const { img, scaling } = sprite
+function drawSprite(ctx, img, scaling, x, y, w, h, S) {
   const type = strip(scaling?.type ?? "stretch")
   if (type === "tile") {
     tileInto(ctx, img, 0, 0, scaling.width ?? img.width, scaling.height ?? img.height, x, y, w, h, S)
@@ -167,13 +159,14 @@ export async function drawTooltip(canvas, stack, S) {
   canvas.height = (h + 6 + MARGIN * 2) * S
   const ctx = canvas.getContext("2d")
   ctx.imageSmoothingEnabled = false
+  const tick = performance.now() / 50
   for (const sprite of [sprites.background, sprites.frame]) {
-    if (sprite) drawSprite(ctx, sprite, 0, 0, canvas.width, canvas.height, S)
+    if (sprite) drawSprite(ctx, sprite.anim.frameAt(tick), sprite.scaling, 0, 0, canvas.width, canvas.height, S)
   }
   let y = (3 + MARGIN) * S
   for (let i = 0; i < lines.length; i++) {
     drawLine(ctx, font, lines[i], (3 + MARGIN) * S, y, S)
     y += (i === 0 ? 12 : 10) * S
   }
-  return true
+  return { animated: !!(sprites.background?.anim.animated || sprites.frame?.anim.animated) }
 }
