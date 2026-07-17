@@ -317,12 +317,15 @@ function attachDoors(entries) {
 // yaw snaps to the nearest cardinal like the game's Direction.fromYRot
 const ENTITY_BOX = 14
 
+// egg-less mobs borrow a lookalike's egg
+const EGG_ALIASES = { giant: "zombie" }
+
 async function entityMarkerTexture(lib, assets, name) {
   const c = document.createElement("canvas")
   c.width = 64
   c.height = 64
   let drawn = false
-  for (const item of [name + "_spawn_egg", name]) {
+  for (const item of [name + "_spawn_egg", (EGG_ALIASES[name] ?? name) + "_spawn_egg", name]) {
     try {
       if (!await lib.readFile(`assets/minecraft/items/${item}.json`, assets)) continue
       await lib.renderItem({ id: item, assets, width: 64, height: 64, canvas: c })

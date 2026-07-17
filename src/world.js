@@ -29,16 +29,20 @@ export async function readWorldZip(buf, onProgress) {
     try { name = (await readNBT(await unzipEntry(levelEntry))).Data?.LevelName ?? "" } catch {}
   }
 
-  const regions = []
+  const regions = [], eRegions = []
   for (const [p, entry] of files) {
     const m = p.match(/^(.*?)region\/r\.(-?\d+)\.(-?\d+)\.mca$/)
     if (m && m[1] === prefix) regions.push([m, entry])
+    const em = p.match(/^(.*?)entities\/r\.(-?\d+)\.(-?\d+)\.mca$/)
+    if (em && em[1] === prefix) eRegions.push([em, entry])
   }
   const regionBufs = new Map()
+  const entityBufs = new Map()
   const chunks = []
   let done = 0
+  const total = regions.length + eRegions.length
   for (const [m, entry] of regions) {
-    onProgress?.(done++, regions.length)
+    onProgress?.(done++, total)
     const bytes = await unzipEntry(entry)
     if (bytes.length < 8192) continue
     const key = m[2] + "," + m[3]
@@ -46,6 +50,11 @@ export async function readWorldZip(buf, onProgress) {
     scanRegion(bytes, Number(m[2]), Number(m[3]), key, chunks)
   }
   if (!chunks.length) throw new Error("the region files contain no chunks")
+  for (const [m, entry] of eRegions) {
+    onProgress?.(done++, total)
+    const bytes = await unzipEntry(entry)
+    if (bytes.length >= 8192) entityBufs.set(m[2] + "," + m[3], bytes)
+  }
 
   const structures = new Map()
   for (const [p, entry] of files) {
@@ -53,7 +62,7 @@ export async function readWorldZip(buf, onProgress) {
     if (!m || m[1] !== root) continue
     structures.set("world/" + (m[2] === "minecraft" ? "" : m[2] + "/") + m[3], entry)
   }
-  return { name, regionBufs, chunks, structures }
+  return { name, regionBufs, entityBufs, chunks, structures }
 }
 
 function scanRegion(bytes, rx, rz, key, chunks) {
@@ -73,13 +82,13 @@ export function readRegionFile(buf, fileName) {
   const chunks = []
   scanRegion(bytes, rx, rz, key, chunks)
   if (!chunks.length) throw new Error("the region file contains no chunks")
-  return { name: "", regionBufs: new Map([[key, bytes]]), chunks, structures: new Map() }
+  return { name: "", regionBufs: new Map([[key, bytes]]), entityBufs: new Map(), chunks, structures: new Map() }
 }
 
-async function readChunk(world, chunk) {
-  const bytes = world.regionBufs.get(chunk.region)
+async function readChunkFrom(bytes, index) {
   const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
-  const loc = dv.getUint32(chunk.index * 4)
+  const loc = dv.getUint32(index * 4)
+  if (!loc) return null
   const off = (loc >>> 8) * 4096
   const len = dv.getUint32(off)
   const method = bytes[off + 4]
@@ -88,6 +97,8 @@ async function readChunk(world, chunk) {
   if (method === 1 || method === 2) return readNBT(await inflate(payload, method === 1 ? "gzip" : "deflate"))
   throw new Error(`unsupported chunk compression ${method}`)
 }
+
+const readChunk = (world, chunk) => readChunkFrom(world.regionBufs.get(chunk.region), chunk.index)
 
 const PLANTS = new Set(["poppy", "dandelion", "oxeye_daisy", "azure_bluet", "cornflower", "allium",
   "lilac", "peony", "sunflower", "wither_rose", "wheat", "beetroots", "carrots", "potatoes",
@@ -156,6 +167,9 @@ function manmade(name) {
     DYE_PREFIX.test(n)
 }
 
+// scratch for the packed-index halves; palettes cap at 4096 so 820 longs is the most
+const u32Scratch = new Uint32Array(2048)
+
 export async function chunkSurface(world, chunk) {
   const nbt = await readChunk(world, chunk)
   const sections = (nbt.sections ?? []).filter(s => s.block_states?.palette).sort((a, b) => b.Y - a.Y)
@@ -169,23 +183,33 @@ export async function chunkSurface(world, chunk) {
     if (!airMask.includes(false)) continue
     const codes = pal.map(e => surfaceCode(e.Name))
     const wts = pal.map(e => manmade(e.Name) ? 3 : 1)
-    let idx = null
+    // longs become uint32 pairs once, then only unresolved columns get probed:
+    // decoding whole sections through BigInt was most of the scan cost
+    let bits = 0, vpl = 0, mask = 0, u32 = null
     if (pal.length > 1) {
-      idx = new Uint16Array(4096)
       const data = s.block_states.data ?? []
-      const bits = Math.max(4, 32 - Math.clz32(pal.length - 1))
-      const vpl = Math.floor(64 / bits)
-      const bigBits = BigInt(bits), mask = (1n << bigBits) - 1n
-      for (let i = 0; i < 4096; i++) {
-        const l = data[(i / vpl) | 0]
-        if (l === undefined) break
-        idx[i] = Number(BigInt.asUintN(64, l) >> (BigInt(i % vpl) * bigBits) & mask)
+      bits = Math.max(4, 32 - Math.clz32(pal.length - 1))
+      vpl = Math.floor(64 / bits)
+      mask = (1 << bits) - 1
+      u32 = u32Scratch
+      for (let i = 0; i < data.length; i++) {
+        const l = BigInt.asUintN(64, data[i])
+        u32[i * 2] = Number(l & 0xffffffffn)
+        u32[i * 2 + 1] = Number(l >> 32n)
       }
     }
     for (let col = 0; col < 256; col++) {
       if (cols[col]) continue
       for (let y = 15; y >= 0; y--) {
-        const pi = idx ? idx[(y << 8) | col] : 0
+        let pi = 0
+        if (u32) {
+          const i = (y << 8) | col
+          const li = (i / vpl) | 0
+          const bit = (i - li * vpl) * bits
+          pi = bit + bits <= 32 ? (u32[li * 2] >>> bit) & mask
+            : bit >= 32 ? (u32[li * 2 + 1] >>> (bit - 32)) & mask
+            : ((u32[li * 2] >>> bit) | (u32[li * 2 + 1] << (32 - bit))) & mask
+        }
         if (airMask[pi]) continue
         cols[col] = codes[pi]
         colW[col] = wts[pi]
@@ -278,6 +302,7 @@ export async function buildSelection(world, selected, { yMin = -Infinity, yMax =
   }
 
   const blocks = []
+  const entities = []
   const relTop = yTop - y0
   // stop pulling chunks once the block list approaches the memory budget:
   // partial worlds beat dead tabs. Chrome measures the heap live, elsewhere the
@@ -292,6 +317,15 @@ export async function buildSelection(world, selected, { yMin = -Infinity, yMax =
     if (onProgress?.(done++, total) === false) throw new Error("cancelled")
     if ((loaded & 15) === 15 && over()) { truncated = true; break }
     loaded++
+    const ebytes = world.entityBufs?.get(c.region)
+    if (ebytes) {
+      const enbt = await readChunkFrom(ebytes, c.index)
+      for (const e of enbt?.Entities ?? []) {
+        const p = e.Pos
+        if (!Array.isArray(p) || p[1] < y0 || p[1] > yTop + 1) continue
+        entities.push({ pos: [p[0] - x0, p[1] - y0, p[2] - z0], nbt: plain(e) })
+      }
+    }
     const nbt = await readChunk(world, c)
     const beMap = new Map()
     for (const be of nbt.block_entities ?? []) {
@@ -339,7 +373,7 @@ export async function buildSelection(world, selected, { yMin = -Infinity, yMax =
     size: [(maxCx - minCx + 1) * 16, relTop + 1, (maxCz - minCz + 1) * 16],
     palette,
     blocks,
-    entities: [],
+    entities,
     truncated,
     chunksLoaded: loaded,
     chunksTotal: chunks.length
