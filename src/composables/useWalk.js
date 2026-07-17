@@ -53,7 +53,7 @@ const fovMod = { cur: 1, old: 1 }
 let stepSmooth = 0
 let acc = 0
 const keys = new Set()
-let collHash = new Map(), floorY = 0
+let collCells = new Map(), floorY = 0
 
 let outline = null
 function ensureOutline() {
@@ -61,44 +61,44 @@ function ensureOutline() {
 }
 
 function buildCollision() {
-  collHash = new Map()
-  const fc = v => Math.floor(v / 16)
-  for (const b of buildApi.currentBoxes())
-    for (let ci = fc(b.nx); ci <= fc(b.px); ci++)
-      for (let cj = fc(b.ny); cj <= fc(b.py); cj++)
-        for (let ck = fc(b.nz); ck <= fc(b.pz); ck++) {
-          const k = ci + "," + cj + "," + ck
-          let a = collHash.get(k)
-          if (!a) collHash.set(k, a = [])
-          a.push(b)
-        }
+  collCells = new Map()
   floorY = sceneApi.sceneBounds().min.y
 }
 
-// swap one block's boxes: a full collision rebuild takes seconds on big scenes
+function cellBoxes(ci, cj, ck) {
+  const k = ci + "," + cj + "," + ck
+  let a = collCells.get(k)
+  if (a) return a
+  a = []
+  const p = buildApi.getRoot()?.position
+  if (p) {
+    const lo = (c, o) => Math.floor((c * 16 - o - 8) / 16)
+    const hi = (c, o) => Math.ceil(((c + 1) * 16 - o + 8) / 16)
+    for (let gx = lo(ci, p.x); gx <= hi(ci, p.x); gx++)
+      for (let gy = lo(cj, p.y); gy <= hi(cj, p.y); gy++)
+        for (let gz = lo(ck, p.z); gz <= hi(ck, p.z); gz++) {
+          const b = buildApi.blockEntryAt(p.x + gx * 16, p.y + gy * 16, p.z + gz * 16)
+          if (!b) continue
+          for (const box of buildApi.blockBoxes(b)) {
+            if (box.px > ci * 16 && box.nx < ci * 16 + 16 &&
+              box.py > cj * 16 && box.ny < cj * 16 + 16 &&
+              box.pz > ck * 16 && box.nz < ck * 16 + 16) a.push(box)
+          }
+        }
+  }
+  collCells.set(k, a)
+  return a
+}
+
 function updateCollision(blocks) {
   const p = buildApi.getRoot()?.position
   if (!p) return
   const fc = v => Math.floor(v / 16)
   for (const b of blocks) {
-    const key = b.pos.join(",")
     const nx = p.x + b.pos[0] * 16 - 8, ny = p.y + b.pos[1] * 16 - 8, nz = p.z + b.pos[2] * 16 - 8
     for (let ci = fc(nx); ci <= fc(nx + 16); ci++)
       for (let cj = fc(ny); cj <= fc(ny + 16); cj++)
-        for (let ck = fc(nz); ck <= fc(nz + 16); ck++) {
-          const k = ci + "," + cj + "," + ck
-          const arr = collHash.get(k)
-          if (arr?.some(o => o.key === key)) collHash.set(k, arr.filter(o => o.key !== key))
-        }
-    for (const box of buildApi.blockBoxes(b))
-      for (let ci = fc(box.nx); ci <= fc(box.px); ci++)
-        for (let cj = fc(box.ny); cj <= fc(box.py); cj++)
-          for (let ck = fc(box.nz); ck <= fc(box.pz); ck++) {
-            const k = ci + "," + cj + "," + ck
-            let a = collHash.get(k)
-            if (!a) collHash.set(k, a = [])
-            a.push(box)
-          }
+        for (let ck = fc(nz); ck <= fc(nz + 16); ck++) collCells.delete(ci + "," + cj + "," + ck)
   }
 }
 
@@ -110,8 +110,7 @@ function nearby(a) {
   for (let ci = fc(a.nx); ci <= fc(a.px); ci++)
     for (let cj = fc(a.ny); cj <= fc(a.py); cj++)
       for (let ck = fc(a.nz); ck <= fc(a.pz); ck++) {
-        const arr = collHash.get(ci + "," + cj + "," + ck)
-        if (arr) for (const b of arr) set.add(b)
+        for (const b of cellBoxes(ci, cj, ck)) set.add(b)
       }
   return set
 }

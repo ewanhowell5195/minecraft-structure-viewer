@@ -890,7 +890,6 @@ function blockEntryAt(wx, wy, wz) {
   return i == null ? null : structure.blocks[i]
 }
 
-// each box carries its cell key so a door toggle can swap one cell in the walker's hash
 function blockBoxes(b) {
   const structure = current.value
   const out = []
@@ -899,16 +898,7 @@ function blockBoxes(b) {
   const i = cellIndex().get(b.pos.join(","))
   const p = root.position
   const ox = p.x + b.pos[0] * 16, oy = p.y + b.pos[1] * 16, oz = p.z + b.pos[2] * 16
-  const key = b.pos.join(",")
-  for (const l of collisionBoxesFor(i, b.state)) out.push({ nx: l[0] + ox, ny: l[1] + oy, nz: l[2] + oz, px: l[3] + ox, py: l[4] + oy, pz: l[5] + oz, key })
-  return out
-}
-
-function currentBoxes() {
-  const structure = current.value
-  const out = []
-  if (!structure || !root) return out
-  for (const b of structure.blocks) out.push(...blockBoxes(b))
+  for (const l of collisionBoxesFor(i, b.state)) out.push({ nx: l[0] + ox, ny: l[1] + oy, nz: l[2] + oz, px: l[3] + ox, py: l[4] + oy, pz: l[5] + oz })
   return out
 }
 
@@ -1362,6 +1352,6 @@ const getNonSolid = () => nonSolid
 export function useBuild() {
   return {
     state, current, build, cancel, answerWarn, getRoot, getTemplates, getNonSolid, showFull, restoreFull,
-    blockAt, blockEntryAt, boxForBlock, boxForEntity, markerUnderRay, rayHit, interact, aimDoor, currentBoxes, blockBoxes, exportCurrent
+    blockAt, blockEntryAt, boxForBlock, boxForEntity, markerUnderRay, rayHit, interact, aimDoor, blockBoxes, exportCurrent
   }
 }
