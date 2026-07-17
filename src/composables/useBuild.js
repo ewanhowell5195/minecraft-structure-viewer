@@ -318,14 +318,27 @@ function attachDoors(entries) {
 const ENTITY_BOX = 14
 
 // egg-less mobs borrow a lookalike's egg
-const EGG_ALIASES = { giant: "zombie" }
+const EGG_ALIASES = { giant: "zombie", evoker_fangs: "evoker", llama_spit: "llama", wither_skull: "wither" }
 
 async function entityMarkerTexture(lib, assets, name) {
   const c = document.createElement("canvas")
   c.width = 64
   c.height = 64
   let drawn = false
-  for (const item of [name + "_spawn_egg", (EGG_ALIASES[name] ?? name) + "_spawn_egg", name]) {
+  if (name === "mannequin") {
+    try {
+      const buf = await lib.readFile("assets/minecraft/textures/entity/player/wide/steve.png", assets)
+      if (buf) {
+        const bmp = await createImageBitmap(new Blob([buf]))
+        const ctx = c.getContext("2d")
+        ctx.imageSmoothingEnabled = false
+        ctx.drawImage(bmp, 8, 8, 8, 8, 0, 0, 64, 64)
+        ctx.drawImage(bmp, 40, 8, 8, 8, 0, 0, 64, 64)
+        drawn = true
+      }
+    } catch {}
+  }
+  if (!drawn) for (const item of [name + "_spawn_egg", (EGG_ALIASES[name] ?? name) + "_spawn_egg", name]) {
     try {
       if (!await lib.readFile(`assets/minecraft/items/${item}.json`, assets)) continue
       await lib.renderItem({ id: item, assets, width: 64, height: 64, canvas: c })

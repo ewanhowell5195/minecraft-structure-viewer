@@ -322,7 +322,9 @@ export async function buildSelection(world, selected, { yMin = -Infinity, yMax =
       const enbt = await readChunkFrom(ebytes, c.index)
       for (const e of enbt?.Entities ?? []) {
         const p = e.Pos
-        if (!Array.isArray(p) || p[1] < y0 || p[1] > yTop + 1) continue
+        // the user's y range, not the terrain's: flying entities sit above the
+        // highest block and would vanish under the derived top
+        if (!Array.isArray(p) || p[1] < yMin || p[1] > yMax + 1) continue
         entities.push({ pos: [p[0] - x0, p[1] - y0, p[2] - z0], nbt: plain(e) })
       }
     }
