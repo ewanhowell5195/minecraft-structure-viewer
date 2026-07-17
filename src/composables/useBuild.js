@@ -165,10 +165,10 @@ function setRestoreGate(on) {
   restoreGate = on
   if (on) restoreGateAsked = false
 }
-async function restoreGateCheck(blocks) {
+async function restoreGateCheck(blocks, selection = false) {
   if (!restoreGate || restoreGateAsked || blocks <= RESTORE_BLOCKS) return true
   restoreGateAsked = true
-  state.warn = { blocks }
+  state.warn = { blocks, selection }
   return new Promise(r => { warnResolve = r })
 }
 

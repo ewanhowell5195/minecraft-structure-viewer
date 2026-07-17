@@ -224,11 +224,11 @@ async function restoreLoad(wy, wsel) {
   state.rev++
   if (!selected.size) return
   let probe
-  try { probe = await buildSelection(world, selected, { yMin: state.yMin, yMax: state.yMax, cap: 24000 }) } catch (err) {
+  try { probe = await buildSelection(world, selected, { yMin: state.yMin, yMax: state.yMax, countOnly: true }) } catch (err) {
     if (err?.oldChunks) state.oldWorld = true
     return
   }
-  if (probe.capped && !await useBuild().restoreGateCheck(probe.blocks.length)) return
+  if (!await useBuild().restoreGateCheck(probe.count, true)) return
   await loadSelected()
 }
 
