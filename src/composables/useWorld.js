@@ -63,7 +63,7 @@ async function pump() {
     const c = queue[qi++]
     const key = c.cx + "," + c.cz
     if (!surface.has(key)) {
-      try { surface.set(key, await chunkSurface(w, c)) } catch {}
+      try { surface.set(key, await chunkSurface(w, c, state.yMin, state.yMax)) } catch {}
     }
     const now = performance.now()
     if (now - t0 > 12) {
@@ -348,9 +348,22 @@ function loadForecast() {
 const hasStructure = rel => !!world?.structures.has(rel)
 const readStructureBytes = rel => unzipEntry(world.structures.get(rel))
 
+let rangeTimer = null
 function setYRange(lo, hi) {
-  state.yMin = Math.min(lo, hi)
-  state.yMax = Math.max(lo, hi)
+  const yMin = Math.min(lo, hi), yMax = Math.max(lo, hi)
+  if (yMin === state.yMin && yMax === state.yMax) return
+  state.yMin = yMin
+  state.yMax = yMax
+  // the surface preview clips to the y range, so a change rescans (debounced for slider drags)
+  clearTimeout(rangeTimer)
+  rangeTimer = setTimeout(() => {
+    if (!world) return
+    surface.clear()
+    queue = []
+    qi = 0
+    lastFocus = ""
+    state.rev++
+  }, 300)
 }
 
 export function useWorld() {
