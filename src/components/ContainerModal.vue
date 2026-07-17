@@ -120,7 +120,7 @@ async function loadHl() {
   const assets = packs.assets.value
   if (hlImgs && hlAssets === assets) return hlImgs
   const lib = await loadLibrary()
-  const load = name => lib.loadAnimatedTexture(`assets/minecraft/textures/gui/sprites/container/${name}.png`, assets)
+  const load = name => lib.readTexture(`assets/minecraft/textures/gui/sprites/container/${name}.png`, assets)
   hlImgs = { back: await load("slot_highlight_back"), front: await load("slot_highlight_front") }
   hlAssets = assets
   return hlImgs
