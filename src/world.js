@@ -10,6 +10,8 @@ async function inflate(data, format) {
 
 export const unzipEntry = entry => entry.method === 8 ? inflate(entry.data, "deflate-raw") : entry.data
 
+const DIM_ORDER = { overworld: 0, the_nether: 1, the_end: 2 }
+
 export async function readWorldZip(buf, onProgress) {
   const lib = await loadLibrary()
   const files = lib.parseZip(new Uint8Array(buf))
@@ -19,9 +21,23 @@ export async function readWorldZip(buf, onProgress) {
     if (m) prefixes.add(m[1])
   }
   if (!prefixes.size) throw new Error("no region files found (is this a world zip?)")
-  const rank = p => /dimensions\/minecraft\/overworld\//.test(p) ? 0 : /DIM|the_nether|the_end/i.test(p) ? 2 : 1
-  const prefix = [...prefixes].sort((a, b) => rank(a) - rank(b) || a.length - b.length)[0]
-  const root = prefix.replace(/dimensions\/[^/]+\/[^/]+\/$/, "")
+
+  const dims = []
+  const modern = [...prefixes].filter(p => /(^|\/)dimensions\/[^/]+\/.+\/$/.test(p))
+  if (modern.length) {
+    for (const p of modern) {
+      const m = p.match(/^(.*?)dimensions\/([^/]+)\/(.+)\/$/)
+      dims.push({ id: m[2] === "minecraft" ? m[3] : m[2] + ":" + m[3], prefix: p, root: m[1] })
+    }
+  } else {
+    const over = [...prefixes].filter(p => !/DIM-?1\/$/.test(p)).sort((a, b) => a.length - b.length)[0]
+    const base = over ?? [...prefixes][0].replace(/DIM-?1\/$/, "")
+    if (over !== undefined) dims.push({ id: "overworld", prefix: over, root: base })
+    if (prefixes.has(base + "DIM-1/")) dims.push({ id: "the_nether", prefix: base + "DIM-1/", root: base })
+    if (prefixes.has(base + "DIM1/")) dims.push({ id: "the_end", prefix: base + "DIM1/", root: base })
+  }
+  dims.sort((a, b) => (DIM_ORDER[a.id] ?? 3) - (DIM_ORDER[b.id] ?? 3) || a.root.length - b.root.length || a.id.localeCompare(b.id))
+  const root = dims[0].root
 
   let name = ""
   const levelEntry = files.get(root + "level.dat")
@@ -29,6 +45,17 @@ export async function readWorldZip(buf, onProgress) {
     try { name = (await readNBT(await unzipEntry(levelEntry))).Data?.LevelName ?? "" } catch {}
   }
 
+  const structures = new Map()
+  for (const [p, entry] of files) {
+    const m = p.match(/^(.*?)generated\/([^/]+)\/structures\/(.+)\.nbt$/)
+    if (!m || m[1] !== root) continue
+    structures.set("world/" + (m[2] === "minecraft" ? "" : m[2] + "/") + m[3], entry)
+  }
+  const data = await readDimension(files, dims[0].prefix, onProgress)
+  return { name, structures, files, dims, dimension: dims[0].id, ...data }
+}
+
+async function readDimension(files, prefix, onProgress) {
   const regions = [], eRegions = []
   for (const [p, entry] of files) {
     const m = p.match(/^(.*?)region\/r\.(-?\d+)\.(-?\d+)\.mca$/)
@@ -55,14 +82,14 @@ export async function readWorldZip(buf, onProgress) {
     const bytes = await unzipEntry(entry)
     if (bytes.length >= 8192) entityBufs.set(m[2] + "," + m[3], bytes)
   }
+  return { regionBufs, entityBufs, chunks }
+}
 
-  const structures = new Map()
-  for (const [p, entry] of files) {
-    const m = p.match(/^(.*?)generated\/([^/]+)\/structures\/(.+)\.nbt$/)
-    if (!m || m[1] !== root) continue
-    structures.set("world/" + (m[2] === "minecraft" ? "" : m[2] + "/") + m[3], entry)
-  }
-  return { name, regionBufs, entityBufs, chunks, structures }
+export async function switchDimension(world, id, onProgress) {
+  const d = world.dims?.find(d => d.id === id)
+  if (!d) throw new Error("unknown dimension " + id)
+  const data = await readDimension(world.files, d.prefix, onProgress)
+  return { ...world, dimension: id, ...data }
 }
 
 function scanRegion(bytes, rx, rz, key, chunks) {

@@ -87,7 +87,7 @@ onMounted(async () => {
       if (worldFile) await useWorld().openWorld(worldFile, false)
       const wsel = params.get("wsel")
       if (worldFile && params.get("wloaded") === "1" && wsel) {
-        await useWorld().restoreLoad(params.get("wy"), wsel)
+        await useWorld().restoreLoad(params.get("wy"), wsel, params.get("wdim"))
         return
       }
       const rels = (await decodeStructureParam(structureParam)).filter(r => structures.has(r))

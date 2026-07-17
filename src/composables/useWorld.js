@@ -1,5 +1,5 @@
 import { reactive, readonly } from "vue"
-import { readWorldZip, readRegionFile, buildSelection, unzipEntry, chunkSurface, readChunk } from "../world.js"
+import { readWorldZip, readRegionFile, buildSelection, unzipEntry, chunkSurface, readChunk, switchDimension } from "../world.js"
 import { useStructure } from "./useStructure.js"
 import { useBuild } from "./useBuild.js"
 import { useStructures } from "./useStructures.js"
@@ -16,6 +16,8 @@ const state = reactive({
   memWarn: false,
   stopped: null,
   oldWorld: false,
+  dimensions: [],
+  dimension: "",
   regionFile: false,
   rev: 0,
   yMin: 60,
@@ -115,6 +117,8 @@ async function openWorld(file, cacheIt = true) {
     state.name = world.name || file.name.replace(/\.(zip|mca)$/i, "")
     state.chunkCount = world.chunks.length
     state.selCount = 0
+    state.dimensions = world.dims?.map(d => d.id) ?? []
+    state.dimension = world.dimension ?? ""
     for (const c of world.chunks.slice(0, 8)) {
       try {
         const nbt = await readChunk(world, c)
@@ -133,6 +137,37 @@ async function openWorld(file, cacheIt = true) {
     state.name = file.name.replace(/\.(zip|mca)$/i, "")
     state.chunkCount = 0
     state.selCount = 0
+    state.dimensions = []
+    state.dimension = ""
+    state.error = String(err.message ?? err)
+  } finally {
+    state.busy = false
+    state.loading = null
+    state.rev++
+  }
+}
+
+async function applyDimension(id) {
+  world = await switchDimension(world, id, (done, total) => { state.loading = { done, total } })
+  state.dimension = id
+  state.chunkCount = world.chunks.length
+  selected.clear()
+  state.selCount = 0
+  surface.clear()
+  queue = []
+  qi = 0
+  lastFocus = ""
+}
+
+async function setDimension(id) {
+  if (!world || state.busy || id === state.dimension) return
+  state.error = ""
+  state.busy = true
+  state.loading = { done: 0, total: 0 }
+  try {
+    await applyDimension(id)
+    setWorldParams(false)
+  } catch (err) {
     state.error = String(err.message ?? err)
   } finally {
     state.busy = false
@@ -206,16 +241,25 @@ async function setWorldParams(on) {
     u.searchParams.set("wy", state.yMin + "," + state.yMax)
     u.searchParams.set("wsel", await packSel())
     u.searchParams.set("wloaded", "1")
+    if (state.dimension) u.searchParams.set("wdim", state.dimension)
+    else u.searchParams.delete("wdim")
   } else {
     u.searchParams.delete("wy")
     u.searchParams.delete("wsel")
     u.searchParams.delete("wloaded")
+    u.searchParams.delete("wdim")
   }
   history.replaceState(null, "", u)
 }
 
-async function restoreLoad(wy, wsel) {
+async function restoreLoad(wy, wsel, wdim) {
   if (!world) return
+  if (wdim && wdim !== state.dimension && world.dims?.some(d => d.id === wdim)) {
+    try { await applyDimension(wdim) } catch { return } finally {
+      state.loading = null
+      state.rev++
+    }
+  }
   const [lo, hi] = (wy ?? "").split(",").map(Number)
   if (Number.isFinite(lo) && Number.isFinite(hi)) setYRange(lo, hi)
   selected.clear()
@@ -285,6 +329,8 @@ function closeWorld() {
   state.error = ""
   state.stopped = null
   state.oldWorld = false
+  state.dimensions = []
+  state.dimension = ""
   useStructures().setWorldStructures([])
   uncache("world")
   setWorldParams(false)
@@ -312,7 +358,7 @@ export function useWorld() {
     state: readonly(state), openWorld, toggleChunk, isSelected, clearSelection, selectRect, rectHasSelected, loadSelected, closeWorld,
     hasStructure, readStructureBytes, setYRange,
     getChunks: () => world?.chunks ?? [],
-    setScanFocus, fillGridWindow, loadForecast, answerMemWarn, restoreLoad,
+    setScanFocus, fillGridWindow, loadForecast, answerMemWarn, restoreLoad, setDimension,
     dismissStopped: () => { state.stopped = null },
     dismissOldWorld: () => { state.oldWorld = false }
   }

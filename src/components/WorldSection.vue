@@ -24,6 +24,9 @@ const willTruncate = computed(() => {
   return world.loadForecast()
 })
 
+const DIM_LABELS = { overworld: "Overworld", the_nether: "The Nether", the_end: "The End" }
+const dimLabel = d => DIM_LABELS[d] ?? d
+
 const ZI_BASE = 7
 let W = 287
 const pxFor = zi => [1, 2, 3,
@@ -247,6 +250,10 @@ function onDblClick() {
         <span class="material-symbols-outlined">recenter</span>
       </button>
     </div>
+    <select v-if="state.dimensions.length > 1" class="dimsel" :value="state.dimension" :disabled="state.busy"
+      @change="world.setDimension($event.target.value)">
+      <option v-for="d in state.dimensions" :key="d" :value="d">{{ dimLabel(d) }}</option>
+    </select>
     <div v-if="state.error" class="err">{{ state.error }}</div>
     <div v-if="state.loading" class="loadbar">
       <div class="fill" :style="{ width: state.loading.total ? (state.loading.done / state.loading.total * 100) + '%' : '0%' }"></div>
@@ -337,6 +344,11 @@ h2 .icon:hover,
 
 h2 .icon .material-symbols-outlined,
 .wname-row .icon .material-symbols-outlined { font-size: 15px; }
+
+.dimsel {
+  width: 100%;
+  margin-bottom: 8px;
+}
 
 .wname-row {
   display: flex;
