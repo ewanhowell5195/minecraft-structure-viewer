@@ -347,7 +347,6 @@ h2 .icon .material-symbols-outlined,
 
 .dimsel {
   width: 100%;
-  margin-bottom: 8px;
 }
 
 .wname-row {
