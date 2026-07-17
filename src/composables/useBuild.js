@@ -333,7 +333,7 @@ function attachDoors(entries) {
 const ENTITY_BOX = 14
 
 // egg-less mobs borrow a lookalike's egg
-const EGG_ALIASES = { giant: "zombie", evoker_fangs: "evoker", llama_spit: "llama", wither_skull: "wither" }
+const EGG_ALIASES = { giant: "zombie", evoker_fangs: "evoker", llama_spit: "llama", wither_skull: "wither", shulker_bullet: "shulker" }
 
 async function entityMarkerTexture(lib, assets, name) {
   const c = document.createElement("canvas")
