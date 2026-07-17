@@ -80,8 +80,6 @@ onMounted(async () => {
   const stop = watch(() => structures.state.names.length, async n => {
     if (!n) return
     stop()
-    // startup restores must never drop the cache: a reload landing on a stale
-    // ?structure= url would otherwise wipe the file the user expects back
     beginInit()
     try {
       // the world restores first so its structures resolve for the param filter below

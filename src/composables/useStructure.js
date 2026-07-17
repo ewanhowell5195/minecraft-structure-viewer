@@ -91,7 +91,6 @@ let navigatingHistory = false
 const DEFAULT_REL = "minecraft/village/plains/houses/plains_small_house_1"
 let implicitLoad = false
 
-// true while the page-load restore sequence runs, so startup loads never drop the cache
 let initializing = false
 export function beginInit() { initializing = true }
 export function endInit() { initializing = false }
@@ -417,9 +416,6 @@ function clickLoad(cat, rel, ev) {
   })
 }
 
-// only user switches drop caches; the world survives while everything loaded still comes from it.
-// startup restores (initializing) never drop anything: a reload that lands on a stale
-// ?structure= url would otherwise wipe the file/world the user expects restored
 function syncFileCache() {
   if (implicitLoad || initializing) return
   uncache("structure")
