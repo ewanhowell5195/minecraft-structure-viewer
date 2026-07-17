@@ -36,7 +36,7 @@ const collapsed = ref(true)
           <input type="checkbox" v-model="buildState.fullbright" :disabled="locked">
           Fullbright
         </label>
-        <label v-if="!buildState.fullbright" class="check daytime">
+        <label v-if="!buildState.fullbright && buildState.dimension === 'overworld'" class="check daytime">
           Daytime
           <input type="range" min="0" max="23999" v-model.number="buildState.daytime">
           <span class="value">{{ buildState.daytime }}</span>

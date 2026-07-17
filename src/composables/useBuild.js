@@ -128,6 +128,7 @@ const state = reactive({
   lighting: "world",
   fullbright: false,
   daytime: NOON,
+  dimension: "overworld",
   hideStructureBlocks: localStorage.getItem("hideStructureBlocks") !== "false",
   hasStructureBlocks: false,
   building: false,
@@ -1167,6 +1168,7 @@ async function build(structure = source, refit = true, slice = false) {
     const [sx, sy, sz] = structure.size
     state.status = "building…"
     buildDim = !state.fullbright && /^(the_nether|the_end)$/.test(unsliced.dimension) ? unsliced.dimension : "overworld"
+    state.dimension = buildDim
 
     // flood filled over what actually builds, so a slice relights; oversized scenes skip it
     if (state.lighting === "world" && !state.fullbright && lib.computeSceneLight && (sx + 2) * (sy + 2) * (sz + 2) <= 48000000) {
