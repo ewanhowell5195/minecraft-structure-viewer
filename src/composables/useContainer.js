@@ -409,6 +409,24 @@ async function open(block) {
     if (bare === "trial_spawner") loadTrialRows(entry?.Properties ?? {}, block.nbt)
     return
   }
+  if (bare === "lectern") {
+    const it = block.nbt?.Book
+    state.tab = "loot"
+    state.tableId = ""
+    state.table = null
+    state.odds = null
+    state.oddsBusy = false
+    state.rolls = 0
+    state.pileTotal = 0
+    state.kind = KINDS.dispenser
+    state.gui = KINDS.dispenser
+    state.guiTitle = state.blockName
+    state.stacks = it?.id ? [{ id: it.id, count: Number(it.count ?? it.Count ?? 1), components: it.components, tag: it.tag, slot: 4 }] : []
+    if (!it?.id) state.note = "This lectern holds no book."
+    openSeq++
+    state.open = true
+    return
+  }
   state.tableId = (block.nbt?.LootTable ?? "").replace(/^minecraft:/, "")
   state.table = null
   state.stacks = []

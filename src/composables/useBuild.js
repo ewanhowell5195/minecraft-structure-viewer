@@ -159,6 +159,19 @@ function askWarn(ms) {
   return new Promise(r => { warnResolve = r })
 }
 
+const RESTORE_BLOCKS = 24000
+let restoreGate = false, restoreGateAsked = false
+function setRestoreGate(on) {
+  restoreGate = on
+  if (on) restoreGateAsked = false
+}
+async function restoreGateCheck(blocks) {
+  if (!restoreGate || restoreGateAsked || blocks <= RESTORE_BLOCKS) return true
+  restoreGateAsked = true
+  state.warn = { blocks }
+  return new Promise(r => { warnResolve = r })
+}
+
 function answerWarn(ok) {
   state.warn = null
   warnResolve?.(ok)
@@ -1094,6 +1107,7 @@ async function build(structure = source, refit = true, slice = false) {
 
     const perfCal = loadPerf()
     let warnedOnce = false
+    if (!await restoreGateCheck(total)) return abort()
     if (perfCal) {
       const estMs = total * (perfCal.b + perfCal.o)
       if (estMs > WARN_MS) {
@@ -1367,7 +1381,7 @@ const getNonSolid = () => nonSolid
 
 export function useBuild() {
   return {
-    state, current, build, cancel, answerWarn, getRoot, getTemplates, getNonSolid, showFull, restoreFull,
+    state, current, build, cancel, answerWarn, setRestoreGate, restoreGateCheck, getRoot, getTemplates, getNonSolid, showFull, restoreFull,
     blockAt, blockEntryAt, boxForBlock, boxForEntity, markerUnderRay, rayHit, interact, aimDoor, blockBoxes, exportCurrent
   }
 }

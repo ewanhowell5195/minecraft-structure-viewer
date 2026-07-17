@@ -85,6 +85,11 @@ onMounted(async () => {
       // the world restores first so its structures resolve for the param filter below
       const worldFile = await restoreFile("world")
       if (worldFile) await useWorld().openWorld(worldFile, false)
+      const wsel = params.get("wsel")
+      if (worldFile && params.get("wloaded") === "1" && wsel) {
+        await useWorld().restoreLoad(params.get("wy"), wsel)
+        return
+      }
       const rels = (await decodeStructureParam(structureParam)).filter(r => structures.has(r))
       const structureFile = rels.length || debug != null || feature != null ? null : await restoreFile("structure")
       if (debug != null) await loadDebug(debug)

@@ -9,7 +9,7 @@ export const isContainer = name =>
   /(^|_)(chest|barrel|shulker_box|dispenser|dropper|hopper)$/.test((name || "").replace(/^minecraft:/, ""))
 
 export const isInspectable = name =>
-  isContainer(name) || /(^|_)(command_block|structure_block|jigsaw)$/.test((name || "").replace(/^minecraft:/, ""))
+  isContainer(name) || /(^|_)(command_block|structure_block|jigsaw|lectern)$/.test((name || "").replace(/^minecraft:/, ""))
 
 export const prettyName = n => strip(n).replace(/_/g, " ").replace(/(^|\s)[a-z]/g, c => c.toUpperCase())
 

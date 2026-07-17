@@ -16,9 +16,10 @@ const time = computed(() => {
 <template>
   <Modal v-if="state.warn" :width="340" :z="250" :closable="false" :dismissable="false" style="--modal-gap: 0px" class="bw">
     <h3>Large build</h3>
-    <p>This structure is estimated to take <strong>{{ time }}</strong> to build on this machine.</p>
+    <p v-if="state.warn.blocks">This page links to a large build (<strong>{{ state.warn.blocks.toLocaleString() }}+ blocks</strong>). Load it now?</p>
+    <p v-else>This structure is estimated to take <strong>{{ time }}</strong> to build on this machine.</p>
     <div class="row">
-      <button class="primary" @click="buildApi.answerWarn(true)">Build anyway</button>
+      <button class="primary" @click="buildApi.answerWarn(true)">{{ state.warn.blocks ? "Load" : "Build anyway" }}</button>
       <button @click="buildApi.answerWarn(false)">Cancel</button>
     </div>
   </Modal>

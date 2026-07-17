@@ -46,9 +46,14 @@ async function readMany(rels, reuse, mk) {
   state.reading = { done: 0, total: rels.length }
   try {
     const entries = []
+    let blocks = 0
     for (const rel of rels) {
       const e = reuse?.get(rel) ?? await mk(rel)
-      if (e) entries.push(e)
+      if (e) {
+        entries.push(e)
+        blocks += e.structure?.blocks?.length ?? 0
+        if (!await buildApi.restoreGateCheck(blocks)) return null
+      }
       if (++state.reading.done % 25 === 0) {
         await yieldTask()
         if (cancelRead) return null
@@ -97,8 +102,8 @@ const DEFAULT_REL = "minecraft/village/plains/houses/plains_small_house_1"
 let implicitLoad = false
 
 let initializing = false
-export function beginInit() { initializing = true }
-export function endInit() { initializing = false }
+export function beginInit() { initializing = true; buildApi.setRestoreGate(true) }
+export function endInit() { initializing = false; buildApi.setRestoreGate(false) }
 
 async function loadDefault() {
   if (!structures.has(DEFAULT_REL)) return
@@ -111,7 +116,7 @@ async function loadDefault() {
   }
 }
 
-function setStructureParam(rel, featureRel, featureSeed, featureField) {
+function setStructureParam(rel, featureRel, featureSeed, featureField, keepWorldParams = false) {
   if (navigatingHistory || implicitLoad) return
   const u = new URL(location)
   const before = u.searchParams.get("structure") + "|" + u.searchParams.get("feature")
@@ -123,6 +128,11 @@ function setStructureParam(rel, featureRel, featureSeed, featureField) {
   u.searchParams.delete("seed")
   u.searchParams.delete("level")
   u.searchParams.delete("debug")
+  if (!keepWorldParams) {
+    u.searchParams.delete("wy")
+    u.searchParams.delete("wsel")
+    u.searchParams.delete("wloaded")
+  }
   const changed = u.searchParams.get("structure") + "|" + u.searchParams.get("feature") !== before
   if (changed && seededHistory) history.pushState(null, "", u)
   else history.replaceState(null, "", u)
@@ -620,7 +630,7 @@ function loadObject(structure, name, keepWorld = false) {
     state.error = ""
     const snap = snapshot()
     try {
-      setStructureParam(null)
+      setStructureParam(null, undefined, undefined, undefined, keepWorld)
       state.field = null
       loaded = [{ structure, name }]
       if (await apply() === false) return restore(snap)

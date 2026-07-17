@@ -1,6 +1,7 @@
 import { reactive, readonly } from "vue"
 import { readWorldZip, readRegionFile, buildSelection, unzipEntry, chunkSurface } from "../world.js"
 import { useStructure } from "./useStructure.js"
+import { useBuild } from "./useBuild.js"
 import { useStructures } from "./useStructures.js"
 import { cacheFile, uncache } from "../userCache.js"
 
@@ -169,6 +170,54 @@ function selectRect(aCx, aCz, bCx, bCz) {
 
 const isSelected = key => selected.has(key)
 
+async function packSel() {
+  const stream = new Blob([[...selected].join(";")]).stream().pipeThrough(new CompressionStream("deflate-raw"))
+  const bytes = new Uint8Array(await new Response(stream).arrayBuffer())
+  let s = ""
+  for (const b of bytes) s += String.fromCharCode(b)
+  return btoa(s).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "")
+}
+
+async function unpackSel(param) {
+  try {
+    const bin = atob(param.replaceAll("-", "+").replaceAll("_", "/"))
+    const bytes = Uint8Array.from(bin, c => c.charCodeAt(0))
+    const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw"))
+    return (await new Response(stream).text()).split(";")
+  } catch {
+    return []
+  }
+}
+
+async function setWorldParams(on) {
+  const u = new URL(location)
+  if (on) {
+    u.searchParams.set("wy", state.yMin + "," + state.yMax)
+    u.searchParams.set("wsel", await packSel())
+    u.searchParams.set("wloaded", "1")
+  } else {
+    u.searchParams.delete("wy")
+    u.searchParams.delete("wsel")
+    u.searchParams.delete("wloaded")
+  }
+  history.replaceState(null, "", u)
+}
+
+async function restoreLoad(wy, wsel) {
+  if (!world) return
+  const [lo, hi] = (wy ?? "").split(",").map(Number)
+  if (Number.isFinite(lo) && Number.isFinite(hi)) setYRange(lo, hi)
+  selected.clear()
+  for (const key of await unpackSel(wsel)) if (key) selected.add(key)
+  state.selCount = selected.size
+  state.rev++
+  if (!selected.size) return
+  let probe
+  try { probe = await buildSelection(world, selected, { yMin: state.yMin, yMax: state.yMax, cap: 24000 }) } catch { return }
+  if (probe.capped && !await useBuild().restoreGateCheck(probe.blocks.length)) return
+  await loadSelected()
+}
+
 let memResolve = null
 function answerMemWarn(ok) {
   state.memWarn = false
@@ -197,6 +246,7 @@ async function loadSelected() {
     const n = s.truncated ? s.chunksLoaded : selected.size
     await sApi.loadObject(s, `${state.name} · ${n} chunk${n === 1 ? "" : "s"}`, true)
     if (s.truncated) state.stopped = { loaded: s.chunksLoaded, total: s.chunksTotal }
+    setWorldParams(true)
   } catch (err) {
     if (err?.message !== "cancelled") state.error = String(err.message ?? err)
   } finally {
@@ -218,6 +268,7 @@ function closeWorld() {
   state.stopped = null
   useStructures().setWorldStructures([])
   uncache("world")
+  setWorldParams(false)
 }
 
 function loadForecast() {
@@ -242,7 +293,7 @@ export function useWorld() {
     state: readonly(state), openWorld, toggleChunk, isSelected, clearSelection, selectRect, rectHasSelected, loadSelected, closeWorld,
     hasStructure, readStructureBytes, setYRange,
     getChunks: () => world?.chunks ?? [],
-    setScanFocus, fillGridWindow, loadForecast, answerMemWarn,
+    setScanFocus, fillGridWindow, loadForecast, answerMemWarn, restoreLoad,
     dismissStopped: () => { state.stopped = null }
   }
 }

@@ -258,7 +258,7 @@ function plain(v) {
   return v
 }
 
-export async function buildSelection(world, selected, { yMin = -Infinity, yMax = Infinity, budget = Infinity } = {}, onProgress) {
+export async function buildSelection(world, selected, { yMin = -Infinity, yMax = Infinity, budget = Infinity, cap = Infinity } = {}, onProgress) {
   const chunks = world.chunks.filter(c => selected.has(c.cx + "," + c.cz))
   if (!chunks.length) throw new Error("no chunks selected")
 
@@ -312,9 +312,10 @@ export async function buildSelection(world, selected, { yMin = -Infinity, yMax =
     if (mem) return mem.usedJSHeapSize > mem.jsHeapSizeLimit * 0.85
     return blocks.length * 120 > budget
   }
-  let loaded = 0, truncated = false
+  let loaded = 0, truncated = false, capped = false
   for (const c of chunks) {
     if (onProgress?.(done++, total) === false) throw new Error("cancelled")
+    if (blocks.length > cap) { capped = true; break }
     if ((loaded & 15) === 15 && over()) { truncated = true; break }
     loaded++
     const ebytes = world.entityBufs?.get(c.region)
@@ -377,6 +378,7 @@ export async function buildSelection(world, selected, { yMin = -Infinity, yMax =
     blocks,
     entities,
     truncated,
+    capped,
     chunksLoaded: loaded,
     chunksTotal: chunks.length
   }
