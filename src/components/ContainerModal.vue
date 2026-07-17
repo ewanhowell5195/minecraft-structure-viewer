@@ -186,7 +186,7 @@ async function drawHl() {
   const K = state.gui, bc = hlBackEl.value, fc = hlFrontEl.value
   if (!K || !bc || !fc) return
   bc.width = fc.width = 176 * S
-  bc.height = fc.height = (bodyH(K) + 7) * S
+  bc.height = fc.height = bodyH(K) * S
   const slot = hoverSlot.value
   if (slot < 0 || !state.stacks.some(s => s.slot === slot)) return
   const imgs = await loadHl()
@@ -203,7 +203,7 @@ async function drawHl() {
 const inner = (K, slot) => [K.ox + (slot % K.cols) * 18 + 1, K.oy + (slot / K.cols | 0) * 18 + 1]
 
 // items render on a second stacked canvas so a re-roll never flashes the gui background away
-const bodyH = K => K.tile ? 17 + K.rows * 18 : K.cropH
+const bodyH = K => K.tile ? 17 + K.rows * 18 + 96 : K.texH
 
 let bgSeq = 0
 async function drawBg() {
@@ -211,7 +211,7 @@ async function drawBg() {
   if (!c || !K) return
   const seq = ++bgSeq
   c.width = 176 * S
-  c.height = (bodyH(K) + 7) * S
+  c.height = bodyH(K) * S
   const lib = await loadLibrary()
   const assets = packs.assets.value
   const [bgBuf, font] = await Promise.all([
@@ -223,14 +223,18 @@ async function drawBg() {
   if (seq !== bgSeq) return
   const ctx = c.getContext("2d")
   ctx.imageSmoothingEnabled = false
+  // composed the way the game blits container screens, so pack art stays intact:
+  // header + rows in one block, then the whole 96px inventory block from y 126
   if (K.tile) {
-    ctx.drawImage(img, 0, 0, 176, 17, 0, 0, 176 * S, 17 * S)
-    for (let r = 0; r < K.rows; r++) ctx.drawImage(img, 0, 17, 176, 18, 0, (17 + r * 18) * S, 176 * S, 18 * S)
+    const chestH = 17 + Math.min(K.rows, 6) * 18
+    ctx.drawImage(img, 0, 0, 176, chestH, 0, 0, 176 * S, chestH * S)
+    for (let r = 6; r < K.rows; r++) ctx.drawImage(img, 0, 107, 176, 18, 0, (17 + r * 18) * S, 176 * S, 18 * S)
+    ctx.drawImage(img, 0, 126, 176, 96, 0, (17 + K.rows * 18) * S, 176 * S, 96 * S)
   } else {
-    ctx.drawImage(img, 0, 0, 176, K.cropH, 0, 0, 176 * S, K.cropH * S)
+    ctx.drawImage(img, 0, 0, 176, K.texH, 0, 0, 176 * S, K.texH * S)
   }
-  ctx.drawImage(img, 0, K.texH - 7, 176, 7, 0, bodyH(K) * S, 176 * S, 7 * S)
   drawText(ctx, font, state.guiTitle, 8 * S, 6 * S, { scale: S, color: "#404040" })
+  drawText(ctx, font, "Inventory", 8 * S, (K.tile ? 17 + K.rows * 18 + 3 : K.texH - 94) * S, { scale: S, color: "#404040" })
 }
 
 let itemSeq = 0
@@ -248,7 +252,7 @@ async function drawItems() {
 
 async function drawItemsInner(c, K, seq) {
   c.width = 176 * S
-  c.height = (bodyH(K) + 7) * S
+  c.height = bodyH(K) * S
   const lib = await loadLibrary()
   const assets = packs.assets.value
   const font = await getFont()

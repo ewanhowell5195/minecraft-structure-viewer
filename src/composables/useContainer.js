@@ -16,10 +16,10 @@ const structures = useStructures()
 
 // vanilla gui texture metrics; tiled guis compose header + slot-row strips + bottom, so rows can grow
 const KINDS = {
-  generic: { tex: "generic_54", texH: 222, cropH: 71, tile: true, cols: 9, rows: 3, ox: 7, oy: 17 },
-  shulker: { tex: "shulker_box", texH: 166, cropH: 71, tile: true, cols: 9, rows: 3, ox: 7, oy: 17 },
-  dispenser: { tex: "dispenser", texH: 166, cropH: 71, cols: 3, rows: 3, ox: 61, oy: 16 },
-  hopper: { tex: "hopper", texH: 133, cropH: 43, cols: 5, rows: 1, ox: 43, oy: 19 }
+  generic: { tex: "generic_54", texH: 222, tile: true, cols: 9, rows: 3, ox: 7, oy: 17 },
+  shulker: { tex: "shulker_box", texH: 166, cols: 9, rows: 3, ox: 7, oy: 17 },
+  dispenser: { tex: "dispenser", texH: 166, cols: 3, rows: 3, ox: 61, oy: 16 },
+  hopper: { tex: "hopper", texH: 133, cols: 5, rows: 1, ox: 43, oy: 19 }
 }
 
 function kindOf(name) {
