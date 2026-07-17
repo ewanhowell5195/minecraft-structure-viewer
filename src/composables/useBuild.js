@@ -456,10 +456,10 @@ let frameCtx = null
 async function updateClocks() {
   if (!frameCtx || !clockFrames.length) return
   const { lib, assets } = frameCtx
-  const disp = { type: "fallback", display: "fixed" }
   const v = clockValue(state.daytime)
   for (const cf of clockFrames) {
     if (!cf.holder) continue
+    const disp = cf.disp ?? { type: "fallback", display: "fixed" }
     try {
       const tmp = new THREE.Group()
       for (const m of await lib.parseItemDefinition(assets, cf.item, { data: { ...cf.components, "minecraft:time": v }, display: disp, ignoreAtlases: true })) {
@@ -681,6 +681,62 @@ async function attachSpawnerEggs(structure, lib, assets) {
     draws++
   }
   for (const tex of texCache.values()) if (tex) markerTextures.push(tex)
+  return draws
+}
+
+const SHELF_DISPLAY = { type: "fallback", display: "on_shelf" }
+const SHELF_YAW = { south: 0, west: -Math.PI / 2, north: Math.PI, east: Math.PI / 2 }
+
+async function attachShelves(structure, lib, assets) {
+  let draws = 0
+  const cache = new Map()
+  for (const b of structure.blocks) {
+    const entry = structure.palette[b.state]
+    if (!/(^|_)shelf$/.test((entry?.Name ?? "").replace(/^minecraft:/, ""))) continue
+    const items = b.nbt?.Items
+    if (!Array.isArray(items) || !items.length) continue
+    const alignBottom = Number(b.nbt.align_items_to_bottom ?? 0) === 1
+    const facing = entry.Properties?.facing ?? "north"
+    const g = new THREE.Group()
+    for (const it of items) {
+      if (typeof it?.id !== "string") continue
+      const compass = /(^|:)compass$/.test(it.id)
+      const clock = /(^|:)clock$/.test(it.id)
+      const key = it.id + "|" + JSON.stringify(it.components ?? null) + (compass ? "|" + facing : "")
+      let template = cache.get(key)
+      if (template === undefined) {
+        template = null
+        try {
+          const inner = new THREE.Group()
+          const itemData = { ...(it.components ?? {}) }
+          if (compass) itemData["minecraft:compass"] = compassValue(facing, 0)
+          if (clock) itemData["minecraft:time"] = clockValue(state.daytime)
+          for (const m of await lib.parseItemDefinition(assets, it.id, { data: itemData, display: SHELF_DISPLAY, ignoreAtlases: true })) {
+            const resolved = await lib.resolveModelData(assets, m)
+            await lib.loadModel(inner, assets, resolved, { display: SHELF_DISPLAY, lighting: state.lighting, light: sceneLight, animate: false })
+          }
+          if (inner.children.length) template = { inner, box: new THREE.Box3().setFromObject(inner) }
+        } catch {}
+        cache.set(key, template)
+      }
+      if (!template) continue
+      const slot = Math.min(2, Math.max(0, Number(it.Slot ?? 0)))
+      const inner = template.inner.clone()
+      inner.position.y = -template.box.min.y - (alignBottom ? 0 : (template.box.max.y - template.box.min.y) / 2)
+      const holder = new THREE.Group()
+      holder.add(inner)
+      holder.position.set((slot - 1) * 5, alignBottom ? -4 : 0, -4)
+      holder.scale.setScalar(0.25)
+      g.add(holder)
+      if (clock) clockFrames.push({ holder: inner, item: it.id, components: it.components ?? {}, disp: SHELF_DISPLAY })
+    }
+    if (!g.children.length) continue
+    g.userData.daytime = daytimeUniform
+    g.rotation.y = SHELF_YAW[entry.Properties?.facing] ?? Math.PI
+    g.position.set(b.pos[0] * 16, b.pos[1] * 16, b.pos[2] * 16)
+    root.add(g)
+    g.traverse(o => { if (o.isMesh) draws++ })
+  }
   return draws
 }
 
@@ -1271,7 +1327,7 @@ async function build(structure = source, refit = true, slice = false) {
     if (old) sceneApi.contentRoots.delete(old)
     if (animator) sceneApi.animators.delete(animator)
     const doorDraws = attachDoors(doorEntries)
-    const entityDraws = await attachEntities(structure, lib, assets) + await attachSpawnerEggs(structure, lib, assets)
+    const entityDraws = await attachEntities(structure, lib, assets) + await attachSpawnerEggs(structure, lib, assets) + await attachShelves(structure, lib, assets)
     try {
       const signs = await makeSignTexts(structure)
       if (signs) root.add(signs)

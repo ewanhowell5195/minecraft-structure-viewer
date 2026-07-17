@@ -6,7 +6,7 @@ const packs = usePacks()
 const strip = s => typeof s === "string" ? s.replace(/^minecraft:/, "") : s
 
 export const isContainer = name =>
-  /(^|_)(chest|barrel|shulker_box|dispenser|dropper|hopper)$/.test((name || "").replace(/^minecraft:/, ""))
+  /(^|_)(chest|barrel|shulker_box|dispenser|dropper|hopper|shelf)$/.test((name || "").replace(/^minecraft:/, ""))
 
 export const isInspectable = name =>
   isContainer(name) || /(^|_)(command_block|structure_block|jigsaw|lectern)$/.test((name || "").replace(/^minecraft:/, ""))

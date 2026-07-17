@@ -25,7 +25,7 @@ const KINDS = {
 function kindOf(name) {
   const n = name.replace(/^minecraft:/, "")
   if (n === "dispenser" || n === "dropper") return KINDS.dispenser
-  if (n === "hopper") return KINDS.hopper
+  if (n === "hopper" || /(^|_)shelf$/.test(n)) return KINDS.hopper
   if (/shulker_box$/.test(n)) return KINDS.shulker
   return KINDS.generic
 }
@@ -451,14 +451,17 @@ async function open(block) {
       await reroll()
     } else if (Array.isArray(block.nbt?.Items) && block.nbt.Items.length) {
       const cap = state.kind.cols * state.kind.rows
+      const shelf = /(^|_)shelf$/.test(bare)
       state.stacks = block.nbt.Items.filter(it => it?.id).map(it => ({
         id: it.id,
         count: it.count ?? it.Count ?? 1,
         components: it.components,
         tag: it.tag,
-        slot: Math.min(cap - 1, Math.max(0, it.Slot ?? 0))
+        slot: shelf ? 1 + Math.min(2, Math.max(0, it.Slot ?? 0)) : Math.min(cap - 1, Math.max(0, it.Slot ?? 0))
       }))
       state.note = "Fixed contents stored in the structure."
+    } else if (/(^|_)shelf$/.test(bare)) {
+      state.note = "This shelf is empty."
     } else {
       state.note = "This container has no loot table."
     }
