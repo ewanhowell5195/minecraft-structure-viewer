@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, ref, watch } from "vue"
 import { useWorld } from "../composables/useWorld.js"
 import { useLock } from "../composables/useLock.js"
+import { createGridRenderer, GRID } from "../world.js"
 
 const world = useWorld()
 const { state } = world
@@ -17,7 +18,10 @@ const fillStyle = computed(() => ({
   width: ((state.yMax - state.yMin) / (Y_HI - Y_LO) * 100) + "%"
 }))
 
-const VIEW = 272
+const CHUNKS = [64, 48, 32, 24, 16, 12, 8]
+const ZI_BASE = 4
+let W = 287
+const pxFor = zi => Math.max(3, Math.round(W / CHUNKS[zi]))
 let view = null
 let bounds = null
 let boundsFor = null
@@ -44,49 +48,62 @@ function computeBounds() {
 
 function fitView() {
   const w = bounds.maxCx - bounds.minCx + 1, h = bounds.maxCz - bounds.minCz + 1
-  const px = Math.min(14, Math.max(0.02, Math.min(VIEW / w, VIEW / h)))
+  const px = pxFor(ZI_BASE)
   view = {
+    zi: ZI_BASE,
     px,
-    cx0: bounds.minCx + w / 2 - VIEW / px / 2,
-    cz0: bounds.minCz + h / 2 - VIEW / px / 2
+    cx0: bounds.minCx + w / 2 - W / px / 2,
+    cz0: bounds.minCz + h / 2 - W / px / 2
   }
 }
+
+let R = null, win = null, dataRev = -1
 
 function draw() {
   const canvas = mapEl.value
   if (!canvas || !state.active) return
   computeBounds()
-  canvas.width = canvas.height = VIEW
-  const ctx = canvas.getContext("2d")
-  ctx.clearRect(0, 0, VIEW, VIEW)
   if (!view) return
+  if (!R || R.canvas !== canvas) {
+    R = createGridRenderer(canvas)
+    R.resize(W)
+    win = null
+  }
+  const dev = Math.max(1, Math.round((canvas.getBoundingClientRect().width - 2) * (window.devicePixelRatio || 1)))
+  if (dev !== W) {
+    W = dev
+    R.resize(W)
+  }
+  view.px = pxFor(view.zi)
   const { px, cx0, cz0 } = view
-  const cell = Math.max(1, px - (px >= 3 ? 1 : 0))
-  for (const c of world.getChunks()) {
-    const x = (c.cx - cx0) * px, y = (c.cz - cz0) * px
-    if (x + px < 0 || y + px < 0 || x > VIEW || y > VIEW) continue
-    ctx.fillStyle = world.isSelected(c.cx + "," + c.cz) ? "#4c8dff" : "#3a3a42"
-    ctx.fillRect(x, y, cell, cell)
+  const span = W / px
+  const wSpan = GRID / 8
+  const covered = win &&
+    cx0 >= win.w0x && cz0 >= win.w0z && cx0 + span <= win.w0x + wSpan && cz0 + span <= win.w0z + wSpan
+  if (!covered || dataRev !== state.rev) {
+    win = {
+      w0x: Math.floor(cx0 + span / 2 - wSpan / 2),
+      w0z: Math.floor(cz0 + span / 2 - wSpan / 2)
+    }
+    world.fillGridWindow(R.data, win.w0x, win.w0z, GRID)
+    R.upload()
+    dataRev = state.rev
   }
-  if (marquee) {
-    const on = !world.rectHasSelected(marquee.aCx, marquee.aCz, marquee.bCx, marquee.bCz)
-    const x = (Math.min(marquee.aCx, marquee.bCx) - cx0) * px
-    const y = (Math.min(marquee.aCz, marquee.bCz) - cz0) * px
-    const w = (Math.abs(marquee.bCx - marquee.aCx) + 1) * px
-    const h = (Math.abs(marquee.bCz - marquee.aCz) + 1) * px
-    ctx.fillStyle = on ? "#4c8dff2e" : "#e06a6a2e"
-    ctx.fillRect(x, y, w, h)
-    ctx.strokeStyle = on ? "#4c8dff" : "#e06a6a"
-    ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1)
-  }
+  const cellW = px - (px >= 7 ? 1 : 0)
+  const level = Math.min(8, Math.max(1, Math.pow(2, Math.floor(Math.log2(cellW)) - 1)))
+  const marqueeOn = marquee ? !world.rectHasSelected(marquee.aCx, marquee.aCz, marquee.bCx, marquee.bCz) : false
+  R.draw({ ...win, cx0: Math.round(cx0 * px) / px, cz0: Math.round(cz0 * px) / px, px, cellW, level, marquee, marqueeOn })
+  world.setScanFocus(Math.floor(cx0), Math.floor(cz0), Math.ceil(cx0 + span), Math.ceil(cz0 + span))
 }
 
 watch(() => [state.rev, state.active, collapsed.value], () => nextTick(draw))
 onMounted(() => nextTick(draw))
+const ro = new ResizeObserver(() => draw())
+watch(mapEl, (el, old) => { if (old) ro.unobserve(old); if (el) ro.observe(el) })
 
 function canvasPos(e) {
   const r = mapEl.value.getBoundingClientRect()
-  return [(e.clientX - r.left) * (VIEW / r.width), (e.clientY - r.top) * (VIEW / r.height)]
+  return [(e.clientX - r.left) * (W / r.width), (e.clientY - r.top) * (W / r.height)]
 }
 
 function chunkCoords(e) {
@@ -118,7 +135,7 @@ function onMove(e) {
   hoverTxt.value = k ? `chunk ${k.replace(",", ", ")}` : ""
   if (panning) {
     const r = mapEl.value.getBoundingClientRect()
-    const s = VIEW / r.width / view.px
+    const s = W / r.width / view.px
     view.cx0 = panning.cx0 - (e.clientX - panning.x) * s
     view.cz0 = panning.cz0 - (e.clientY - panning.y) * s
     draw()
@@ -144,7 +161,8 @@ function onWheel(e) {
   e.preventDefault()
   const [mx, my] = canvasPos(e)
   const cx = view.cx0 + mx / view.px, cz = view.cz0 + my / view.px
-  view.px = Math.min(14, Math.max(0.02, view.px * (e.deltaY < 0 ? 1.3 : 1 / 1.3)))
+  view.zi = Math.min(CHUNKS.length - 1, Math.max(0, view.zi + (e.deltaY < 0 ? 1 : -1)))
+  view.px = pxFor(view.zi)
   view.cx0 = cx - mx / view.px
   view.cz0 = cz - my / view.px
   draw()

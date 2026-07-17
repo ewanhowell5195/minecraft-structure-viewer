@@ -1,5 +1,5 @@
 import { reactive, readonly } from "vue"
-import { readWorldZip, readRegionFile, buildSelection, unzipEntry } from "../world.js"
+import { readWorldZip, readRegionFile, buildSelection, unzipEntry, chunkSurface } from "../world.js"
 import { useStructure } from "./useStructure.js"
 import { useStructures } from "./useStructures.js"
 import { cacheFile, uncache } from "../userCache.js"
@@ -19,9 +19,74 @@ const state = reactive({
 let world = null
 const selected = new Set() // "cx,cz"
 
+const surface = new Map()
+let queue = [], qi = 0
+let focusTimer = null
+let pumping = false
+
+function setScanFocus(x0, z0, x1, z1) {
+  clearTimeout(focusTimer)
+  focusTimer = setTimeout(() => {
+    if (!world) return
+    const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2
+    const rings = []
+    for (const c of world.chunks) {
+      if (c.cx < x0 || c.cx > x1 || c.cz < z0 || c.cz > z1) continue
+      if (surface.has(c.cx + "," + c.cz)) continue
+      const r = Math.max(Math.abs(c.cx - cx), Math.abs(c.cz - cz)) | 0
+      ;(rings[r] ??= []).push(c)
+    }
+    queue = rings.flat()
+    qi = 0
+    pump()
+  }, 300)
+}
+
+async function pump() {
+  if (pumping) return
+  pumping = true
+  const w = world
+  let t0 = performance.now(), lastRev = t0
+  while (qi < queue.length && world === w) {
+    const c = queue[qi++]
+    const key = c.cx + "," + c.cz
+    if (!surface.has(key)) {
+      try { surface.set(key, await chunkSurface(w, c)) } catch {}
+    }
+    const now = performance.now()
+    if (now - t0 > 12) {
+      if (now - lastRev > 200) { state.rev++; lastRev = now }
+      await new Promise(r => setTimeout(r))
+      t0 = performance.now()
+    }
+  }
+  pumping = false
+  if (world === w) state.rev++
+}
+
+function fillGridWindow(d, w0x, w0z, size) {
+  d.fill(0)
+  if (!world) return
+  const span = size / 8
+  for (const c of world.chunks) {
+    const key = c.cx + "," + c.cz
+    const s = surface.get(key)
+    const sel = selected.has(key) ? 32 : 0
+    const bx = c.cx - w0x, bz = c.cz - w0z
+    if (bx < 0 || bz < 0 || bx >= span || bz >= span) continue
+    const t0 = (bz * 8) * size + bx * 8
+    for (let sz = 0; sz < 8; sz++) for (let sx = 0; sx < 8; sx++) {
+      d[t0 + sz * size + sx] = (s ? s[sz * 8 + sx] : 1) | sel
+    }
+  }
+}
+
 async function openWorld(file, cacheIt = true) {
   state.error = ""
   state.busy = true
+  surface.clear()
+  queue = []
+  qi = 0
   try {
     world = /\.mca$/i.test(file.name)
       ? readRegionFile(await file.arrayBuffer(), file.name)
@@ -103,6 +168,9 @@ async function loadSelected() {
 
 function closeWorld() {
   world = null
+  surface.clear()
+  queue = []
+  qi = 0
   selected.clear()
   state.active = false
   state.selCount = 0
@@ -123,6 +191,7 @@ export function useWorld() {
   return {
     state: readonly(state), openWorld, toggleChunk, isSelected, clearSelection, selectRect, rectHasSelected, loadSelected, closeWorld,
     hasStructure, readStructureBytes, setYRange,
-    getChunks: () => world?.chunks ?? []
+    getChunks: () => world?.chunks ?? [],
+    setScanFocus, fillGridWindow
   }
 }
