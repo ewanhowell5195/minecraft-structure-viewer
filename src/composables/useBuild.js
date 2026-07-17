@@ -580,7 +580,15 @@ async function attachEntities(structure, lib, assets) {
     if (template) {
       const g = groupCache.get(key).clone()
       g.position.set(wx, wy, wz)
-      const box = new THREE.Box3().setFromObject(g)
+      let box
+      if (frame) {
+        const half = frameMap ? 8 : 6
+        box = new THREE.Box3(new THREE.Vector3(-half, -half, invisible ? 7.8 : 7), new THREE.Vector3(half, half, 8))
+        g.updateMatrix()
+        box.applyMatrix4(g.matrix)
+      } else {
+        box = new THREE.Box3().setFromObject(g)
+      }
       root.add(g)
       g.traverse(o => { if (o.isMesh) draws++ })
       if (frameMap) {
@@ -946,6 +954,13 @@ function shapeFor(e) {
     return PANEL[dir] ?? PANEL.north
   }
   if (/chest$/.test(name)) return [1, 0, 1, 15, 14, 15]
+  if (/(^|_)shelf$/.test(name)) {
+    const f = p.facing ?? "north"
+    return f === "north" ? [0, 0, 11, 16, 16, 16]
+      : f === "south" ? [0, 0, 0, 16, 16, 5]
+      : f === "west" ? [11, 0, 0, 16, 16, 16]
+      : [0, 0, 0, 5, 16, 16]
+  }
   return [0, 0, 0, 16, 16, 16]
 }
 

@@ -49,6 +49,7 @@ const state = reactive({
   gui: null,
   guiTitle: "",
   item: null,
+  fromFrame: false,
   dataRows: null,
   blurb: "",
   poolId: "",
@@ -303,6 +304,7 @@ function openEntity(e) {
   state.error = ""
   state.note = ""
   state.item = null
+  state.fromFrame = false
   state.tab = ""
   state.blockName = prettyName(id)
   state.blurb = ""
@@ -317,6 +319,7 @@ function openEntity(e) {
   state.poolStack = []
   if (/^(glow_)?item_frame$/.test(id) && e.nbt.Item?.id) {
     const it = e.nbt.Item
+    state.fromFrame = true
     state.dataRows = null
     state.tab = "loot"
     state.odds = null
@@ -365,6 +368,7 @@ function openEntityMarker(m) {
   state.poolFallback = ""
   state.poolStack = []
   state.item = null
+  state.fromFrame = false
   state.pick = stack.map(e => ({ e, label: prettyName(stripNs(e.nbt?.id ?? "entity")) }))
   openSeq++
   state.open = true
@@ -385,6 +389,7 @@ async function open(block) {
   state.error = ""
   state.note = ""
   state.item = null
+  state.fromFrame = false
   state.blockName = prettyName(name)
   state.kind = kindOf(name)
   state.dataRows = null

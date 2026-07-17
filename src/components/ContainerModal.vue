@@ -375,7 +375,7 @@ watch(() => [state.open, state.stacks, state.gui], () => {
               <NbtTree :value="itemData.value" />
             </div>
             <div v-else class="empty">No item data.</div>
-            <p v-if="isMapItem" class="map-note">
+            <p v-if="isMapItem && state.fromFrame" class="map-note">
               The shown map previews here are generated stand-ins. Minecraft keeps map artwork in the
               world save, so the real map image is not available in a structure file.
             </p>
