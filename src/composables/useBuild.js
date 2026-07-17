@@ -421,16 +421,15 @@ function placeFakeMap(f) {
 }
 
 let fakeMaps = []
-const MAP_SHADE = { up: 1, down: 0.5, north: 0.8, south: 0.8, east: 0.6, west: 0.6 }
 const BLOCK_TINT = [1, 0xD8 / 0xFF, 0x8C / 0xFF]
 const NIGHT_TINT = [0x7A / 0xFF, 0x7A / 0xFF, 1]
 
-// mirrors the library shader's world lighting so the basic-material map planes match
+// mirrors the library shader's world lighting so the basic-material map planes
+// match; no directional shade, the game draws maps with the lightmap only
 function relightFakeMaps() {
   for (const f of fakeMaps) {
     let r = 1, g = 1, b = 1
     if (state.lighting === "world" && f.light) {
-      const shade = MAP_SHADE[f.facing] ?? 1
       const td = ((state.daytime - 730) % 24000 + 24000) % 24000 + 730
       let skyFactor, sc
       if (td < 11270) { skyFactor = 1; sc = [1, 1, 1] }
@@ -442,9 +441,9 @@ function relightFakeMaps() {
       const blockB = bl / (4 - 3 * bl) * 1.4
       const t = 0.9 * (2 * bl - 1) * (2 * bl - 1)
       const bc = BLOCK_TINT.map(c => c + (1 - c) * t)
-      r = Math.min(1, sc[0] * skyB + bc[0] * blockB) * shade
-      g = Math.min(1, sc[1] * skyB + bc[1] * blockB) * shade
-      b = Math.min(1, sc[2] * skyB + bc[2] * blockB) * shade
+      r = Math.min(1, sc[0] * skyB + bc[0] * blockB)
+      g = Math.min(1, sc[1] * skyB + bc[1] * blockB)
+      b = Math.min(1, sc[2] * skyB + bc[2] * blockB)
     }
     f.mesh.material.color.setRGB(r, g, b, THREE.SRGBColorSpace)
   }
@@ -496,7 +495,7 @@ async function updateClocks() {
       tmp.userData.daytime = daytimeUniform
       for (const m of await lib.parseItemDefinition(assets, cf.item, { data: { ...cf.components, "minecraft:time": v }, display: disp, ignoreAtlases: true })) {
         const resolved = await lib.resolveModelData(assets, m)
-        await lib.loadModel(tmp, assets, resolved, { display: disp, lighting: cf.glow ? "off" : state.lighting, light: sceneLight, animate: false })
+        await lib.loadModel(tmp, assets, resolved, { display: disp, lighting: state.lighting, light: sceneLight, animate: false, ...(cf.glow ? { emission: 15 } : null) })
       }
       cf.holder.clear()
       for (const c of Array.from(tmp.children)) cf.holder.add(c)
@@ -554,6 +553,7 @@ async function attachEntities(structure, lib, assets) {
     if (typeof id !== "string") continue
     const [ns, name] = id.includes(":") ? id.split(":") : ["minecraft", id]
     const frame = FRAME.test(id)
+    const glow = frame && id.includes("glow")
     const yaw = Number(e.nbt.Rotation?.[0] ?? 0)
     let facing = ["south", "west", "north", "east"][((Math.floor(yaw / 90 + 0.5) % 4) + 4) % 4]
     if (frame) facing = FACING6[Number(e.nbt.Facing ?? 3)] ?? facing
@@ -580,7 +580,7 @@ async function attachEntities(structure, lib, assets) {
           if (!invisible) {
             for (const model of await lib.parseBlockstate(assets, blockId, { data, ignoreAtlases: true })) {
               const data = await lib.resolveModelData(assets, model)
-              await lib.loadModel(g, assets, data, { display: {}, lighting: state.lighting, light: sceneLight, animate: false })
+              await lib.loadModel(g, assets, data, { display: {}, lighting: state.lighting, light: sceneLight, animate: false, ...(glow ? { emission: 15 } : null) })
             }
           }
           if (frame && frameItem && !frameMap) {
@@ -593,7 +593,7 @@ async function attachEntities(structure, lib, assets) {
               if (/(^|:)clock$/.test(frameItem)) itemData["minecraft:time"] = clockValue(state.daytime)
               for (const m of await lib.parseItemDefinition(assets, frameItem, { data: itemData, display: disp, ignoreAtlases: true })) {
                 const resolved = await lib.resolveModelData(assets, m)
-                await lib.loadModel(itemGroup, assets, resolved, { display: disp, lighting: id.includes("glow") ? "off" : state.lighting, light: sceneLight, animate: false })
+                await lib.loadModel(itemGroup, assets, resolved, { display: disp, lighting: state.lighting, light: sceneLight, animate: false, ...(glow ? { emission: 15 } : null) })
               }
               if (itemGroup.children.length) {
                 itemGroup.name = "frameItem"
@@ -630,14 +630,14 @@ async function attachEntities(structure, lib, assets) {
       if (frameMap) {
         try {
           const fake = await makeFakeMap(Math.floor(e.pos[0]), Math.floor(e.pos[1]), Math.floor(e.pos[2]), facing, mapIdOf(e.nbt.Item), Number(e.nbt.ItemRotation ?? 0), invisible ? 7.85 : MAP_OFF)
-          if (id.includes("glow")) fake.light = null
+          if (glow) fake.light = null
           root.add(fake.mesh)
           markerTextures.push(fake.tex)
           draws++
         } catch {}
       }
       if (frame && typeof frameItem === "string" && /(^|:)clock$/.test(frameItem)) {
-        clockFrames.push({ holder: g.getObjectByName("frameItem"), item: frameItem, components: e.nbt.Item.components ?? {}, glow: id.includes("glow") })
+        clockFrames.push({ holder: g.getObjectByName("frameItem"), item: frameItem, components: e.nbt.Item.components ?? {}, glow })
       }
       const noBox = box.isEmpty()
       entityMarkers.push(noBox
