@@ -304,6 +304,7 @@ async function loadSelected() {
         return !sApi.readCancelled()
       })
     sApi.setReading(null)
+    s.dimension = state.dimension
     const n = s.truncated ? s.chunksLoaded : selected.size
     await sApi.loadObject(s, `${state.name} · ${n} chunk${n === 1 ? "" : "s"}`, true)
     if (s.truncated) state.stopped = { loaded: s.chunksLoaded, total: s.chunksTotal }

@@ -421,29 +421,47 @@ function placeFakeMap(f) {
 }
 
 let fakeMaps = []
-const BLOCK_TINT = [1, 0xD8 / 0xFF, 0x8C / 0xFF]
-const NIGHT_TINT = [0x7A / 0xFF, 0x7A / 0xFF, 1]
+const FALLBACK_ENV = { skyLightFactor: "overworld", skyLightColor: 0x7A7AFF, ambientColor: 0x0A0A0A, blockLightTint: 0xFFD88C }
+let mapLightEnv = FALLBACK_ENV
+const hexRGB = v => [(v >> 16 & 255) / 255, (v >> 8 & 255) / 255, (v & 255) / 255]
 
 // mirrors the library shader's world lighting so the basic-material map planes
 // match; no directional shade, the game draws maps with the lightmap only
 function relightFakeMaps() {
+  const env = mapLightEnv ?? FALLBACK_ENV
+  const amb = hexRGB(env.ambientColor)
+  const skyTint = hexRGB(env.skyLightColor)
+  const blockTint = hexRGB(env.blockLightTint)
   for (const f of fakeMaps) {
     let r = 1, g = 1, b = 1
     if (state.lighting === "world" && f.light) {
-      const td = ((state.daytime - 730) % 24000 + 24000) % 24000 + 730
       let skyFactor, sc
-      if (td < 11270) { skyFactor = 1; sc = [1, 1, 1] }
-      else if (td < 13140) { const k = (td - 11270) / 1870; skyFactor = 1 + (0.24 - 1) * k; sc = NIGHT_TINT.map(c => 1 + (c - 1) * k) }
-      else if (td < 22860) { skyFactor = 0.24; sc = NIGHT_TINT }
-      else { const k = (td - 22860) / 1870; skyFactor = 0.24 + (1 - 0.24) * k; sc = NIGHT_TINT.map(c => c + (1 - c) * k) }
+      if (env.skyLightFactor === "overworld") {
+        const td = ((state.daytime - 730) % 24000 + 24000) % 24000 + 730
+        if (td < 11270) { skyFactor = 1; sc = [1, 1, 1] }
+        else if (td < 13140) { const k = (td - 11270) / 1870; skyFactor = 1 + (0.24 - 1) * k; sc = skyTint.map(c => 1 + (c - 1) * k) }
+        else if (td < 22860) { skyFactor = 0.24; sc = skyTint }
+        else { const k = (td - 22860) / 1870; skyFactor = 0.24 + (1 - 0.24) * k; sc = skyTint.map(c => c + (1 - c) * k) }
+      } else {
+        skyFactor = env.skyLightFactor
+        sc = skyTint
+      }
       const bl = f.light.block / 15, sl = f.light.sky / 15
       const skyB = sl / (4 - 3 * sl) * skyFactor
       const blockB = bl / (4 - 3 * bl) * 1.4
       const t = 0.9 * (2 * bl - 1) * (2 * bl - 1)
-      const bc = BLOCK_TINT.map(c => c + (1 - c) * t)
-      r = Math.min(1, sc[0] * skyB + bc[0] * blockB)
-      g = Math.min(1, sc[1] * skyB + bc[1] * blockB)
-      b = Math.min(1, sc[2] * skyB + bc[2] * blockB)
+      const bc = blockTint.map(c => c + (1 - c) * t)
+      r = Math.min(1, amb[0] + sc[0] * skyB + bc[0] * blockB)
+      g = Math.min(1, amb[1] + sc[1] * skyB + bc[1] * blockB)
+      b = Math.min(1, amb[2] + sc[2] * skyB + bc[2] * blockB)
+      const mx = Math.max(r, g, b)
+      if (mx > 0) {
+        const inv = 1 - mx
+        const scale = (1 - inv * inv * inv * inv) / mx
+        r += (r * scale - r) * 0.5
+        g += (g * scale - g) * 0.5
+        b += (b * scale - b) * 0.5
+      }
     }
     f.mesh.material.color.setRGB(r, g, b, THREE.SRGBColorSpace)
   }
@@ -483,6 +501,8 @@ function clockValue(daytime) {
 
 let clockFrames = []
 let frameCtx = null
+let buildDim = "overworld"
+const lightingOpt = light => state.lighting === "world" ? { dimension: buildDim, light, daytime: state.daytime } : state.lighting
 async function updateClocks() {
   if (!frameCtx || !clockFrames.length) return
   const { lib, assets } = frameCtx
@@ -495,7 +515,7 @@ async function updateClocks() {
       tmp.userData.daytime = daytimeUniform
       for (const m of await lib.parseItemDefinition(assets, cf.item, { data: { ...cf.components, "minecraft:time": v }, display: disp, ignoreAtlases: true })) {
         const resolved = await lib.resolveModelData(assets, m)
-        await lib.loadModel(tmp, assets, resolved, { display: disp, lighting: state.lighting, light: sceneLight, animate: false, ...(cf.glow ? { emission: 15 } : null) })
+        await lib.loadModel(tmp, assets, resolved, { display: disp, lighting: lightingOpt(sceneLight), animate: false, ...(cf.glow ? { emission: 15 } : null) })
       }
       cf.holder.clear()
       for (const c of Array.from(tmp.children)) cf.holder.add(c)
@@ -548,6 +568,7 @@ async function attachEntities(structure, lib, assets) {
   randomiseFakeMapWorld()
   clockFrames = []
   frameCtx = { lib, assets }
+  mapLightEnv = lib.LIGHT_DIMENSIONS?.[buildDim] ?? FALLBACK_ENV
   for (const e of structure.entities ?? []) {
     const id = e.nbt?.id
     if (typeof id !== "string") continue
@@ -580,7 +601,7 @@ async function attachEntities(structure, lib, assets) {
           if (!invisible) {
             for (const model of await lib.parseBlockstate(assets, blockId, { data, ignoreAtlases: true })) {
               const data = await lib.resolveModelData(assets, model)
-              await lib.loadModel(g, assets, data, { display: {}, lighting: state.lighting, light: sceneLight, animate: false, ...(glow ? { emission: 15 } : null) })
+              await lib.loadModel(g, assets, data, { display: {}, lighting: lightingOpt(sceneLight), animate: false, ...(glow ? { emission: 15 } : null) })
             }
           }
           if (frame && frameItem && !frameMap) {
@@ -593,7 +614,7 @@ async function attachEntities(structure, lib, assets) {
               if (/(^|:)clock$/.test(frameItem)) itemData["minecraft:time"] = clockValue(state.daytime)
               for (const m of await lib.parseItemDefinition(assets, frameItem, { data: itemData, display: disp, ignoreAtlases: true })) {
                 const resolved = await lib.resolveModelData(assets, m)
-                await lib.loadModel(itemGroup, assets, resolved, { display: disp, lighting: state.lighting, light: sceneLight, animate: false, ...(glow ? { emission: 15 } : null) })
+                await lib.loadModel(itemGroup, assets, resolved, { display: disp, lighting: lightingOpt(sceneLight), animate: false, ...(glow ? { emission: 15 } : null) })
               }
               if (itemGroup.children.length) {
                 itemGroup.name = "frameItem"
@@ -760,7 +781,7 @@ async function attachShelves(structure, lib, assets) {
           if (clock) itemData["minecraft:time"] = clockValue(state.daytime)
           for (const m of await lib.parseItemDefinition(assets, it.id, { data: itemData, display: SHELF_DISPLAY, ignoreAtlases: true })) {
             const resolved = await lib.resolveModelData(assets, m)
-            await lib.loadModel(inner, assets, resolved, { display: SHELF_DISPLAY, lighting: state.lighting, light: sceneLight, animate: false })
+            await lib.loadModel(inner, assets, resolved, { display: SHELF_DISPLAY, lighting: lightingOpt(sceneLight), animate: false })
           }
           if (inner.children.length) template = { inner, box: new THREE.Box3().setFromObject(inner) }
         } catch {}
@@ -1081,7 +1102,7 @@ function showFull(on) {
 function restoreFull() {
   if (!fullBundle || state.building) return false
   const old = root, oldHandle = sceneHandle, oldMarkerTex = markerTextures, oldAnimator = animator, oldLight = sceneLight
-  ;({ group: root, handle: sceneHandle, inputIdxOf, nonSolidPalette, markerTextures, animator, entityMarkers, doorByCell, sceneLight, fakeMaps } = fullBundle)
+  ;({ group: root, handle: sceneHandle, inputIdxOf, nonSolidPalette, markerTextures, animator, entityMarkers, doorByCell, sceneLight, fakeMaps, mapLightEnv } = fullBundle)
   current.value = fullBundle.structure
   state.info = fullBundle.info
   relightFakeMaps()
@@ -1145,6 +1166,7 @@ async function build(structure = source, refit = true, slice = false) {
     const lib = await loadLibrary()
     const [sx, sy, sz] = structure.size
     state.status = "building…"
+    buildDim = !state.fullbright && /^(the_nether|the_end)$/.test(unsliced.dimension) ? unsliced.dimension : "overworld"
 
     // flood filled over what actually builds, so a slice relights; oversized scenes skip it
     if (state.lighting === "world" && !state.fullbright && lib.computeSceneLight && (sx + 2) * (sy + 2) * (sz + 2) <= 48000000) {
@@ -1159,6 +1181,7 @@ async function build(structure = source, refit = true, slice = false) {
         state.status = "lighting…"
         newLight = await lib.computeSceneLight(lightBlocks, {
           assets,
+          dimension: buildDim,
           onProgress: (done, total) => { state.progress = { phase: "light", done, total } }
         })
         if (cancelBuild) return abort()
@@ -1188,7 +1211,7 @@ async function build(structure = source, refit = true, slice = false) {
         let any = false, allPlanes = true
         for (const model of await lib.parseBlockstate(assets, name, { data: props ?? {}, ignoreAtlases: true, ...biome })) {
           const data = await lib.resolveModelData(assets, model)
-          await lib.loadModel(g, assets, data, { display: {}, lighting: state.lighting, light: newLight, animate: false, block, neighbors: block.neighbors })
+          await lib.loadModel(g, assets, data, { display: {}, lighting: lightingOpt(newLight), animate: false, block, neighbors: block.neighbors })
           for (const el of data?.elements ?? []) { any = true; if (!isPlane(el)) allPlanes = false }
         }
         if (any && allPlanes) nonSolid.add(stateIdx)
@@ -1230,9 +1253,7 @@ async function build(structure = source, refit = true, slice = false) {
     let tOpt = null
 
     const handle = await lib.createScene(assets, inputBlocks, {
-      lighting: state.lighting,
-      light: state.lighting === "world" ? (newLight ?? false) : undefined,
-      daytime: state.daytime,
+      lighting: state.lighting === "world" ? { dimension: buildDim, light: newLight ?? false, daytime: state.daytime } : state.lighting,
       keepTemplates: true,
       ignoreAtlases: true,
       animate: false,
@@ -1326,7 +1347,7 @@ async function build(structure = source, refit = true, slice = false) {
               const g = new THREE.Group()
               g.userData.daytime = daytimeUniform
               const data = await lib.resolveModelData(assets, { ...m, x: 0, y: 0, z: 0 })
-              await lib.loadModel(g, assets, data, { display: {}, lighting: state.lighting, light: newLight, animate: false })
+              await lib.loadModel(g, assets, data, { display: {}, lighting: lightingOpt(newLight), animate: false })
               canonDoorTmpl.set(key, g.children.length ? g : null)
             }
             if (!canonDoorTmpl.get(key)) key = null
@@ -1370,7 +1391,7 @@ async function build(structure = source, refit = true, slice = false) {
     const placedCount = total + doorEntries.length + loaderCount
 
     const old = root, oldHandle = sceneHandle, oldMarkerTex = markerTextures,
-      oldAnimator = animator, oldMarkers = entityMarkers, oldDoors = doorByCell, oldLight = sceneLight, oldFakeMaps = fakeMaps
+      oldAnimator = animator, oldMarkers = entityMarkers, oldDoors = doorByCell, oldLight = sceneLight, oldFakeMaps = fakeMaps, oldMapEnv = mapLightEnv
     root = next
     sceneHandle = handle
     inputIdxOf = inputIdx
@@ -1445,7 +1466,7 @@ async function build(structure = source, refit = true, slice = false) {
       fullBundle = {
         group: old, handle: oldHandle, inputIdxOf: prevInputIdx, nonSolidPalette: prevNonSolidPalette,
         markerTextures: oldMarkerTex, animator: oldAnimator,
-        structure: prevCurrent, info: prevInfo, entityMarkers: oldMarkers, doorByCell: oldDoors, sceneLight: oldLight, fakeMaps: oldFakeMaps
+        structure: prevCurrent, info: prevInfo, entityMarkers: oldMarkers, doorByCell: oldDoors, sceneLight: oldLight, fakeMaps: oldFakeMaps, mapLightEnv: oldMapEnv
       }
     } else if (old) {
       disposeGroup(old)
