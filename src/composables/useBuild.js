@@ -184,6 +184,7 @@ let clockTimer = null
 watch(() => state.daytime, v => {
   daytimeUniform.value = v
   if (sceneHandle?.group.userData.daytime) sceneHandle.group.userData.daytime.value = v
+  relightFakeMaps()
   clearTimeout(clockTimer)
   clockTimer = setTimeout(updateClocks, 150)
 })
@@ -419,6 +420,36 @@ function placeFakeMap(f) {
   f.mesh.position.set(f.bx * 16 + d[0] * f.off, f.by * 16 + d[1] * f.off, f.bz * 16 + d[2] * f.off)
 }
 
+let fakeMaps = []
+const MAP_SHADE = { up: 1, down: 0.5, north: 0.8, south: 0.8, east: 0.6, west: 0.6 }
+const BLOCK_TINT = [1, 0xD8 / 0xFF, 0x8C / 0xFF]
+const NIGHT_TINT = [0x7A / 0xFF, 0x7A / 0xFF, 1]
+
+// mirrors the library shader's world lighting so the basic-material map planes match
+function relightFakeMaps() {
+  for (const f of fakeMaps) {
+    let r = 1, g = 1, b = 1
+    if (state.lighting === "world" && f.light) {
+      const shade = MAP_SHADE[f.facing] ?? 1
+      const td = ((state.daytime - 730) % 24000 + 24000) % 24000 + 730
+      let skyFactor, sc
+      if (td < 11270) { skyFactor = 1; sc = [1, 1, 1] }
+      else if (td < 13140) { const k = (td - 11270) / 1870; skyFactor = 1 + (0.24 - 1) * k; sc = NIGHT_TINT.map(c => 1 + (c - 1) * k) }
+      else if (td < 22860) { skyFactor = 0.24; sc = NIGHT_TINT }
+      else { const k = (td - 22860) / 1870; skyFactor = 0.24 + (1 - 0.24) * k; sc = NIGHT_TINT.map(c => c + (1 - c) * k) }
+      const bl = f.light.block / 15, sl = f.light.sky / 15
+      const skyB = sl / (4 - 3 * sl) * skyFactor
+      const blockB = bl / (4 - 3 * bl) * 1.4
+      const t = 0.9 * (2 * bl - 1) * (2 * bl - 1)
+      const bc = BLOCK_TINT.map(c => c + (1 - c) * t)
+      r = Math.min(1, sc[0] * skyB + bc[0] * blockB) * shade
+      g = Math.min(1, sc[1] * skyB + bc[1] * blockB) * shade
+      b = Math.min(1, sc[2] * skyB + bc[2] * blockB) * shade
+    }
+    f.mesh.material.color.setRGB(r, g, b, THREE.SRGBColorSpace)
+  }
+}
+
 function mapIdOf(it) {
   const n = Number(it?.components?.["minecraft:map_id"] ?? it?.tag?.map)
   return Number.isFinite(n) ? n : null
@@ -462,9 +493,10 @@ async function updateClocks() {
     const disp = cf.disp ?? { type: "fallback", display: "fixed" }
     try {
       const tmp = new THREE.Group()
+      tmp.userData.daytime = daytimeUniform
       for (const m of await lib.parseItemDefinition(assets, cf.item, { data: { ...cf.components, "minecraft:time": v }, display: disp, ignoreAtlases: true })) {
         const resolved = await lib.resolveModelData(assets, m)
-        await lib.loadModel(tmp, assets, resolved, { display: disp, lighting: state.lighting, light: sceneLight, animate: false })
+        await lib.loadModel(tmp, assets, resolved, { display: disp, lighting: cf.glow ? "off" : state.lighting, light: sceneLight, animate: false })
       }
       cf.holder.clear()
       for (const c of Array.from(tmp.children)) cf.holder.add(c)
@@ -501,6 +533,8 @@ async function makeFakeMap(bx, by, bz, facing, id, rot = 0, off = MAP_OFF) {
   const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: tex }))
   const f = { mesh, tex, facing, bx, by, bz, off }
   placeFakeMap(f)
+  f.light = sceneLight?.lightAt(bx, by, bz) ?? null
+  fakeMaps.push(f)
   return f
 }
 
@@ -511,6 +545,7 @@ async function attachEntities(structure, lib, assets) {
   const sprites = []
   entityMarkers = []
   mapArtCache = new Map()
+  fakeMaps = []
   randomiseFakeMapWorld()
   clockFrames = []
   frameCtx = { lib, assets }
@@ -552,12 +587,13 @@ async function attachEntities(structure, lib, assets) {
             try {
               const disp = { type: "fallback", display: "fixed" }
               const itemGroup = new THREE.Group()
+              itemGroup.userData.daytime = daytimeUniform
               const itemData = { ...(e.nbt.Item.components ?? {}) }
               if (/(^|:)compass$/.test(frameItem)) itemData["minecraft:compass"] = compassValue(facing, Number(e.nbt.ItemRotation ?? 0))
               if (/(^|:)clock$/.test(frameItem)) itemData["minecraft:time"] = clockValue(state.daytime)
               for (const m of await lib.parseItemDefinition(assets, frameItem, { data: itemData, display: disp, ignoreAtlases: true })) {
                 const resolved = await lib.resolveModelData(assets, m)
-                await lib.loadModel(itemGroup, assets, resolved, { display: disp, lighting: state.lighting, light: sceneLight, animate: false })
+                await lib.loadModel(itemGroup, assets, resolved, { display: disp, lighting: id.includes("glow") ? "off" : state.lighting, light: sceneLight, animate: false })
               }
               if (itemGroup.children.length) {
                 itemGroup.name = "frameItem"
@@ -594,13 +630,14 @@ async function attachEntities(structure, lib, assets) {
       if (frameMap) {
         try {
           const fake = await makeFakeMap(Math.floor(e.pos[0]), Math.floor(e.pos[1]), Math.floor(e.pos[2]), facing, mapIdOf(e.nbt.Item), Number(e.nbt.ItemRotation ?? 0), invisible ? 7.85 : MAP_OFF)
+          if (id.includes("glow")) fake.light = null
           root.add(fake.mesh)
           markerTextures.push(fake.tex)
           draws++
         } catch {}
       }
       if (frame && typeof frameItem === "string" && /(^|:)clock$/.test(frameItem)) {
-        clockFrames.push({ holder: g.getObjectByName("frameItem"), item: frameItem, components: e.nbt.Item.components ?? {} })
+        clockFrames.push({ holder: g.getObjectByName("frameItem"), item: frameItem, components: e.nbt.Item.components ?? {}, glow: id.includes("glow") })
       }
       const noBox = box.isEmpty()
       entityMarkers.push(noBox
@@ -664,6 +701,7 @@ async function attachEntities(structure, lib, assets) {
     for (const s of c) draws += await attachEntityTag(s.e.nbt, s.wx, s.wy - 8 + ENTITY_BOX, s.wz)
   }
   for (const tex of texCache.values()) if (tex) markerTextures.push(tex)
+  relightFakeMaps()
   return draws
 }
 
@@ -716,6 +754,7 @@ async function attachShelves(structure, lib, assets) {
         template = null
         try {
           const inner = new THREE.Group()
+          inner.userData.daytime = daytimeUniform
           const itemData = { ...(it.components ?? {}) }
           if (compass) itemData["minecraft:compass"] = compassValue(facing, 0)
           if (clock) itemData["minecraft:time"] = clockValue(state.daytime)
@@ -1042,9 +1081,10 @@ function showFull(on) {
 function restoreFull() {
   if (!fullBundle || state.building) return false
   const old = root, oldHandle = sceneHandle, oldMarkerTex = markerTextures, oldAnimator = animator, oldLight = sceneLight
-  ;({ group: root, handle: sceneHandle, inputIdxOf, nonSolidPalette, markerTextures, animator, entityMarkers, doorByCell, sceneLight } = fullBundle)
+  ;({ group: root, handle: sceneHandle, inputIdxOf, nonSolidPalette, markerTextures, animator, entityMarkers, doorByCell, sceneLight, fakeMaps } = fullBundle)
   current.value = fullBundle.structure
   state.info = fullBundle.info
+  relightFakeMaps()
   root.visible = true
   sceneApi.contentRoots.add(root)
   sceneApi.syncAspect()
@@ -1330,7 +1370,7 @@ async function build(structure = source, refit = true, slice = false) {
     const placedCount = total + doorEntries.length + loaderCount
 
     const old = root, oldHandle = sceneHandle, oldMarkerTex = markerTextures,
-      oldAnimator = animator, oldMarkers = entityMarkers, oldDoors = doorByCell, oldLight = sceneLight
+      oldAnimator = animator, oldMarkers = entityMarkers, oldDoors = doorByCell, oldLight = sceneLight, oldFakeMaps = fakeMaps
     root = next
     sceneHandle = handle
     inputIdxOf = inputIdx
@@ -1405,7 +1445,7 @@ async function build(structure = source, refit = true, slice = false) {
       fullBundle = {
         group: old, handle: oldHandle, inputIdxOf: prevInputIdx, nonSolidPalette: prevNonSolidPalette,
         markerTextures: oldMarkerTex, animator: oldAnimator,
-        structure: prevCurrent, info: prevInfo, entityMarkers: oldMarkers, doorByCell: oldDoors, sceneLight: oldLight
+        structure: prevCurrent, info: prevInfo, entityMarkers: oldMarkers, doorByCell: oldDoors, sceneLight: oldLight, fakeMaps: oldFakeMaps
       }
     } else if (old) {
       disposeGroup(old)
