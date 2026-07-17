@@ -16,17 +16,28 @@ const ROMAN = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"]
 export const MARGIN = 9
 
 let spritesPromise = null, spritesVersion = -1
+const frameListeners = new Set()
+
+export function onTooltipFrame(cb) {
+  frameListeners.add(cb)
+  return () => frameListeners.delete(cb)
+}
 
 function loadSprites() {
   const packs = usePacks()
   const v = packs.state.assetsVersion
   if (spritesPromise && v === spritesVersion) return spritesPromise
   spritesVersion = v
+  spritesPromise?.then(s => {
+    s.background?.anim.stop()
+    s.frame?.anim.stop()
+  })
   return spritesPromise = (async () => {
     const lib = await loadLibrary()
     const assets = packs.assets.value
+    const notify = () => { for (const cb of frameListeners) cb() }
     const load = async name => {
-      const anim = await lib.readTexture(`assets/minecraft/textures/gui/sprites/tooltip/${name}.png`, assets)
+      const anim = await lib.readTexture(`assets/minecraft/textures/gui/sprites/tooltip/${name}.png`, assets, { onChange: notify })
       return anim && { anim, scaling: anim.meta?.gui?.scaling ?? null }
     }
     return { background: await load("background"), frame: await load("frame") }
@@ -159,14 +170,13 @@ export async function drawTooltip(canvas, stack, S) {
   canvas.height = (h + 6 + MARGIN * 2) * S
   const ctx = canvas.getContext("2d")
   ctx.imageSmoothingEnabled = false
-  const tick = performance.now() / 50
   for (const sprite of [sprites.background, sprites.frame]) {
-    if (sprite) drawSprite(ctx, sprite.anim.frameAt(tick), sprite.scaling, 0, 0, canvas.width, canvas.height, S)
+    if (sprite) drawSprite(ctx, sprite.anim.current, sprite.scaling, 0, 0, canvas.width, canvas.height, S)
   }
   let y = (3 + MARGIN) * S
   for (let i = 0; i < lines.length; i++) {
     drawLine(ctx, font, lines[i], (3 + MARGIN) * S, y, S)
     y += (i === 0 ? 12 : 10) * S
   }
-  return { animated: !!(sprites.background?.anim.animated || sprites.frame?.anim.animated) }
+  return true
 }

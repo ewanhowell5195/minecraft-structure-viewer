@@ -6,7 +6,7 @@ import { useContainer } from "../composables/useContainer.js"
 import { useStructure } from "../composables/useStructure.js"
 import { useWalk } from "../composables/useWalk.js"
 import { getFont, measure, drawText } from "../mcfont.js"
-import { drawTooltip, MARGIN } from "../tooltip.js"
+import { drawTooltip, onTooltipFrame, MARGIN } from "../tooltip.js"
 import { describeTable, prettyName } from "../loot.js"
 import Modal from "./Modal.vue"
 import ItemIcon from "./ItemIcon.vue"
@@ -120,9 +120,13 @@ async function loadHl() {
   const assets = packs.assets.value
   if (hlImgs && hlAssets === assets) return hlImgs
   const lib = await loadLibrary()
-  const load = name => lib.readTexture(`assets/minecraft/textures/gui/sprites/container/${name}.png`, assets)
+  const old = hlImgs
+  const onChange = () => { if (hoverSlot.value >= 0) drawHl() }
+  const load = name => lib.readTexture(`assets/minecraft/textures/gui/sprites/container/${name}.png`, assets, { onChange })
   hlImgs = { back: await load("slot_highlight_back"), front: await load("slot_highlight_front") }
   hlAssets = assets
+  old?.back?.stop?.()
+  old?.front?.stop?.()
   return hlImgs
 }
 
@@ -143,12 +147,11 @@ function leaveGui() {
 
 const tipEl = ref(null)
 const tipShow = ref(false)
-let tipStack = null, tipX = 0, tipY = 0, tipTimer = null
+let tipStack = null, tipX = 0, tipY = 0
 
 function hideTip() {
   tipShow.value = false
   tipStack = null
-  clearTimeout(tipTimer)
 }
 
 async function updateTip(ev) {
@@ -159,23 +162,19 @@ async function updateTip(ev) {
   if (stack !== tipStack) {
     tipStack = stack
     tipShow.value = false
-    clearTimeout(tipTimer)
-    let r
-    try { r = await drawTooltip(tipEl.value, stack, S) } catch { return }
-    if (!r || stack !== tipStack) return
+    try {
+      if (!await drawTooltip(tipEl.value, stack, S)) return
+    } catch { return }
+    if (stack !== tipStack) return
     tipShow.value = true
-    if (r.animated) animateTip()
   }
   placeTip()
 }
 
-function animateTip() {
-  tipTimer = setTimeout(async () => {
-    if (!tipShow.value || !tipStack || !tipEl.value) return
-    try { await drawTooltip(tipEl.value, tipStack, S) } catch {}
-    animateTip()
-  }, 50)
-}
+onTooltipFrame(async () => {
+  if (!tipShow.value || !tipStack || !tipEl.value) return
+  try { await drawTooltip(tipEl.value, tipStack, S) } catch {}
+})
 
 function placeTip() {
   const c = tipEl.value
@@ -189,9 +188,7 @@ function placeTip() {
   c.style.top = y - m + "px"
 }
 
-let hlTimer = null
 async function drawHl() {
-  clearTimeout(hlTimer)
   const K = state.gui, bc = hlBackEl.value, fc = hlFrontEl.value
   if (!K || !bc || !fc) return
   bc.width = fc.width = 176 * S
@@ -201,14 +198,12 @@ async function drawHl() {
   const imgs = await loadHl()
   if (slot !== hoverSlot.value) return
   const [ix, iy] = inner(K, slot)
-  const tick = performance.now() / 50
   for (const [c, spr] of [[bc, imgs.back], [fc, imgs.front]]) {
     if (!spr) continue
     const ctx = c.getContext("2d")
     ctx.imageSmoothingEnabled = false
-    ctx.drawImage(spr.frameAt(tick), (ix - 4) * S, (iy - 4) * S, 24 * S, 24 * S)
+    ctx.drawImage(spr.current, (ix - 4) * S, (iy - 4) * S, 24 * S, 24 * S)
   }
-  if (imgs.back?.animated || imgs.front?.animated) hlTimer = setTimeout(drawHl, 50)
 }
 
 const inner = (K, slot) => [K.ox + (slot % K.cols) * 18 + 1, K.oy + (slot / K.cols | 0) * 18 + 1]
