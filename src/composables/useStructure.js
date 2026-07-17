@@ -32,6 +32,11 @@ let loaded = []
 
 let cancelRead = false
 function cancelReading() { cancelRead = true }
+const setReading = v => {
+  if (v && !state.reading) cancelRead = false
+  state.reading = v
+}
+const readCancelled = () => cancelRead
 async function readMany(rels, reuse, mk) {
   mk ??= async rel => {
     const s = await readVanilla(rel)
@@ -654,7 +659,7 @@ async function onAssetsSwapped() {
 packs.setSwapHandler(onAssetsSwapped)
 
 export function useStructure() {
-  return { state: readonly(state), structure, loadVanilla, loadDefault, loadMany, loadFile, loadObject, loadDebug, loadFeature, loadFeatures, loadFeatureField, clickFeature, cancelReading }
+  return { state: readonly(state), structure, loadVanilla, loadDefault, loadMany, loadFile, loadObject, loadDebug, loadFeature, loadFeatures, loadFeatureField, clickFeature, cancelReading, setReading, readCancelled }
 }
 
 

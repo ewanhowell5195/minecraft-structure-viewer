@@ -128,7 +128,7 @@ onMounted(async () => {
       <!-- walking hides the viewport chrome: only the crosshair + hint show -->
       <template v-if="!walkState.on">
         <div v-if="current.error" class="chip error">{{ current.error }}</div>
-        <div v-else-if="current.reading" class="chip">reading structures… {{ current.reading.done }}/{{ current.reading.total }}</div>
+        <div v-else-if="current.reading" class="chip">{{ current.reading.label || "reading structures" }}… {{ current.reading.done }}/{{ current.reading.total }}</div>
         <div v-else-if="buildState.status" class="chip">{{ buildState.status }}</div>
         <div v-else-if="info" class="chip">{{ info }}</div>
         <div v-if="!current.error && aim" class="chip aim">{{ aim }}</div>

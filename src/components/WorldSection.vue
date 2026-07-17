@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, ref, watch } from "vue"
 import { useWorld } from "../composables/useWorld.js"
 import { useLock } from "../composables/useLock.js"
 import { createGridRenderer, GRID } from "../world.js"
+import Modal from "./Modal.vue"
 
 const world = useWorld()
 const { state } = world
@@ -18,10 +19,17 @@ const fillStyle = computed(() => ({
   width: ((state.yMax - state.yMin) / (Y_HI - Y_LO) * 100) + "%"
 }))
 
-const CHUNKS = [64, 48, 32, 24, 16, 12, 8]
-const ZI_BASE = 4
+const willTruncate = computed(() => {
+  void state.selCount; void state.yMin; void state.yMax
+  return world.loadForecast()
+})
+
+const ZI_BASE = 7
 let W = 287
-const pxFor = zi => Math.max(3, Math.round(W / CHUNKS[zi]))
+const pxFor = zi => [1, 2, 3,
+  Math.round(W / 64), Math.round(W / 48), Math.round(W / 32), Math.round(W / 24),
+  Math.round(W / 16), Math.round(W / 12), Math.round(W / 8)][zi]
+const ZI_MAX = 9
 let view = null
 let bounds = null
 let boundsFor = null
@@ -37,23 +45,33 @@ function computeBounds() {
   }
   let minCx = Infinity, maxCx = -Infinity, minCz = Infinity, maxCz = -Infinity
   const present = new Set()
+  const buckets = new Map()
+  let bestBucket = null, bestCount = 0
   for (const c of chunks) {
     minCx = Math.min(minCx, c.cx); maxCx = Math.max(maxCx, c.cx)
     minCz = Math.min(minCz, c.cz); maxCz = Math.max(maxCz, c.cz)
     present.add(c.cx + "," + c.cz)
+    const k = (c.cx >> 5) + "," + (c.cz >> 5)
+    const n = (buckets.get(k) ?? 0) + 1
+    buckets.set(k, n)
+    if (n > bestCount) { bestCount = n; bestBucket = k }
   }
-  bounds = { minCx, maxCx, minCz, maxCz, present }
+  const [hx, hz] = bestBucket.split(",").map(Number)
+  let homeCx = hx * 32 + 16, homeCz = hz * 32 + 16
+  origin: for (let z = -8; z < 8; z++) for (let x = -8; x < 8; x++) {
+    if (present.has(x + "," + z)) { homeCx = 0; homeCz = 0; break origin }
+  }
+  bounds = { minCx, maxCx, minCz, maxCz, present, homeCx, homeCz }
   fitView()
 }
 
 function fitView() {
-  const w = bounds.maxCx - bounds.minCx + 1, h = bounds.maxCz - bounds.minCz + 1
   const px = pxFor(ZI_BASE)
   view = {
     zi: ZI_BASE,
     px,
-    cx0: bounds.minCx + w / 2 - W / px / 2,
-    cz0: bounds.minCz + h / 2 - W / px / 2
+    cx0: bounds.homeCx - W / px / 2,
+    cz0: bounds.homeCz - W / px / 2
   }
 }
 
@@ -77,19 +95,21 @@ function draw() {
   view.px = pxFor(view.zi)
   const { px, cx0, cz0 } = view
   const span = W / px
-  const wSpan = GRID / 8
-  const covered = win &&
+  const tpc = span > GRID / 8 - 8 ? 1 : 8
+  const wSpan = GRID / tpc
+  const covered = win && win.tpc === tpc &&
     cx0 >= win.w0x && cz0 >= win.w0z && cx0 + span <= win.w0x + wSpan && cz0 + span <= win.w0z + wSpan
   if (!covered || dataRev !== state.rev) {
     win = {
+      tpc,
       w0x: Math.floor(cx0 + span / 2 - wSpan / 2),
       w0z: Math.floor(cz0 + span / 2 - wSpan / 2)
     }
-    world.fillGridWindow(R.data, win.w0x, win.w0z, GRID)
+    world.fillGridWindow(R.data, win.w0x, win.w0z, GRID, tpc)
     R.upload()
     dataRev = state.rev
   }
-  const cellW = px - (px >= 7 ? 1 : 0)
+  const cellW = px - (view.zi >= 7 ? 1 : 0)
   const level = Math.min(8, Math.max(1, Math.pow(2, Math.floor(Math.log2(cellW)) - 1)))
   const marqueeOn = marquee ? !world.rectHasSelected(marquee.aCx, marquee.aCz, marquee.bCx, marquee.bCz) : false
   R.draw({ ...win, cx0: Math.round(cx0 * px) / px, cz0: Math.round(cz0 * px) / px, px, cellW, level, marquee, marqueeOn })
@@ -99,7 +119,22 @@ function draw() {
 watch(() => [state.rev, state.active, collapsed.value], () => nextTick(draw))
 onMounted(() => nextTick(draw))
 const ro = new ResizeObserver(() => draw())
-watch(mapEl, (el, old) => { if (old) ro.unobserve(old); if (el) ro.observe(el) })
+watch(mapEl, (el, old) => {
+  if (old) ro.unobserve(old)
+  if (el) {
+    ro.observe(el)
+    el.addEventListener("webglcontextlost", e => e.preventDefault())
+    el.addEventListener("webglcontextrestored", () => { R = null; nextTick(draw) })
+  }
+})
+document.addEventListener("visibilitychange", () => { if (!document.hidden) nextTick(draw) })
+
+const hovering = ref(false)
+window.addEventListener("keydown", e => {
+  if (e.key !== "Escape" || !hovering.value) return
+  if (marquee) cancelMarquee()
+  else world.clearSelection()
+})
 
 function canvasPos(e) {
   const r = mapEl.value.getBoundingClientRect()
@@ -111,28 +146,49 @@ function chunkCoords(e) {
   return [Math.floor(view.cx0 + mx / view.px), Math.floor(view.cz0 + my / view.px)]
 }
 
-function chunkAt(e) {
-  if (!view || !bounds) return null
-  const [cx, cz] = chunkCoords(e)
-  const key = cx + "," + cz
-  return bounds.present.has(key) ? key : null
+let marquee = null, panning = null
+
+function marqueeHint() {
+  const on = !world.rectHasSelected(marquee.aCx, marquee.aCz, marquee.bCx, marquee.bCz)
+  const x0 = Math.min(marquee.aCx, marquee.bCx), x1 = Math.max(marquee.aCx, marquee.bCx)
+  const z0 = Math.min(marquee.aCz, marquee.bCz), z1 = Math.max(marquee.aCz, marquee.bCz)
+  let n = 0
+  for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++) {
+    const key = x + "," + z
+    if (bounds.present.has(key) && world.isSelected(key) !== on) n++
+  }
+  hoverTxt.value = `${on ? "+" : "-"}${n} chunk${n === 1 ? "" : "s"}`
 }
 
-let marquee = null, panning = null
 function onDown(e) {
   if (e.button === 0) {
     if (!view || !bounds) return
     const [cx, cz] = chunkCoords(e)
     marquee = { aCx: cx, aCz: cz, bCx: cx, bCz: cz }
+    marqueeHint()
     draw()
   } else {
     panning = { x: e.clientX, y: e.clientY, cx0: view.cx0, cz0: view.cz0 }
   }
   mapEl.value.setPointerCapture(e.pointerId)
 }
+function cancelMarquee() {
+  marquee = null
+  hoverTxt.value = ""
+  draw()
+}
+
 function onMove(e) {
-  const k = chunkAt(e)
-  hoverTxt.value = k ? `chunk ${k.replace(",", ", ")}` : ""
+  // pressing right mid-drag arrives as a chorded pointermove, not a pointerdown
+  if (marquee && (e.buttons & 2)) return cancelMarquee()
+  if (view && !marquee) {
+    const [mx, my] = canvasPos(e)
+    const cfx = view.cx0 + mx / view.px, cfz = view.cz0 + my / view.px
+    const cx = Math.floor(cfx), cz = Math.floor(cfz)
+    let t = `block ${Math.floor(cfx * 16)}, ${Math.floor(cfz * 16)} · chunk ${cx}, ${cz}`
+    if (!state.regionFile) t += ` · region ${cx >> 5}, ${cz >> 5}`
+    hoverTxt.value = t
+  }
   if (panning) {
     const r = mapEl.value.getBoundingClientRect()
     const s = W / r.width / view.px
@@ -146,6 +202,7 @@ function onMove(e) {
   if (cx !== marquee.bCx || cz !== marquee.bCz) {
     marquee.bCx = cx
     marquee.bCz = cz
+    marqueeHint()
     draw()
   }
 }
@@ -161,7 +218,7 @@ function onWheel(e) {
   e.preventDefault()
   const [mx, my] = canvasPos(e)
   const cx = view.cx0 + mx / view.px, cz = view.cz0 + my / view.px
-  view.zi = Math.min(CHUNKS.length - 1, Math.max(0, view.zi + (e.deltaY < 0 ? 1 : -1)))
+  view.zi = Math.min(ZI_MAX, Math.max(0, view.zi + (e.deltaY < 0 ? 1 : -1)))
   view.px = pxFor(view.zi)
   view.cx0 = cx - mx / view.px
   view.cz0 = cz - my / view.px
@@ -184,11 +241,20 @@ function onDblClick() {
         <span class="material-symbols-outlined">close</span>
       </button>
     </h2>
-    <div class="wname" :title="state.name">{{ state.name }}</div>
+    <div class="wname-row">
+      <div class="wname" :title="state.name">{{ state.name }}</div>
+      <button v-if="state.chunkCount" class="icon" title="Reset view" @click="onDblClick">
+        <span class="material-symbols-outlined">recenter</span>
+      </button>
+    </div>
     <div v-if="state.error" class="err">{{ state.error }}</div>
+    <div v-if="state.loading" class="loadbar">
+      <div class="fill" :style="{ width: state.loading.total ? (state.loading.done / state.loading.total * 100) + '%' : '0%' }"></div>
+    </div>
     <template v-if="state.chunkCount">
       <canvas ref="mapEl" class="map" @pointerdown="onDown" @pointermove="onMove"
-        @pointerup="onUp" @pointercancel="onUp" @pointerleave="hoverTxt = ''"
+        @pointerup="onUp" @pointercancel="onUp"
+        @pointerenter="hovering = true" @pointerleave="hovering = false; hoverTxt = ''"
         @wheel="onWheel" @dblclick="onDblClick" @contextmenu.prevent></canvas>
       <div class="hint">{{ hoverTxt || "Drag a box to select · wheel zooms · right-drag pans" }}</div>
       <div class="checks">
@@ -209,12 +275,30 @@ function onDblClick() {
         </div>
       </div>
       <div class="row">
-        <button class="primary" :disabled="locked || state.busy || !state.selCount" @click="world.loadSelected()">
+        <button class="primary" :class="{ warnload: willTruncate }" :disabled="locked || state.busy || !state.selCount"
+          :title="willTruncate ? 'this selection may exceed memory: loading may stop early and show a partial world' : ''"
+          @click="world.loadSelected()">
+          <span v-if="willTruncate" class="material-symbols-outlined">warning</span>
           Load {{ state.selCount || "" }} chunk{{ state.selCount === 1 ? "" : "s" }}
         </button>
         <button :disabled="!state.selCount" @click="world.clearSelection()">Clear</button>
       </div>
     </template>
+    <Modal v-if="state.memWarn" :width="340" :z="250" :closable="false" :dismissable="false" style="--modal-gap: 0px" class="mw">
+      <h3>Large selection</h3>
+      <p>This selection may need more memory than the browser has. Loading may stop early and show a partial world.</p>
+      <div class="mrow">
+        <button class="primary" @click="world.answerMemWarn(true)">Load anyway</button>
+        <button @click="world.answerMemWarn(false)">Cancel</button>
+      </div>
+    </Modal>
+    <Modal v-if="state.stopped" :width="340" :z="250" :closable="false" :dismissable="false" style="--modal-gap: 0px" class="mw">
+      <h3>Loading stopped early</h3>
+      <p>The memory limit was reached: showing {{ state.stopped.loaded }} of {{ state.stopped.total }} chunks.</p>
+      <div class="mrow">
+        <button class="primary" @click="world.dismissStopped()">OK</button>
+      </div>
+    </Modal>
   </section>
 </template>
 
@@ -226,7 +310,8 @@ h2 .count {
   text-transform: none;
 }
 
-h2 .icon {
+h2 .icon,
+.wname-row .icon {
   padding: 0;
   width: 20px;
   height: 20px;
@@ -237,14 +322,24 @@ h2 .icon {
   color: var(--text-dim);
 }
 
-h2 .icon:hover {
+h2 .icon:hover,
+.wname-row .icon:hover {
   background: #ffffff14;
   color: var(--text);
 }
 
-h2 .icon .material-symbols-outlined { font-size: 15px; }
+h2 .icon .material-symbols-outlined,
+.wname-row .icon .material-symbols-outlined { font-size: 15px; }
+
+.wname-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
 
 .wname {
+  flex: 1;
+  min-width: 0;
   font-size: 12px;
   color: var(--text-dim);
   overflow: hidden;
@@ -268,6 +363,53 @@ h2 .icon .material-symbols-outlined { font-size: 15px; }
   color: var(--text-dim);
   font-variant-numeric: tabular-nums;
 }
+
+.loadbar {
+  height: 6px;
+  border-radius: 3px;
+  background: #ffffff14;
+  overflow: hidden;
+}
+
+.loadbar .fill {
+  height: 100%;
+  background: #4c8dff;
+  transition: width 0.15s;
+}
+
+.mw :deep(.modal-panel) {
+  padding: 18px 20px;
+  box-shadow: 0 10px 40px #00000080;
+}
+
+.mw h3 {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+
+.mw p {
+  margin: 0 0 14px;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.mrow {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.warnload {
+  background: #8a6d1f;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+
+.warnload .material-symbols-outlined { font-size: 14px; }
+
+.warnload:hover:not(:disabled) { background: #a3831f; }
 
 .err {
   font-size: 12px;

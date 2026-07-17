@@ -10,7 +10,7 @@ async function inflate(data, format) {
 
 export const unzipEntry = entry => entry.method === 8 ? inflate(entry.data, "deflate-raw") : entry.data
 
-export async function readWorldZip(buf) {
+export async function readWorldZip(buf, onProgress) {
   const lib = await loadLibrary()
   const files = lib.parseZip(new Uint8Array(buf))
   const prefixes = new Set()
@@ -19,19 +19,26 @@ export async function readWorldZip(buf) {
     if (m) prefixes.add(m[1])
   }
   if (!prefixes.size) throw new Error("no region files found (is this a world zip?)")
-  const prefix = [...prefixes].sort((a, b) => (/DIM/i.test(a) - /DIM/i.test(b)) || a.length - b.length)[0]
+  const rank = p => /dimensions\/minecraft\/overworld\//.test(p) ? 0 : /DIM|the_nether|the_end/i.test(p) ? 2 : 1
+  const prefix = [...prefixes].sort((a, b) => rank(a) - rank(b) || a.length - b.length)[0]
+  const root = prefix.replace(/dimensions\/[^/]+\/[^/]+\/$/, "")
 
   let name = ""
-  const levelEntry = files.get(prefix + "level.dat")
+  const levelEntry = files.get(root + "level.dat")
   if (levelEntry) {
     try { name = (await readNBT(await unzipEntry(levelEntry))).Data?.LevelName ?? "" } catch {}
   }
 
-  const regionBufs = new Map()
-  const chunks = []
+  const regions = []
   for (const [p, entry] of files) {
     const m = p.match(/^(.*?)region\/r\.(-?\d+)\.(-?\d+)\.mca$/)
-    if (!m || m[1] !== prefix) continue
+    if (m && m[1] === prefix) regions.push([m, entry])
+  }
+  const regionBufs = new Map()
+  const chunks = []
+  let done = 0
+  for (const [m, entry] of regions) {
+    onProgress?.(done++, regions.length)
     const bytes = await unzipEntry(entry)
     if (bytes.length < 8192) continue
     const key = m[2] + "," + m[3]
@@ -43,13 +50,12 @@ export async function readWorldZip(buf) {
   const structures = new Map()
   for (const [p, entry] of files) {
     const m = p.match(/^(.*?)generated\/([^/]+)\/structures\/(.+)\.nbt$/)
-    if (!m || m[1] !== prefix) continue
+    if (!m || m[1] !== root) continue
     structures.set("world/" + (m[2] === "minecraft" ? "" : m[2] + "/") + m[3], entry)
   }
   return { name, regionBufs, chunks, structures }
 }
 
-// the 8KB region header holds 1024 chunk location entries
 function scanRegion(bytes, rx, rz, key, chunks) {
   const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
   for (let i = 0; i < 1024; i++) {
@@ -85,31 +91,76 @@ async function readChunk(world, chunk) {
 
 const PLANTS = new Set(["poppy", "dandelion", "oxeye_daisy", "azure_bluet", "cornflower", "allium",
   "lilac", "peony", "sunflower", "wither_rose", "wheat", "beetroots", "carrots", "potatoes",
-  "sugar_cane", "cactus", "vine"])
+  "sugar_cane", "cactus", "vine", "lily_pad"])
+export const DYES = ["white", "light_gray", "gray", "black", "brown", "red", "orange", "yellow",
+  "lime", "green", "cyan", "light_blue", "blue", "purple", "magenta", "pink"]
+const DYE_CODE = new Map(DYES.map((d, i) => [d, 17 + i]))
+const DYE_PREFIX = new RegExp("^(" + [...DYES].sort((a, b) => b.length - a.length).join("|") + ")_")
 function surfaceCode(name) {
   const n = name.replace(/^minecraft:/, "")
-  if (n === "water" || n === "kelp" || n === "kelp_plant" || n.endsWith("seagrass") || n === "lily_pad") return 2
-  if (n === "grass_block" || n === "moss_block" || n === "moss_carpet") return 3
+  if (n === "water" || n === "kelp" || n === "kelp_plant" || n.endsWith("seagrass")) return 2
+  if (n === "grass_block" || n.startsWith("moss_")) return 3
   if (n === "lava" || n === "magma_block") return 11
   if (n === "snow" || n === "snow_block" || n === "powder_snow") return 8
   if (n === "bedrock") return 15
   if (n === "netherrack") return 13
   if (n.startsWith("end_stone")) return 14
+  if (n.startsWith("nether_wart")) return 33
+  if (n === "warped_wart_block") return 34
+  if (n === "soul_sand" || n === "soul_soil") return 35
+  if (n.endsWith("basalt")) return 36
+  if (n.includes("blackstone")) return 37
+  if (n.includes("nether_brick")) return 38
   if (n.endsWith("gravel")) return 16
   if (n.endsWith("ice")) return 9
+  if (n.includes("red_sand")) return 56
   if (n.endsWith("sand") || n.endsWith("sandstone")) return 5
-  if (n.endsWith("_log") || n.endsWith("_wood") || n.endsWith("_stem") || n.endsWith("_hyphae") || n.endsWith("_planks") || n.startsWith("bamboo")) return 6
+  if (n.includes("copper") && !n.endsWith("_ore")) {
+    if (n.includes("oxidized")) return 67
+    if (n.includes("weathered")) return 66
+    if (n.includes("exposed")) return 65
+    return 64
+  }
+  if (n === "glass" || n === "glass_pane") return 61
+  if (n === "bricks" || n.startsWith("brick_")) return 62
+  if (n.includes("quartz") && !n.endsWith("_ore")) return 63
+  if (n.endsWith("_log") || n.endsWith("_wood") || n.endsWith("_stem") || n.endsWith("_hyphae") || n.endsWith("_planks") || n.startsWith("bamboo") ||
+    n.endsWith("_fence") || n.endsWith("_fence_gate") || n.endsWith("_door") || n.endsWith("_trapdoor")) return 6
+  if (n === "pale_oak_leaves" || (n.startsWith("pale_") && n.includes("moss"))) return 68
+  if (n === "cherry_leaves") return 57
+  if (n === "yellow_poplar_leaves") return 58
+  if (n === "orange_poplar_leaves") return 59
+  if (n === "red_poplar_leaves") return 60
   if (n.endsWith("_leaves")) return 7
   if (n === "dirt" || n.endsWith("_dirt") || n === "dirt_path" || n === "podzol" || n === "mud" || n === "mycelium" || n === "farmland") return 10
   if (n.endsWith("grass") || n.endsWith("fern") || n.endsWith("bush") || n.endsWith("sapling") || n.endsWith("_tulip") ||
     n.endsWith("_orchid") || n.endsWith("_petals") || n.endsWith("flower") || n.startsWith("sweet_berry") || PLANTS.has(n)) return 12
+  if (n === "terracotta") return 55
+  const dye = n.match(DYE_PREFIX)
+  if (dye) {
+    if (n.endsWith("_terracotta") && !n.includes("glazed")) return 39 + DYES.indexOf(dye[1])
+    return DYE_CODE.get(dye[1])
+  }
   return 4
+}
+
+function manmade(name) {
+  const n = name.replace(/^minecraft:/, "")
+  return n.endsWith("_planks") || n.endsWith("_slab") || n.endsWith("_stairs") || n.endsWith("_wall") ||
+    n.endsWith("_fence") || n.endsWith("_fence_gate") || n.endsWith("bricks") || n.endsWith("_concrete") ||
+    n.endsWith("_log") || n.endsWith("_wood") ||
+    n.endsWith("glass") || n.endsWith("_pane") ||
+    n.endsWith("_door") || n.endsWith("_trapdoor") ||
+    n.startsWith("polished_") || n.startsWith("smooth_") || n.startsWith("chiseled_") || n.startsWith("cut_") ||
+    n === "bricks" || (n.includes("quartz") && !n.endsWith("_ore")) ||
+    DYE_PREFIX.test(n)
 }
 
 export async function chunkSurface(world, chunk) {
   const nbt = await readChunk(world, chunk)
   const sections = (nbt.sections ?? []).filter(s => s.block_states?.palette).sort((a, b) => b.Y - a.Y)
   const cols = new Uint8Array(256)
+  const colW = new Uint8Array(256)
   let remaining = 256
   for (const s of sections) {
     if (!remaining) break
@@ -117,6 +168,7 @@ export async function chunkSurface(world, chunk) {
     const airMask = pal.map(e => AIR.test(e.Name))
     if (!airMask.includes(false)) continue
     const codes = pal.map(e => surfaceCode(e.Name))
+    const wts = pal.map(e => manmade(e.Name) ? 3 : 1)
     let idx = null
     if (pal.length > 1) {
       idx = new Uint16Array(4096)
@@ -136,30 +188,36 @@ export async function chunkSurface(world, chunk) {
         const pi = idx ? idx[(y << 8) | col] : 0
         if (airMask[pi]) continue
         cols[col] = codes[pi]
+        colW[col] = wts[pi]
         remaining--
         break
       }
     }
   }
   if (remaining === 256) return null
-  const mode = arr => {
-    const counts = new Uint16Array(32)
+  const counts = new Uint16Array(64)
+  const mode = (arr, wts) => {
+    counts.fill(0)
     let best = 0, bn = 0
-    for (const c of arr) {
+    for (let i = 0; i < arr.length; i++) {
+      const c = arr[i]
       if (!c) continue
-      if (++counts[c] > bn) { bn = counts[c]; best = c }
+      if ((counts[c] += wts[i]) > bn) { bn = counts[c]; best = c }
     }
     return best
   }
-  const sub = new Uint8Array(64)
-  const quad = new Uint8Array(4)
+  // [0..63] 8x8 sub-cells, [64] whole-chunk mode for the far-out zoom levels
+  const sub = new Uint8Array(65)
+  const quad = new Uint8Array(4), quadW = new Uint8Array(4)
   for (let sz = 0; sz < 8; sz++) for (let sx = 0; sx < 8; sx++) {
-    quad[0] = cols[(sz * 2) * 16 + sx * 2]
-    quad[1] = cols[(sz * 2) * 16 + sx * 2 + 1]
-    quad[2] = cols[(sz * 2 + 1) * 16 + sx * 2]
-    quad[3] = cols[(sz * 2 + 1) * 16 + sx * 2 + 1]
-    sub[sz * 8 + sx] = mode(quad)
+    for (let q = 0; q < 4; q++) {
+      const col = (sz * 2 + (q >> 1)) * 16 + sx * 2 + (q & 1)
+      quad[q] = cols[col]
+      quadW[q] = colW[col]
+    }
+    sub[sz * 8 + sx] = mode(quad, quadW)
   }
+  sub[64] = mode(cols, colW)
   return sub
 }
 
@@ -176,15 +234,9 @@ function plain(v) {
   return v
 }
 
-export async function buildSelection(world, selected, { yMin = -Infinity, yMax = Infinity } = {}) {
+export async function buildSelection(world, selected, { yMin = -Infinity, yMax = Infinity, budget = Infinity } = {}, onProgress) {
   const chunks = world.chunks.filter(c => selected.has(c.cx + "," + c.cz))
   if (!chunks.length) throw new Error("no chunks selected")
-  const parsed = []
-  for (const c of chunks) {
-    const nbt = await readChunk(world, c)
-    if (!nbt.sections) throw new Error("this world's chunks are too old (1.18+ only)")
-    parsed.push({ c, nbt })
-  }
 
   let minCx = Infinity, maxCx = -Infinity, minCz = Infinity, maxCz = -Infinity
   for (const c of chunks) {
@@ -192,8 +244,15 @@ export async function buildSelection(world, selected, { yMin = -Infinity, yMax =
     minCz = Math.min(minCz, c.cz); maxCz = Math.max(maxCz, c.cz)
   }
   const inRange = s => s.Y * 16 + 15 >= yMin && s.Y * 16 <= yMax
+  // two passes re-reading each chunk so only one parsed NBT lives at a time:
+  // holding thousands of them was a large slice of the memory that big loads burn
   let minSec = Infinity, maxSec = -Infinity
-  for (const { nbt } of parsed) {
+  let done = 0
+  const total = chunks.length * 2
+  for (const c of chunks) {
+    if (onProgress?.(done++, total) === false) throw new Error("cancelled")
+    const nbt = await readChunk(world, c)
+    if (!nbt.sections) throw new Error("this world's chunks are too old (1.18+ only)")
     for (const s of nbt.sections) {
       const pal = s.block_states?.palette
       if (!inRange(s) || !pal || pal.every(e => AIR.test(e.Name))) continue
@@ -218,18 +277,28 @@ export async function buildSelection(world, selected, { yMin = -Infinity, yMax =
     return i
   }
 
-  const beMap = new Map()
-  for (const { nbt } of parsed) {
+  const blocks = []
+  const relTop = yTop - y0
+  // stop pulling chunks once the block list approaches the memory budget:
+  // partial worlds beat dead tabs. Chrome measures the heap live, elsewhere the
+  // block count stands in at ~120 bytes each
+  const over = () => {
+    const mem = performance.memory
+    if (mem) return mem.usedJSHeapSize > mem.jsHeapSizeLimit * 0.85
+    return blocks.length * 120 > budget
+  }
+  let loaded = 0, truncated = false
+  for (const c of chunks) {
+    if (onProgress?.(done++, total) === false) throw new Error("cancelled")
+    if ((loaded & 15) === 15 && over()) { truncated = true; break }
+    loaded++
+    const nbt = await readChunk(world, c)
+    const beMap = new Map()
     for (const be of nbt.block_entities ?? []) {
       if (typeof be?.x !== "number") continue
       const { x, y, z, keepPacked, ...rest } = be
       beMap.set(`${x - x0},${y - y0},${z - z0}`, plain(rest))
     }
-  }
-
-  const blocks = []
-  const relTop = yTop - y0
-  for (const { c, nbt } of parsed) {
     const bx = c.cx * 16 - x0, bz = c.cz * 16 - z0
     for (const s of nbt.sections) {
       if (s.Y < minSec || s.Y > maxSec || !inRange(s)) continue
@@ -270,7 +339,10 @@ export async function buildSelection(world, selected, { yMin = -Infinity, yMax =
     size: [(maxCx - minCx + 1) * 16, relTop + 1, (maxCz - minCz + 1) * 16],
     palette,
     blocks,
-    entities: []
+    entities: [],
+    truncated,
+    chunksLoaded: loaded,
+    chunksTotal: chunks.length
   }
 }
 
@@ -292,33 +364,53 @@ uniform vec2 uView0;
 uniform float uPx;
 uniform float uCellW;
 uniform float uLevel;
+uniform float uTpc;
 uniform float uH;
 uniform vec4 uMarquee;
 uniform vec3 uMarqueeCol;
 uniform int uMarqueeOn;
 out vec4 o;
-const vec3 COLS[17] = vec3[](
+const vec3 COLS[69] = vec3[](
   vec3(0.0), vec3(0.227, 0.227, 0.259), vec3(0.251, 0.251, 1.0), vec3(0.498, 0.698, 0.22),
   vec3(0.439, 0.439, 0.439), vec3(0.969, 0.914, 0.639), vec3(0.561, 0.467, 0.282),
   vec3(0.0, 0.486, 0.0), vec3(1.0, 1.0, 1.0), vec3(0.627, 0.627, 1.0),
   vec3(0.592, 0.427, 0.302), vec3(0.847, 0.498, 0.2), vec3(0.561, 0.808, 0.373),
-  vec3(0.435, 0.125, 0.125), vec3(0.867, 0.902, 0.647), vec3(0.0), vec3(0.51, 0.51, 0.51));
+  vec3(0.435, 0.125, 0.125), vec3(0.867, 0.902, 0.647), vec3(0.0), vec3(0.51, 0.51, 0.51),
+  vec3(0.976, 1.0, 0.996), vec3(0.616, 0.616, 0.592), vec3(0.278, 0.31, 0.322),
+  vec3(0.114, 0.114, 0.129), vec3(0.514, 0.329, 0.196), vec3(0.69, 0.18, 0.149),
+  vec3(0.976, 0.502, 0.114), vec3(0.996, 0.847, 0.239), vec3(0.502, 0.78, 0.122),
+  vec3(0.369, 0.486, 0.086), vec3(0.086, 0.612, 0.612), vec3(0.227, 0.702, 0.855),
+  vec3(0.235, 0.267, 0.667), vec3(0.537, 0.196, 0.722), vec3(0.78, 0.306, 0.741),
+  vec3(0.953, 0.545, 0.667),
+  vec3(0.475, 0.094, 0.094), vec3(0.086, 0.494, 0.525), vec3(0.318, 0.243, 0.2),
+  vec3(0.29, 0.29, 0.31), vec3(0.165, 0.145, 0.173), vec3(0.173, 0.086, 0.102),
+  vec3(0.82, 0.694, 0.631), vec3(0.529, 0.42, 0.384), vec3(0.224, 0.161, 0.137),
+  vec3(0.145, 0.086, 0.063), vec3(0.298, 0.196, 0.137), vec3(0.557, 0.235, 0.18),
+  vec3(0.624, 0.322, 0.141), vec3(0.729, 0.522, 0.141), vec3(0.404, 0.459, 0.208),
+  vec3(0.298, 0.322, 0.165), vec3(0.341, 0.361, 0.361), vec3(0.439, 0.424, 0.541),
+  vec3(0.298, 0.243, 0.361), vec3(0.478, 0.286, 0.345), vec3(0.584, 0.341, 0.424),
+  vec3(0.627, 0.302, 0.306), vec3(0.596, 0.369, 0.263), vec3(0.745, 0.4, 0.129),
+  vec3(0.94, 0.7, 0.85), vec3(0.8, 0.65, 0.15), vec3(0.8, 0.45, 0.12),
+  vec3(0.7, 0.2, 0.12),
+  vec3(0.816, 0.918, 0.914), vec3(0.588, 0.376, 0.31), vec3(0.925, 0.914, 0.886),
+  vec3(0.753, 0.42, 0.31), vec3(0.631, 0.494, 0.408), vec3(0.435, 0.631, 0.388),
+  vec3(0.325, 0.643, 0.525), vec3(0.62, 0.65, 0.62));
 void main() {
   vec2 sp = vec2(gl_FragCoord.x, uH - gl_FragCoord.y);
   vec2 cf = uView0 + sp / uPx;
   vec2 ch = floor(cf);
   vec2 cellf = clamp((cf - ch) * uPx / uCellW, 0.0, 0.999);
   vec2 sub = ch + (floor(cellf * uLevel) + 0.5) / uLevel;
-  ivec2 t = ivec2(floor((sub - uW0) * 8.0));
+  ivec2 t = ivec2(floor((sub - uW0) * uTpc));
   uint v = 0u;
   if (t.x >= 0 && t.y >= 0 && t.x < ${GRID} && t.y < ${GRID}) v = texelFetch(uGrid, t, 0).r;
-  uint base = v & 31u;
-  vec3 col = COLS[min(base, 16u)];
+  uint base = v & 127u;
+  vec3 col = COLS[min(base, 68u)];
   if (base > 0u && uCellW < uPx) {
     vec2 f = (cf - ch) * uPx;
     if (f.x > uCellW || f.y > uCellW) col = vec3(0.0);
   }
-  if ((v & 32u) != 0u) col = mix(col, vec3(1.0), 0.5);
+  if ((v & 128u) != 0u) col = mix(col, vec3(1.0), 0.5);
   vec4 outc = vec4(col, 1.0);
   if (uMarqueeOn == 1 && cf.x >= uMarquee.x && cf.y >= uMarquee.y && cf.x < uMarquee.z && cf.y < uMarquee.w) {
     outc = vec4(outc.rgb * 0.82 + uMarqueeCol * 0.18, 1.0);
@@ -364,12 +456,13 @@ export function createGridRenderer(canvas) {
     upload() {
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8UI, GRID, GRID, 0, gl.RED_INTEGER, gl.UNSIGNED_BYTE, this.data)
     },
-    draw({ w0x, w0z, cx0, cz0, px, cellW, level, marquee, marqueeOn }) {
+    draw({ w0x, w0z, cx0, cz0, px, cellW, level, tpc, marquee, marqueeOn }) {
       gl.uniform2f(U("uW0"), w0x, w0z)
       gl.uniform2f(U("uView0"), cx0, cz0)
       gl.uniform1f(U("uPx"), px)
       gl.uniform1f(U("uCellW"), cellW)
       gl.uniform1f(U("uLevel"), level)
+      gl.uniform1f(U("uTpc"), tpc)
       if (marquee) {
         gl.uniform4f(U("uMarquee"), Math.min(marquee.aCx, marquee.bCx), Math.min(marquee.aCz, marquee.bCz),
           Math.max(marquee.aCx, marquee.bCx) + 1, Math.max(marquee.aCz, marquee.bCz) + 1)
