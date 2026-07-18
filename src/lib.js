@@ -1,7 +1,6 @@
 import * as THREE from "three"
 
-// the app hands its three instance over so only one copy of three ever exists
-const LIB_URL = "https://cdn.jsdelivr.net/npm/block-model-renderer/src/web.js"
+const LIB_URL = "https://cdn.jsdelivr.net/npm/block-model-renderer/dist/block-model-renderer.min.js"
 
 let promise = null
 
