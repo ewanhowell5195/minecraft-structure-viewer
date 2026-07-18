@@ -106,10 +106,10 @@ function onFile(e) {
     </h2>
     <div class="controls">
       <input v-model="stateMut.filterText" placeholder="Filter…">
-      <select :value="state.filterMode" @change="onMode" :disabled="locked" title="all: every structure. standalone: neither pulled into another build nor loads any other structure blocks. starters: anything that starts a build (never placed as a piece of another).">
+      <select :value="state.filterMode" @change="onMode" :disabled="locked" title="all: every structure. starters: anything that starts a build (never placed as a piece of another). standalone: neither pulled into another build nor loads any other structure blocks.">
         <option value="all">All</option>
-        <option value="standalone">Standalone</option>
         <option value="starters">Starters</option>
+        <option value="standalone">Standalone</option>
       </select>
     </div>
     <ListTabs />
