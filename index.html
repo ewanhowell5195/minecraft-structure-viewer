@@ -94,6 +94,29 @@
       </svg>
     </div>
   </div>
+  <script>
+    // minimal embeds swap the indexable summary for the structure being
+    // opened before the app mounts, so the first paint is already right
+    (async () => {
+      const params = new URLSearchParams(location.search)
+      if (!params.has("minimal")) return
+      const ps = Array.from(document.querySelectorAll(".splash p"))
+      for (const p of ps.slice(1)) p.remove()
+      const raw = params.get("structure") || ""
+      let rels = raw.startsWith("!") ? null : raw.split(",").filter(Boolean)
+      if (!rels) {
+        try {
+          const bin = atob(raw.slice(1).replaceAll("-", "+").replaceAll("_", "/"))
+          const bytes = Uint8Array.from(bin, c => c.charCodeAt(0))
+          const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw"))
+          rels = (await new Response(stream).text()).split(",").filter(Boolean)
+        } catch { rels = [] }
+      }
+      const label = rels.length > 1 ? rels.length + " structures" : rels[0] ?? ""
+      if (label && ps[0]) ps[0].textContent = "Opening: " + label.replace(/\//g, "/\u200B")
+      else ps[0]?.remove()
+    })()
+  </script>
   <script type="module" src="/src/main.js"></script>
 </body>
 </html>

@@ -2,6 +2,7 @@
 import { computed } from "vue"
 import { useBuild } from "../composables/useBuild.js"
 import { useStructure } from "../composables/useStructure.js"
+import { minimal } from "../minimal.js"
 
 const { state } = useBuild()
 const { state: current } = useStructure()
@@ -17,7 +18,7 @@ const pct = computed(() => {
 </script>
 
 <template>
-  <div v-if="prog" :key="prog.phase" class="build-progress"
+  <div v-if="prog && !minimal" :key="prog.phase" class="build-progress"
     :class="prog.phase" :style="{ width: pct + '%' }"></div>
 </template>
 

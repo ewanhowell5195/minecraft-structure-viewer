@@ -12,6 +12,7 @@ import { JIGSAW, parseState } from "../transforms.js"
 import { isInspectable, readTrialSpawnerConfig } from "../loot.js"
 import { getFont, measure, drawText } from "../mcfont.js"
 import { drawFakeMap, randomiseFakeMapWorld } from "../mapgen.js"
+import { minimal } from "../minimal.js"
 
 const packs = usePacks()
 const sceneApi = useScene()
@@ -142,7 +143,7 @@ const state = reactive({
   fullbright: false,
   daytime: NOON,
   dimension: "overworld",
-  hideStructureBlocks: localStorage.getItem("hideStructureBlocks") !== "false",
+  hideStructureBlocks: minimal ? false : localStorage.getItem("hideStructureBlocks") !== "false",
   hasStructureBlocks: false,
   building: false,
   status: "",
