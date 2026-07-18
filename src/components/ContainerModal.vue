@@ -209,7 +209,8 @@ async function drawHl() {
 const inner = (K, slot) => [K.ox + (slot % K.cols) * 18 + 1, K.oy + (slot / K.cols | 0) * 18 + 1]
 
 // items render on a second stacked canvas so a re-roll never flashes the gui background away
-const bodyH = K => K.tile ? 17 + K.rows * 18 + 96 : K.texH
+// container section only: cut below the last slot row, plus the texture's 7px bottom border
+const bodyH = K => K.oy + K.rows * 18 + 7
 
 let bgSeq = 0
 async function drawBg() {
@@ -229,18 +230,18 @@ async function drawBg() {
   if (seq !== bgSeq) return
   const ctx = c.getContext("2d")
   ctx.imageSmoothingEnabled = false
-  // composed the way the game blits container screens, so pack art stays intact:
-  // header + rows in one block, then the whole 96px inventory block from y 126
+  // header + slot rows cropped from the full screen texture, closed with its own
+  // bottom border strip, so the player inventory half never shows and pack art stays intact
+  const cut = K.oy + K.rows * 18
   if (K.tile) {
     const chestH = 17 + Math.min(K.rows, 6) * 18
     ctx.drawImage(img, 0, 0, 176, chestH, 0, 0, 176 * S, chestH * S)
     for (let r = 6; r < K.rows; r++) ctx.drawImage(img, 0, 107, 176, 18, 0, (17 + r * 18) * S, 176 * S, 18 * S)
-    ctx.drawImage(img, 0, 126, 176, 96, 0, (17 + K.rows * 18) * S, 176 * S, 96 * S)
   } else {
-    ctx.drawImage(img, 0, 0, 176, K.texH, 0, 0, 176 * S, K.texH * S)
+    ctx.drawImage(img, 0, 0, 176, cut, 0, 0, 176 * S, cut * S)
   }
+  ctx.drawImage(img, 0, K.texH - 7, 176, 7, 0, cut * S, 176 * S, 7 * S)
   drawText(ctx, font, state.guiTitle, 8 * S, 6 * S, { scale: S, color: "#404040" })
-  drawText(ctx, font, "Inventory", 8 * S, (K.tile ? 17 + K.rows * 18 + 3 : K.texH - 94) * S, { scale: S, color: "#404040" })
 }
 
 let itemSeq = 0
