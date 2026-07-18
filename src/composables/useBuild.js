@@ -26,6 +26,19 @@ const LEGACY_RENAMES = {
   sign: "oak_sign",
   wall_sign: "oak_wall_sign"
 }
+let legacyNames = new Map()
+
+async function resolveLegacyNames(structure, lib, assets) {
+  legacyNames = new Map()
+  for (const entry of structure.palette) {
+    const raw = entry?.Name
+    if (!raw || legacyNames.has(raw)) continue
+    const stripped = raw.replace("minecraft:", "")
+    const renamed = LEGACY_RENAMES[stripped]
+    if (!renamed) continue
+    legacyNames.set(raw, await lib.readFile(`assets/minecraft/blockstates/${stripped}.json`, assets) ? raw : renamed)
+  }
+}
 
 const SB = /(^|:)structure_block$/
 function stripStructureBlocks(structure) {
@@ -1169,6 +1182,7 @@ async function build(structure = source, refit = true, slice = false) {
     state.status = "building…"
     buildDim = !state.fullbright && /^(the_nether|the_end)$/.test(unsliced.dimension) ? unsliced.dimension : "overworld"
     state.dimension = buildDim
+    await resolveLegacyNames(structure, lib, assets)
 
     // flood filled over what actually builds, so a slice relights; oversized scenes skip it
     if (state.lighting === "world" && !state.fullbright && lib.computeSceneLight && (sx + 2) * (sy + 2) * (sz + 2) <= 48000000) {
@@ -1176,7 +1190,7 @@ async function build(structure = source, refit = true, slice = false) {
       for (const b of structure.blocks) {
         const e = structure.palette[b.state]
         if (!e?.Name || AIR.test(e.Name)) continue
-        const name = LEGACY_RENAMES[e.Name.replace("minecraft:", "")] ?? e.Name
+        const name = legacyNames.get(e.Name) ?? e.Name
         lightBlocks.push({ id: name, properties: fixLegacyProps(name.replace("minecraft:", ""), e.Properties) ?? {}, pos: b.pos })
       }
       if (lightBlocks.length) {
@@ -1206,7 +1220,7 @@ async function build(structure = source, refit = true, slice = false) {
       g.userData.daytime = daytimeUniform
       let tmpl = null
       try {
-        const name = LEGACY_RENAMES[entry.Name.replace("minecraft:", "")] ?? entry.Name
+        const name = legacyNames.get(entry.Name) ?? entry.Name
         const props = fixLegacyProps(name.replace("minecraft:", ""), entry.Properties)
         const block = entry.__block ?? { id: name, properties: props ?? {} }
         const biome = entry.__biome ? { biome: entry.__biome } : null
@@ -1231,7 +1245,7 @@ async function build(structure = source, refit = true, slice = false) {
       const b = structure.blocks[i]
       const e = structure.palette[b.state]
       if (!e?.Name || AIR.test(e.Name) || isOpenable(e) || e.__loaderKey) continue
-      const name = LEGACY_RENAMES[e.Name.replace("minecraft:", "")] ?? e.Name
+      const name = legacyNames.get(e.Name) ?? e.Name
       const props = fixLegacyProps(name.replace("minecraft:", ""), e.Properties)
       const entry = { id: name, pos: b.pos }
       if (props) entry.properties = props
@@ -1334,7 +1348,7 @@ async function build(structure = source, refit = true, slice = false) {
         let key = null
         const rot = new THREE.Matrix4()
         try {
-          const name = LEGACY_RENAMES[entry.Name.replace("minecraft:", "")] ?? entry.Name
+          const name = legacyNames.get(entry.Name) ?? entry.Name
           const props = fixLegacyProps(name.replace("minecraft:", ""), entry.Properties)
           const models = await lib.parseBlockstate(assets, name, { data: props ?? {}, ignoreAtlases: true })
           const m = models.length === 1 ? models[0] : null
