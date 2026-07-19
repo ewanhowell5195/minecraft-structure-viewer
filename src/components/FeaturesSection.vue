@@ -97,7 +97,7 @@ function onRootMenu(e) {
     </h2>
     <div class="controls">
       <input v-model="stateMut.filterText" placeholder="Filter…">
-      <select :value="state.filterMode" @change="onMode" :disabled="locked" title="all: every feature. has block: features containing a matching block (comma-separated OR list; spaces match underscores).">
+      <select :value="state.filterMode" @change="onMode" :disabled="locked || state.indexing" title="all: every feature. has block: features containing a matching block (comma-separated OR list; spaces match underscores).">
         <option value="all">All</option>
         <option value="block">Has block…</option>
       </select>

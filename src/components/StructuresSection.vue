@@ -119,7 +119,7 @@ function onFile(e) {
     </h2>
     <div class="controls">
       <input v-model="stateMut.filterText" placeholder="Filter…">
-      <select :value="state.filterMode" @change="onMode" :disabled="locked" title="all: every structure. starters: anything that starts a build (never placed as a piece of another). standalone: neither pulled into another build nor loads any other structure blocks. has block / item / entity: structures containing a matching block, a matching item in a container or its loot table, or a matching entity (placed or spawner-spawned).">
+      <select :value="state.filterMode" @change="onMode" :disabled="locked || state.indexing" title="all: every structure. starters: anything that starts a build (never placed as a piece of another). standalone: neither pulled into another build nor loads any other structure blocks. has block / item / entity: structures containing a matching block, a matching item in a container or its loot table, or a matching entity (placed or spawner-spawned).">
         <option value="all">All</option>
         <option value="starters">Starters</option>
         <option value="standalone">Standalone</option>

@@ -1,7 +1,6 @@
 import { reactive, readonly, watch } from "vue"
 import { loadLibrary } from "../lib.js"
 import { usePacks } from "./usePacks.js"
-import { useLock } from "./useLock.js"
 import { PROC } from "../proc.js"
 import { GENERATED } from "../generators/builtin.js"
 import { numeric, strip } from "../transforms.js"
@@ -14,7 +13,6 @@ import { yieldTask } from "../yield.js"
 const STRUCT_RE = /^data\/([^/]+)\/structures?\/(.+)\.nbt$/
 
 const packs = usePacks()
-const { lock } = useLock()
 
 const state = reactive({
   names: [],
@@ -211,7 +209,6 @@ async function computeAdvIndex() {
 
 async function refresh() {
   state.indexing = true
-  lock(true)
   try {
     worldgenPromise = null
     starterSet = standaloneSet = structDepth = structRadius = null
@@ -225,7 +222,6 @@ async function refresh() {
     if (ADV_MODES.has(state.filterMode)) await computeAdvIndex()
   } finally {
     state.indexing = false
-    lock(false)
   }
 }
 

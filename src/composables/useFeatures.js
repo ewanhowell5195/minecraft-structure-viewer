@@ -1,7 +1,6 @@
 import { reactive, readonly, watch } from "vue"
 import { loadLibrary } from "../lib.js"
 import { usePacks } from "./usePacks.js"
-import { useLock } from "./useLock.js"
 import { numeric, strip, rnd } from "../transforms.js"
 import { matchIndex } from "../advfilter.js"
 import { generateFeature } from "../features/index.js"
@@ -13,7 +12,6 @@ const FEATURE_RE = /^data\/([^/]+)\/worldgen\/feature\/(.+)\.json$/
 
 const packs = usePacks()
 const structures = useStructures()
-const { lock } = useLock()
 const textDecoder = new TextDecoder()
 
 const state = reactive({
@@ -125,7 +123,6 @@ async function computeAdvIndex() {
 
 async function refresh() {
   state.indexing = true
-  lock(true)
   try {
     advPromise = null
     blockIndex = null
@@ -135,7 +132,6 @@ async function refresh() {
     if (state.filterMode === "block") await computeAdvIndex()
   } finally {
     state.indexing = false
-    lock(false)
   }
 }
 
