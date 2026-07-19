@@ -217,6 +217,19 @@ export function makeDebug(kind) {
     return finish()
   }
 
+  if (kind === "pane") {
+    put(0, 0, 0, "glass_pane", { north: "false", south: "false", east: "true", west: "true", waterlogged: "false" })
+    return finish()
+  }
+
+  // billboarded technical icons: barrier, every light level, structure void
+  if (kind === "billboard") {
+    put(0, 0, 0, "barrier")
+    for (let i = 0; i < 16; i++) put(1 + i, 0, 0, "light", { level: String(i) })
+    put(17, 0, 0, "structure_void")
+    return finish()
+  }
+
   if (kind === "aquarium") {
     // glass tank: every translucent adjacency case at once
     for (let x = 0; x <= 6; x++) for (let z = 0; z <= 6; z++) put(x, 0, z, "grass_block")
