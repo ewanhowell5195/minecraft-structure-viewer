@@ -14,6 +14,7 @@ import { yieldTask } from "../yield.js"
 import { useFeatures } from "./useFeatures.js"
 import { generateFeature } from "../features/index.js"
 import { mix, rand32, rnd } from "../transforms.js"
+import { isRemote, prefetchRemote, fetchRemote, remoteName } from "../remote.js"
 import { cacheFile, uncache } from "../userCache.js"
 
 const READERS = { nbt: readStructure, litematic: readLitematic, schem: readSchem, mcstructure: readMcstructure }
@@ -37,13 +38,13 @@ const setReading = v => {
   state.reading = v
 }
 const readCancelled = () => cancelRead
-async function readMany(rels, reuse, mk) {
+async function readMany(rels, reuse, mk, label) {
   mk ??= async rel => {
     const s = await readVanilla(rel)
     return s ? { structure: s, name: rel, rel } : null
   }
   cancelRead = false
-  state.reading = { done: 0, total: rels.length }
+  state.reading = { done: 0, total: rels.length, label }
   try {
     const entries = []
     let blocks = 0
@@ -156,8 +157,8 @@ addEventListener("popstate", async () => {
       else await loadFeature(feature, fseed)
       return
     }
-    const rels = (await decodeStructureParam(params.get("structure"))).filter(r => structures.has(r))
-    if (rels.length > 1) await loadMany(rels)
+    const rels = (await decodeStructureParam(params.get("structure"))).filter(r => isRemote(r) || structures.has(r))
+    if (rels.length > 1 || rels.some(isRemote)) await loadMany(rels)
     else if (rels.length === 1) await loadVanilla(rels[0])
     else await loadDefault()
   } finally {
@@ -345,6 +346,16 @@ async function apply(refit = true) {
   }
 }
 
+// structure= entries that are http(s) URLs fetch through the CORS proxy; the
+// URL doubles as the rel so history re-encoding and link sharing keep working
+async function remoteEntry(url) {
+  const bytes = await fetchRemote(url)
+  const name = remoteName(url)
+  const reader = READERS[name.split(".").pop().toLowerCase()] ?? readStructure
+  const s = await reader(bytes.buffer)
+  return { structure: s, name: name.replace(/\.(nbt|litematic|schem|mcstructure)$/i, ""), rel: url }
+}
+
 async function readVanilla(rel) {
   const w = useWorld()
   if (w.hasStructure(rel)) return readStructure(await w.readStructureBytes(rel))
@@ -476,8 +487,26 @@ function loadMany(rels) {
     state.error = ""
     const snap = snapshot()
     try {
-      const entries = await readMany([...new Set(rels)])
-      if (!entries?.length) return
+      const list = Array.from(new Set(rels))
+      prefetchRemote(list.filter(isRemote))
+      const failed = []
+      const entries = await readMany(list, undefined, async rel => {
+        if (!isRemote(rel)) {
+          const s = await readVanilla(rel)
+          return s ? { structure: s, name: rel, rel } : null
+        }
+        try {
+          return await remoteEntry(rel)
+        } catch (err) {
+          console.warn(`couldn't fetch ${rel}:`, err)
+          failed.push(remoteName(rel))
+          return null
+        }
+      }, list.some(isRemote) ? "downloading structures" : undefined)
+      if (!entries?.length) {
+        if (failed.length) state.error = failed.length === 1 ? `couldn't fetch ${failed[0]}` : `couldn't fetch ${failed.length} structures`
+        return
+      }
       state.field = null
       loaded = entries
       sortLoaded(visualOrder())

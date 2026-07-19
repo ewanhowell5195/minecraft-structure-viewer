@@ -14,6 +14,7 @@ import { useContainer } from "./composables/useContainer.js"
 import { useSlicers } from "./composables/useSlicers.js"
 import { tab } from "./composables/useTab.js"
 import { minimal } from "./minimal.js"
+import { isRemote, prefetchRemote } from "./remote.js"
 import PacksSection from "./components/PacksSection.vue"
 import StructuresSection from "./components/StructuresSection.vue"
 import FeaturesSection from "./components/FeaturesSection.vue"
@@ -34,7 +35,7 @@ import Modal from "./components/Modal.vue"
 const libError = ref("")
 const canvasEl = ref(null)
 const usedModal = ref(null)
-const { loadBase, restoreCachedPacks, state: packsState } = usePacks()
+const { loadBase, restoreCachedPacks, addUrlPacks, state: packsState } = usePacks()
 const structures = useStructures()
 const { state: current, structure, loadVanilla, loadDefault, loadMany, loadFile, loadDebug, loadFeature, loadFeatures, loadFeatureField, cancelReading } = useStructure()
 const { state: buildState, cancel: cancelBuild } = useBuild()
@@ -100,7 +101,12 @@ const splashName = computed(() => current.name.replace(/\//g, "/\u200B"))
 
 const STAGE_LABELS = { light: "lighting", build: "building", optimise: "optimising" }
 const splashStatus = computed(() => {
-  if (packsState.baseStatus) return packsState.baseStatus
+  // pack and jar downloads run concurrently; show both, but "loading…" is
+  // just the pre-download placeholder and never worth a second slot
+  const dl = []
+  if (packsState.remoteStatus) dl.push(packsState.remoteStatus)
+  if (packsState.baseStatus && !(dl.length && packsState.baseStatus === "loading…")) dl.push(packsState.baseStatus)
+  if (dl.length) return dl.join(" · ")
   const p = current.reading ? { ...current.reading, phase: "read" } : buildState.progress
   if (p?.total) {
     const stage = p.phase === "read" ? (p.label || "reading structures") : STAGE_LABELS[p.phase] ?? p.phase
@@ -146,6 +152,8 @@ onMounted(async () => {
   const structureParam = params.get("structure")
   const debug = params.get("debug")
   const feature = params.get("feature")
+  const requested = await decodeStructureParam(structureParam)
+  prefetchRemote(requested.filter(isRemote))
   const stop = watch(() => structures.state.names.length, async n => {
     if (!n) return
     stop()
@@ -160,8 +168,7 @@ onMounted(async () => {
         await useWorld().restoreLoad(params.get("wy"), wsel, params.get("wdim"))
         return
       }
-      const requested = await decodeStructureParam(structureParam)
-      const rels = requested.filter(r => structures.has(r))
+      const rels = requested.filter(r => isRemote(r) || structures.has(r))
       if (structureParam != null && !rels.length) {
         notFound.value = requested.length === 1
           ? `Structure not found: ${requested[0].replace(/\//g, "/\u200B")}`
@@ -172,7 +179,7 @@ onMounted(async () => {
       else if (feature != null && feature.includes(",")) await loadFeatures(feature.split(","))
       else if (feature != null && params.get("field") != null) await loadFeatureField(feature, parseSeedParam(params.get("fseed")))
       else if (feature != null) await loadFeature(feature, parseSeedParam(params.get("fseed")))
-      else if (rels.length > 1) await loadMany(rels)
+      else if (rels.length > 1 || rels.some(isRemote)) await loadMany(rels)
       else if (rels.length === 1) await loadVanilla(rels[0])
       else if (structureFile) await loadFile(structureFile, false)
       else if (!(minimal && notFound.value)) await loadDefault()
@@ -181,8 +188,10 @@ onMounted(async () => {
     }
     useSlicers().restoreUrlSlice()
   })
+  const packUrls = (params.get("packs") ?? "").split(",").filter(Boolean)
+  const urlPacks = packUrls.length ? addUrlPacks(packUrls) : undefined
   if (!minimal) await restoreCachedPacks()
-  await loadBase()
+  await loadBase(undefined, urlPacks)
 })
 </script>
 
@@ -212,6 +221,7 @@ onMounted(async () => {
         <div v-else-if="current.reading && !minimal" class="chip">{{ current.reading.label || "reading structures" }}… {{ current.reading.done }}/{{ current.reading.total }}</div>
         <div v-else-if="buildState.status && !minimal" class="chip">{{ buildState.status }}</div>
         <div v-else-if="info" class="chip">{{ info }}</div>
+        <div v-if="packsState.remoteError" class="chip error remote">{{ packsState.remoteError }}</div>
         <div v-if="!current.error && aim" class="chip aim">{{ aim }}</div>
         <LevelMenu v-if="!minimal" />
         <button v-if="(buildState.building || current.reading) && cancelReady" class="cancel-btn" @click="current.reading ? cancelReading() : cancelBuild()">
@@ -341,10 +351,14 @@ onMounted(async () => {
 
 .chip.error { color: var(--red); }
 
+.chip.remote { top: 44px; }
+
 .chip.aim {
   top: 44px;
   font-family: ui-monospace, monospace;
 }
+
+.chip.remote ~ .chip.aim { top: 76px; }
 
 .walk-btn {
   position: absolute;

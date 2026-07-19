@@ -2,6 +2,7 @@ import { reactive, shallowRef, readonly } from "vue"
 import { loadLibrary } from "../lib.js"
 import { loadMojangJar } from "../mojang.js"
 import { cachePack, uncachePack, setPackOrder, restorePacks } from "../userCache.js"
+import { proxyFetch, remoteName } from "../remote.js"
 import { useLock } from "./useLock.js"
 
 // index 0 = highest priority (prepareAssets first-wins order); pack bytes
@@ -37,7 +38,9 @@ const state = reactive({
   baseFailed: false,
   packs: [],
   busy: false,
-  assetsVersion: 0
+  assetsVersion: 0,
+  remoteStatus: "",
+  remoteError: ""
 })
 
 const assets = shallowRef(null)
@@ -69,7 +72,7 @@ async function rebuildAssets(swap) {
   }
 }
 
-async function loadBase(swap) {
+async function loadBase(swap, ready) {
   state.busy = true
   lock(true)
   state.baseFailed = false
@@ -90,6 +93,7 @@ async function loadBase(swap) {
     state.baseFailed = true
   }
   try {
+    await ready
     await rebuildAssets(swap)
   } finally {
     state.busy = false
@@ -162,6 +166,50 @@ async function movePack(id, delta, swap) {
   }
 }
 
+// packs= URL packs: all fetched concurrently (and concurrently with the jar;
+// loadBase's ready gate holds the rebuild until they land), added at the front
+// so the list order is the priority order, never written to the pack cache
+async function addUrlPacks(urls) {
+  const mb = n => (n / 1048576).toFixed(0)
+  const prog = urls.map(() => ({ got: 0, total: 0 }))
+  const label = urls.length === 1 ? remoteName(urls[0]) : `${urls.length} packs`
+  const update = () => {
+    let got = 0, total = 0
+    for (const p of prog) {
+      got += p.got
+      total += p.total
+    }
+    state.remoteStatus = total
+      ? `downloading ${label}… ${mb(Math.min(got, total))}/${mb(total)}MB`
+      : `downloading ${label}… ${mb(got)}MB`
+  }
+  update()
+  const results = await Promise.all(urls.map(async (url, i) => {
+    const name = remoteName(url)
+    try {
+      const bytes = await proxyFetch(url, (got, total) => {
+        prog[i].got = got
+        prog[i].total = total
+        update()
+      })
+      return { name, bytes }
+    } catch (err) {
+      console.warn(`couldn't fetch pack ${url}:`, err)
+      state.remoteError = `couldn't fetch pack: ${name}`
+      return null
+    }
+  }))
+  const added = []
+  for (const r of results) {
+    if (!r) continue
+    const id = nextId++
+    bytesById.set(id, r.bytes)
+    added.push({ id, name: r.name })
+  }
+  state.packs.unshift(...added)
+  state.remoteStatus = ""
+}
+
 async function restoreCachedPacks() {
   for (const file of await restorePacks()) {
     const id = nextId++
@@ -177,5 +225,5 @@ const allSources = () => state.packs.map(p => bytesById.get(p.id)).concat(baseBy
 const featureSources = () => state.packs.map(p => bytesById.get(p.id)).concat(builtinBytes, featureBytes).filter(Boolean)
 
 export function usePacks() {
-  return { state: readonly(state), assets, loadBase, setChannel, addPacks, removePack, movePack, restoreCachedPacks, allSources, featureSources, setSwapHandler }
+  return { state: readonly(state), assets, loadBase, setChannel, addPacks, addUrlPacks, removePack, movePack, restoreCachedPacks, allSources, featureSources, setSwapHandler }
 }
