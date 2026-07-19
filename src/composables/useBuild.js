@@ -18,7 +18,9 @@ const packs = usePacks()
 const sceneApi = useScene()
 const { lock } = useLock()
 
-const AIR = /(^|:)(air|cave_air|void_air|structure_void)$/
+// structure_void deliberately not air here: unlike the game we render it as
+// its particle icon (when technical blocks are on) so it can be seen
+const AIR = /(^|:)(air|cave_air|void_air)$/
 
 const LEGACY_RENAMES = {
   grass: "short_grass",
@@ -144,6 +146,7 @@ const state = reactive({
   daytime: NOON,
   dimension: "overworld",
   hideStructureBlocks: minimal ? false : localStorage.getItem("hideStructureBlocks") !== "false",
+  technical: minimal ? true : localStorage.getItem("technicalBlocks") !== "false",
   hasStructureBlocks: false,
   building: false,
   status: "",
@@ -1273,6 +1276,7 @@ async function build(structure = source, refit = true, slice = false) {
       lighting: state.lighting === "world" ? { dimension: buildDim, light: newLight ?? false, daytime: state.daytime } : state.lighting,
       keepTemplates: true,
       ignoreAtlases: true,
+      technical: state.technical,
       animate: false,
       onProgress: (stage, done, tot) => {
         if (stage.name === "optimize") {
@@ -1507,6 +1511,10 @@ async function build(structure = source, refit = true, slice = false) {
 watch(() => [state.lighting, state.fullbright], () => build(undefined, false))
 watch(() => state.hideStructureBlocks, v => {
   localStorage.setItem("hideStructureBlocks", String(v))
+  build(undefined, false)
+})
+watch(() => state.technical, v => {
+  localStorage.setItem("technicalBlocks", String(v))
   build(undefined, false)
 })
 

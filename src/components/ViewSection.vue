@@ -45,6 +45,10 @@ const collapsed = ref(true)
           </button>
         </label>
       </template>
+      <label class="check" title="Show barrier, light, and structure void blocks as their icons">
+        <input type="checkbox" v-model="buildState.technical" :disabled="locked">
+        Technical blocks
+      </label>
       <label class="check">
         <input type="checkbox" :checked="view.ortho" @change="sceneApi.setOrthoManual($event.target.checked)">
         Orthographic camera
