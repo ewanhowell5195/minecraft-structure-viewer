@@ -1,17 +1,20 @@
 import { reactive, readonly, watch } from "vue"
 import { loadLibrary } from "../lib.js"
 import { usePacks } from "./usePacks.js"
+import { useLock } from "./useLock.js"
 import { PROC } from "../proc.js"
 import { GENERATED } from "../generators/builtin.js"
 import { numeric, strip } from "../transforms.js"
 import { readStructure } from "../nbt.js"
 import { lootTableItems, readTrialSpawnerConfig } from "../loot.js"
+import { matchIndex } from "../advfilter.js"
 import { yieldTask } from "../yield.js"
 
 // structures? also matches the legacy/mod plural folder
 const STRUCT_RE = /^data\/([^/]+)\/structures?\/(.+)\.nbt$/
 
 const packs = usePacks()
+const { lock } = useLock()
 
 const state = reactive({
   names: [],
@@ -208,6 +211,7 @@ async function computeAdvIndex() {
 
 async function refresh() {
   state.indexing = true
+  lock(true)
   try {
     worldgenPromise = null
     starterSet = standaloneSet = structDepth = structRadius = null
@@ -221,6 +225,7 @@ async function refresh() {
     if (ADV_MODES.has(state.filterMode)) await computeAdvIndex()
   } finally {
     state.indexing = false
+    lock(false)
   }
 }
 
@@ -229,26 +234,9 @@ watch(() => packs.state.assetsVersion, refresh)
 const ADV_MODES = new Set(["block", "item", "entity"])
 const advIndexFor = mode => mode === "item" ? itemIndex : mode === "entity" ? entityIndex : blockIndex
 
-// structures whose block/item/entity index has any key containing any query term.
-// comma-separates into an OR list; spaces match underscores (so "diamond block"
-// finds "diamond_block")
-function advMatches() {
-  const idx = advIndexFor(state.filterMode)
-  if (!idx) return null
-  const terms = state.advQuery.toLowerCase().split(",")
-    .map(t => t.trim().replace(/\s+/g, "_")).filter(Boolean)
-  if (!terms.length) return null
-  const hit = new Set()
-  for (const [key, set] of idx) {
-    if (!terms.some(t => key.includes(t))) continue
-    for (const name of set) hit.add(name)
-  }
-  return hit
-}
-
 function filteredNames() {
   if (ADV_MODES.has(state.filterMode)) {
-    const hit = advMatches()
+    const hit = matchIndex(advIndexFor(state.filterMode), state.advQuery)
     return hit ? state.names.filter(n => hit.has(n)) : state.names
   }
   const set = state.filterMode === "starters" ? starterSet : state.filterMode === "standalone" ? standaloneSet : null

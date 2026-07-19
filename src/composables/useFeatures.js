@@ -1,18 +1,29 @@
 import { reactive, readonly, watch } from "vue"
 import { loadLibrary } from "../lib.js"
 import { usePacks } from "./usePacks.js"
-import { numeric } from "../transforms.js"
+import { useLock } from "./useLock.js"
+import { numeric, strip, rnd } from "../transforms.js"
+import { matchIndex } from "../advfilter.js"
+import { generateFeature } from "../features/index.js"
+import { readStructure } from "../nbt.js"
+import { useStructures } from "./useStructures.js"
+import { yieldTask } from "../yield.js"
 
 const FEATURE_RE = /^data\/([^/]+)\/worldgen\/feature\/(.+)\.json$/
 
 const packs = usePacks()
+const structures = useStructures()
+const { lock } = useLock()
 const textDecoder = new TextDecoder()
 
 const state = reactive({
   names: [],
   filterText: "",
+  filterMode: "all",
+  advQuery: "",
   selected: [],
-  indexing: false
+  indexing: false,
+  advReady: false
 })
 
 let featurePath = new Map()
@@ -20,6 +31,7 @@ let defaultSeeds = {}
 let staticSet = new Set()
 let folders = {}
 let biomes = {}
+let blockIndex = null, blockVocab = [], advPromise = null
 
 async function populate() {
   const lib = await loadLibrary()
@@ -54,12 +66,76 @@ async function populate() {
   if (state.selected.length) state.selected = state.selected.filter(rel => featurePath.has(rel))
 }
 
+// feature configs name blocks as BlockState objects ({ Name, Properties }) at
+// varied depths (ore targets, tree trunk/foliage providers, flower lists...);
+// a deep walk for Name values catches them all regardless of feature type
+function collectBlockNames(node, out) {
+  if (Array.isArray(node)) {
+    for (const v of node) collectBlockNames(v, out)
+  } else if (node && typeof node === "object") {
+    if (typeof node.Name === "string") out.add(strip(node.Name))
+    for (const v of Object.values(node)) collectBlockNames(v, out)
+  }
+}
+
+const AIR = new Set(["air", "cave_air", "void_air", "structure_void"])
+
+// fossil/template features stamp structure files into the world
+async function loadStruct(ref) {
+  const path = ref.includes(":") ? ref.replace(":", "/") : "minecraft/" + ref
+  const zp = structures.zipPathOf(path)
+  if (!zp) return null
+  const lib = await loadLibrary()
+  return readStructure(await lib.readFile(zp, packs.assets.value))
+}
+
+// scan every feature once, building block -> features; cached until assets
+// change. the config walk covers every provider possibility; the default-seed
+// roll (the same roll a click renders) adds what generation places beyond the
+// config: hardcoded blocks, referenced features, stamped structures, and the
+// grass/water pads trees and icebergs get
+async function computeAdvIndex() {
+  advPromise ??= (async () => {
+    const idx = new Map()
+    let n = 0
+    for (const rel of state.names) {
+      if (++n % 10 === 0) await yieldTask()
+      let j
+      try { j = await readFeature(rel) } catch { continue }
+      if (!j) continue
+      const names = new Set()
+      collectBlockNames(j, names)
+      try {
+        const s = await generateFeature(rel, j, rnd(defaultSeed(rel)), resolvePlaced, loadStruct, {})
+        for (const e of s.palette) if (typeof e?.Name === "string") names.add(strip(e.Name))
+      } catch {}
+      for (const b of names) {
+        if (AIR.has(b)) continue
+        let set = idx.get(b)
+        if (!set) idx.set(b, set = new Set())
+        set.add(rel)
+      }
+    }
+    blockIndex = idx
+    blockVocab = Array.from(idx.keys()).sort()
+    state.advReady = true
+  })()
+  return advPromise
+}
+
 async function refresh() {
   state.indexing = true
+  lock(true)
   try {
+    advPromise = null
+    blockIndex = null
+    blockVocab = []
+    state.advReady = false
     await populate()
+    if (state.filterMode === "block") await computeAdvIndex()
   } finally {
     state.indexing = false
+    lock(false)
   }
 }
 
@@ -100,9 +176,16 @@ async function resolveFeatureRef(ref) {
   return readFeature(nsPath(ref))
 }
 
+function filteredNames() {
+  if (state.filterMode !== "block") return state.names
+  const hit = matchIndex(blockIndex, state.advQuery)
+  return hit ? state.names.filter(n => hit.has(n)) : state.names
+}
+
 function visibleNames() {
   const q = state.filterText.trim().toLowerCase()
-  return q ? state.names.filter(n => n.toLowerCase().includes(q)) : state.names
+  const base = filteredNames()
+  return q ? base.filter(n => n.toLowerCase().includes(q)) : base
 }
 
 const defaultSeed = rel => defaultSeeds[rel] ?? 0
@@ -111,6 +194,8 @@ const has = rel => featurePath.has(rel)
 const folderOf = rel => folders[rel] ?? ""
 const grassBiome = rel => biomes[rel] ?? null
 
+const advVocab = () => blockVocab
+
 export function useFeatures() {
-  return { state: readonly(state), stateMut: state, refresh, readFeature, resolvePlaced, visibleNames, defaultSeed, isStatic, has, folderOf, grassBiome }
+  return { state: readonly(state), stateMut: state, refresh, computeAdvIndex, advVocab, readFeature, resolvePlaced, filteredNames, visibleNames, defaultSeed, isStatic, has, folderOf, grassBiome }
 }

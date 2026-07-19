@@ -9,22 +9,33 @@ import TreeFolder from "./TreeFolder.vue"
 import ListTabs from "./ListTabs.vue"
 
 const features = useFeatures()
-const { state, stateMut } = features
+const { state, stateMut, computeAdvIndex } = features
 const { clickFeature, loadFeatures, loadFeatureField } = useStructure()
 const ctx = useContextMenu()
 const { locked } = useLock()
 const collapsed = ref(false)
 
+async function onMode(e) {
+  stateMut.filterMode = e.target.value
+  if (e.target.value === "block") await computeAdvIndex()
+}
+
 const soleNs = computed(() => new Set(state.names.map(n => n.slice(0, n.indexOf("/")))).size <= 1)
 const disp = rel => soleNs.value ? rel.slice(rel.indexOf("/") + 1) : rel
 
-const shown = computed(() => (state.filterText, state.names.length, features.visibleNames()))
+const advMode = computed(() => state.filterMode === "block")
+const advIndexing = computed(() => advMode.value && !state.advReady)
+const vocab = computed(() => (void state.advReady, advMode.value ? features.advVocab() : []))
+
+// mode-filtered set (before the name filter box); the tree builds from this
+const filtered = computed(() => (void state.advReady, void state.advQuery, advMode.value ? features.filteredNames() : state.names))
+const shown = computed(() => (void state.filterText, void state.names.length, void state.advReady, void state.advQuery, features.visibleNames()))
 
 const flat = computed(() => state.filterText.trim() ? shown.value : null)
 
 // curated folders decide the tree shape; the rel stays the id everywhere
 const tree = computed(() => {
-  const entries = state.names.map(rel => {
+  const entries = filtered.value.map(rel => {
     const folder = features.folderOf(rel)
     return { rel, path: folder ? folder + "/" + disp(rel) : disp(rel) }
   }).sort((a, b) => numeric(a.path, b.path))
@@ -86,10 +97,21 @@ function onRootMenu(e) {
     </h2>
     <div class="controls">
       <input v-model="stateMut.filterText" placeholder="Filter…">
+      <select :value="state.filterMode" @change="onMode" :disabled="locked" title="all: every feature. has block: features containing a matching block (comma-separated OR list; spaces match underscores).">
+        <option value="all">All</option>
+        <option value="block">Has block…</option>
+      </select>
+    </div>
+    <div v-if="advMode" class="controls">
+      <input v-model="stateMut.advQuery" :disabled="locked || advIndexing" list="feat-vocab"
+        placeholder="Blocks, e.g. oak log, diamond ore…">
+      <datalist id="feat-vocab">
+        <option v-for="v in vocab" :key="v" :value="v" />
+      </datalist>
     </div>
     <ListTabs />
     <div class="tree" :class="{ disabled: locked }">
-      <div v-if="state.indexing" class="empty">Indexing…</div>
+      <div v-if="state.indexing || advIndexing" class="empty">Indexing…</div>
       <template v-else>
         <div class="tree-root" title="Right-click for options" @contextmenu.prevent="onRootMenu($event)">All Features</div>
         <div v-if="!shown.length" class="empty">{{ state.names.length ? "No match" : "No features" }}</div>
