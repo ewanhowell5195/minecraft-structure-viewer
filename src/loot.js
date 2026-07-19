@@ -129,6 +129,37 @@ export async function rollLoot(table) {
   return out.filter(s => s.id)
 }
 
+// every item a table can possibly drop, following nested tables and set_contents;
+// unlike rollLoot this ignores weights/conditions so it enumerates, not samples
+export async function lootTableItems(table, out = new Set(), seen = new Set()) {
+  const t = typeof table === "object" ? table : await readLootTable(table)
+  if (!t) return out
+  for (const pool of t.pools ?? []) {
+    for (const entry of pool.entries ?? []) await entryItems(entry, out, seen)
+  }
+  return out
+}
+
+async function entryItems(entry, out, seen) {
+  const type = strip(entry.type || "item")
+  if (type === "item") {
+    if (typeof entry.name === "string") out.add(strip(entry.name))
+  } else if (type === "loot_table") {
+    const ref = entry.value ?? entry.name
+    if (typeof ref === "object") await lootTableItems(ref, out, seen)
+    else if (typeof ref === "string" && !seen.has(ref)) {
+      seen.add(ref)
+      await lootTableItems(ref, out, seen)
+    }
+  } else if (type === "alternatives" || type === "group" || type === "sequence") {
+    for (const c of entry.children ?? []) await entryItems(c, out, seen)
+  }
+  for (const f of entry.functions ?? []) {
+    if (strip(f.function || "") !== "set_contents") continue
+    for (const nested of f.entries ?? []) await entryItems(nested, out, seen)
+  }
+}
+
 export const stackKey = s => s.id + "|" + JSON.stringify(s.components ?? null)
 
 export async function sampleTable(table, opens = 10000) {

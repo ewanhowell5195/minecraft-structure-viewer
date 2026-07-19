@@ -3,7 +3,10 @@ import { loadLibrary } from "../lib.js"
 import { usePacks } from "./usePacks.js"
 import { PROC } from "../proc.js"
 import { GENERATED } from "../generators/builtin.js"
-import { numeric } from "../transforms.js"
+import { numeric, strip } from "../transforms.js"
+import { readStructure } from "../nbt.js"
+import { lootTableItems, readTrialSpawnerConfig } from "../loot.js"
+import { yieldTask } from "../yield.js"
 
 // structures? also matches the legacy/mod plural folder
 const STRUCT_RE = /^data\/([^/]+)\/structures?\/(.+)\.nbt$/
@@ -14,14 +17,18 @@ const state = reactive({
   names: [],
   filterText: "",
   filterMode: "all",
+  advQuery: "",
   selected: [],
   indexing: false,
-  worldgenReady: false
+  worldgenReady: false,
+  advReady: false
 })
 
 let structPath = new Map()
 let starterSet = null, standaloneSet = null, structDepth = null, structRadius = null
 let worldgenPromise = null
+let blockIndex = null, itemIndex = null, entityIndex = null
+let blockVocab = [], itemVocab = [], entityVocab = [], advPromise = null
 
 let worldNames = []
 
@@ -122,14 +129,96 @@ function computeWorldgen() {
   return worldgenPromise
 }
 
+// item stacks stored directly in a container block entity (chests are usually
+// LootTable-driven, but pre-filled Items and the container component both occur)
+function collectContainerItems(nbt, out) {
+  const items = nbt?.Items ?? nbt?.components?.["minecraft:container"]
+  if (!Array.isArray(items)) return
+  for (const slot of items) {
+    const stack = slot?.item ?? slot
+    if (typeof stack?.id === "string") out.add(strip(stack.id))
+    const nested = stack?.tag?.BlockEntityTag ?? { components: stack?.components }
+    if (nested) collectContainerItems(nested, out)
+  }
+}
+
+const SPAWNER_RE = /(^|[:_])spawner$/
+
+// entities a spawner block will produce, from its inline data or its (possibly
+// file-referenced) trial spawner config
+async function collectSpawnerEntities(nbt, out, trialCache) {
+  const push = id => { if (typeof id === "string") out.add(strip(id)) }
+  push(nbt.SpawnData?.entity?.id)
+  for (const sp of nbt.SpawnPotentials ?? []) push(sp?.data?.entity?.id)
+  for (const ref of [nbt.normal_config, nbt.ominous_config]) {
+    if (ref == null) continue
+    let cfg
+    if (typeof ref === "string") {
+      if (!trialCache.has(ref)) trialCache.set(ref, await readTrialSpawnerConfig(ref))
+      cfg = trialCache.get(ref)
+    } else cfg = await readTrialSpawnerConfig(ref)
+    for (const sp of cfg?.spawn_potentials ?? []) push(sp?.data?.entity?.id)
+  }
+}
+
+// scan every structure once, building block/item/entity -> structures inverted
+// indexes; cached until the assets change (see refresh)
+async function computeAdvIndex() {
+  advPromise ??= (async () => {
+    const lib = await loadLibrary()
+    const assets = packs.assets.value
+    if (!assets) return
+    const bIdx = new Map(), iIdx = new Map(), eIdx = new Map()
+    const trialCache = new Map()
+    const add = (map, key, name) => {
+      let set = map.get(key)
+      if (!set) map.set(key, set = new Set())
+      set.add(name)
+    }
+    let n = 0
+    for (const [name, zp] of structPath) {
+      if (++n % 20 === 0) await yieldTask()
+      let s
+      try { s = await readStructure(await lib.readFile(zp, assets)) } catch { continue }
+      for (const e of s.palette) if (e?.Name) add(bIdx, strip(e.Name), name)
+      for (const e of s.entities) if (typeof e.nbt?.id === "string") add(eIdx, strip(e.nbt.id), name)
+      for (const b of s.blocks) {
+        if (!b.nbt) continue
+        const items = new Set()
+        collectContainerItems(b.nbt, items)
+        if (typeof b.nbt.LootTable === "string") await lootTableItems(b.nbt.LootTable, items)
+        for (const id of items) add(iIdx, id, name)
+        if (SPAWNER_RE.test(s.palette[b.state]?.Name ?? "")) {
+          const ents = new Set()
+          await collectSpawnerEntities(b.nbt, ents, trialCache)
+          for (const id of ents) add(eIdx, id, name)
+        }
+      }
+    }
+    blockIndex = bIdx
+    itemIndex = iIdx
+    entityIndex = eIdx
+    blockVocab = Array.from(bIdx.keys()).sort()
+    itemVocab = Array.from(iIdx.keys()).sort()
+    entityVocab = Array.from(eIdx.keys()).sort()
+    state.advReady = true
+  })()
+  return advPromise
+}
+
 async function refresh() {
   state.indexing = true
   try {
     worldgenPromise = null
     starterSet = standaloneSet = structDepth = structRadius = null
+    advPromise = null
+    blockIndex = itemIndex = entityIndex = null
+    blockVocab = itemVocab = entityVocab = []
     state.worldgenReady = false
+    state.advReady = false
     await populate()
-    if (state.filterMode !== "all") await computeWorldgen()
+    if (state.filterMode === "starters" || state.filterMode === "standalone") await computeWorldgen()
+    if (ADV_MODES.has(state.filterMode)) await computeAdvIndex()
   } finally {
     state.indexing = false
   }
@@ -137,7 +226,31 @@ async function refresh() {
 
 watch(() => packs.state.assetsVersion, refresh)
 
+const ADV_MODES = new Set(["block", "item", "entity"])
+const advIndexFor = mode => mode === "item" ? itemIndex : mode === "entity" ? entityIndex : blockIndex
+
+// structures whose block/item/entity index has any key containing any query term.
+// comma-separates into an OR list; spaces match underscores (so "diamond block"
+// finds "diamond_block")
+function advMatches() {
+  const idx = advIndexFor(state.filterMode)
+  if (!idx) return null
+  const terms = state.advQuery.toLowerCase().split(",")
+    .map(t => t.trim().replace(/\s+/g, "_")).filter(Boolean)
+  if (!terms.length) return null
+  const hit = new Set()
+  for (const [key, set] of idx) {
+    if (!terms.some(t => key.includes(t))) continue
+    for (const name of set) hit.add(name)
+  }
+  return hit
+}
+
 function filteredNames() {
+  if (ADV_MODES.has(state.filterMode)) {
+    const hit = advMatches()
+    return hit ? state.names.filter(n => hit.has(n)) : state.names
+  }
   const set = state.filterMode === "starters" ? starterSet : state.filterMode === "standalone" ? standaloneSet : null
   return set ? state.names.filter(n => set.has(n)) : state.names
 }
@@ -154,6 +267,8 @@ const has = name => structPath.has(name) || name in GENERATED || worldNames.incl
 const getStructDepth = name => structDepth?.get(name)
 const getStructRadius = name => structRadius?.get(name)
 
+const advVocab = () => state.filterMode === "item" ? itemVocab : state.filterMode === "entity" ? entityVocab : blockVocab
+
 export function useStructures() {
-  return { state: readonly(state), stateMut: state, refresh, computeWorldgen, filteredNames, visibleNames, zipPathOf, has, getStructDepth, getStructRadius, setWorldStructures }
+  return { state: readonly(state), stateMut: state, refresh, computeWorldgen, computeAdvIndex, advVocab, filteredNames, visibleNames, zipPathOf, has, getStructDepth, getStructRadius, setWorldStructures }
 }

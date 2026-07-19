@@ -9,7 +9,7 @@ import TreeFolder from "./TreeFolder.vue"
 import ListTabs from "./ListTabs.vue"
 
 const structures = useStructures()
-const { state, stateMut, computeWorldgen, filteredNames } = structures
+const { state, stateMut, computeWorldgen, computeAdvIndex, advVocab, filteredNames } = structures
 const { loadVanilla, loadMany, loadFile } = useStructure()
 const ctx = useContextMenu()
 const { locked } = useLock()
@@ -31,8 +31,19 @@ const stopReveal = watch(() => state.selected.length, async n => {
   treeEl.value?.querySelector(".tree-file.sel")?.scrollIntoView({ block: "center" })
 })
 
+const ADV_MODES = new Set(["block", "item", "entity"])
+const advMode = computed(() => ADV_MODES.has(state.filterMode))
+const advPlaceholder = computed(() => ({
+  block: "Blocks, e.g. chest, diamond block…",
+  item: "Items, e.g. diamond, emerald…",
+  entity: "Entities, e.g. villager, cat…"
+})[state.filterMode])
+const advIndexing = computed(() => advMode.value && !state.advReady)
+const vocab = computed(() => (void state.advReady, advMode.value ? advVocab() : []))
+
 const names = computed(() => {
   void state.worldgenReady
+  void state.advReady
   return state.filterMode === "all" ? state.names : filteredNames()
 })
 
@@ -84,8 +95,10 @@ function onRootMenu(e) {
 }
 
 async function onMode(e) {
-  stateMut.filterMode = e.target.value
-  if (e.target.value !== "all") await computeWorldgen()
+  const mode = e.target.value
+  stateMut.filterMode = mode
+  if (mode === "starters" || mode === "standalone") await computeWorldgen()
+  else if (ADV_MODES.has(mode)) await computeAdvIndex()
 }
 
 function onFile(e) {
@@ -106,15 +119,25 @@ function onFile(e) {
     </h2>
     <div class="controls">
       <input v-model="stateMut.filterText" placeholder="Filter…">
-      <select :value="state.filterMode" @change="onMode" :disabled="locked" title="all: every structure. starters: anything that starts a build (never placed as a piece of another). standalone: neither pulled into another build nor loads any other structure blocks.">
+      <select :value="state.filterMode" @change="onMode" :disabled="locked" title="all: every structure. starters: anything that starts a build (never placed as a piece of another). standalone: neither pulled into another build nor loads any other structure blocks. has block / item / entity: structures containing a matching block, a matching item in a container or its loot table, or a matching entity (placed or spawner-spawned).">
         <option value="all">All</option>
         <option value="starters">Starters</option>
         <option value="standalone">Standalone</option>
+        <option value="block">Has block…</option>
+        <option value="item">Has item…</option>
+        <option value="entity">Has entity…</option>
       </select>
+    </div>
+    <div v-if="advMode" class="controls">
+      <input v-model="stateMut.advQuery" :disabled="locked || advIndexing" list="adv-vocab"
+        :placeholder="advPlaceholder">
+      <datalist id="adv-vocab">
+        <option v-for="v in vocab" :key="v" :value="v" />
+      </datalist>
     </div>
     <ListTabs />
     <div class="tree" :class="{ disabled: locked }" ref="treeEl">
-      <div v-if="state.indexing" class="empty">Indexing…</div>
+      <div v-if="state.indexing || advIndexing" class="empty">Indexing…</div>
       <template v-else>
         <div class="tree-root" title="Right-click for options" @contextmenu.prevent="onRootMenu($event)">All Structures</div>
         <template v-if="flat">
