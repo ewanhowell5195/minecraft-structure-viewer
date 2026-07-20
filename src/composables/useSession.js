@@ -9,6 +9,7 @@ import { useLock } from "./useLock.js"
 import { readStructure } from "../nbt.js"
 import { AIR, EMPTY, JIGSAW, mix, parseState, poolTemplates, rand32, rnd } from "../transforms.js"
 import { hasDataMarkers, processDataMarkers } from "../markers.js"
+import { applyProcessors, seedFor } from "../processors.js"
 import { runJigsaw } from "../jigsaw.js"
 import { mineshaftPieceGens, rerollGen, runDesertPyramid, runDesertWell, runDungeon, runEndCity, runEndSpikes, runEndSpikesActive, runFortress, runIgloo, runJungleTemple, runMansion, runMineshaft, runMineshaftMesa, runMonument, runStronghold } from "../generators/index.js"
 import { PROC } from "../proc.js"
@@ -56,13 +57,23 @@ function nsSplit(ref) {
   return i < 0 ? ["minecraft", ref] : [ref.slice(0, i), ref.slice(i + 1)]
 }
 
-async function loadStruct(ref) {
-  const [ns, path] = nsSplit(ref)
-  const zp = structures.zipPathOf(ns + "/" + path)
+async function loadRaw(rel) {
+  const zp = structures.zipPathOf(rel)
   if (!zp) return null
   const lib = await loadLibrary()
   const buf = await lib.readFile(zp, packs.assets.value)
   return buf ? readStructure(buf) : null
+}
+
+async function loadStruct(ref) {
+  const [ns, path] = nsSplit(ref)
+  const rel = ns + "/" + path
+  let s = await loadRaw(rel)
+  if (!s) return null
+  await structures.computeProcessors()
+  const pe = structures.processorEntry(rel)
+  if (pe) s = await applyProcessors(s, pe, rnd(mix(state.seed ?? 0, seedFor(rel))), loadRaw)
+  return s
 }
 
 async function loadPool(ref) {
