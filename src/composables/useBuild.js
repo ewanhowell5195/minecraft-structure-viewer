@@ -11,7 +11,8 @@ import { makeSignTexts, plainText } from "../signs.js"
 import { JIGSAW, parseState } from "../transforms.js"
 import { isInspectable, readTrialSpawnerConfig } from "../loot.js"
 import { getFont, measure, drawText } from "../mcfont.js"
-import { drawFakeMap, prepareFakeMapArea, randomiseFakeMapWorld } from "../mapgen.js"
+import { drawFakeMap, drawRealMap, prepareFakeMapArea, randomiseFakeMapWorld } from "../mapgen.js"
+import { useWorld } from "./useWorld.js"
 import { minimal } from "../minimal.js"
 
 const packs = usePacks()
@@ -552,13 +553,35 @@ const MAP_SAMPLE = {
 
 let mapArtCache = new Map()
 
+let mapBgPromise = null
+function mapBackground() {
+  return mapBgPromise ??= (async () => {
+    try {
+      const bytes = frameCtx && await frameCtx.lib.readFile("assets/minecraft/textures/map/map_background.png", frameCtx.assets)
+      if (!bytes) return null
+      return await createImageBitmap(new Blob([bytes], { type: "image/png" }))
+    } catch {
+      return null
+    }
+  })()
+}
+
 async function makeFakeMap(bx, by, bz, facing, id, rot = 0, off = MAP_OFF) {
-  let canvas = id == null ? null : mapArtCache.get(id)
+  const cacheKey = id == null ? null : id + "|" + facing
+  let canvas = cacheKey == null ? null : mapArtCache.get(cacheKey)
   if (!canvas) {
     canvas = document.createElement("canvas")
     canvas.width = canvas.height = 128
-    await drawFakeMap(canvas, (cx, cy) => MAP_SAMPLE[facing](bx, by, bz, cx, cy), id)
-    if (id != null) mapArtCache.set(id, canvas)
+    const sample = (cx, cy) => MAP_SAMPLE[facing](bx, by, bz, cx, cy)
+    const colors = id == null ? null : await useWorld().readMap(id)
+    if (colors) {
+      const bg = await mapBackground()
+      if (bg) canvas.getContext("2d").drawImage(bg, 0, 0, 128, 128)
+      drawRealMap(canvas, sample, colors)
+    } else {
+      await drawFakeMap(canvas, sample, id)
+    }
+    if (cacheKey != null) mapArtCache.set(cacheKey, canvas)
   }
   const tex = new THREE.CanvasTexture(canvas)
   tex.colorSpace = THREE.SRGBColorSpace
@@ -586,8 +609,10 @@ async function attachEntities(structure, lib, assets) {
   randomiseFakeMapWorld()
   clockFrames = []
   frameCtx = { lib, assets }
+  mapBgPromise = null
   mapLightEnv = lib.LIGHT_DIMENSIONS?.[buildDim] ?? FALLBACK_ENV
   const mb = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity }
+  const worldMaps = useWorld().state.active
   for (const e of structure.entities ?? []) {
     if (typeof e.nbt?.id !== "string" || !FRAME.test(e.nbt.id)) continue
     if (!/(^|:)filled_map$/.test(e.nbt.Item?.id ?? "")) continue
@@ -600,7 +625,7 @@ async function attachEntities(structure, lib, assets) {
       mb.y0 = Math.min(mb.y0, v); mb.y1 = Math.max(mb.y1, v)
     }
   }
-  if (mb.x0 !== Infinity && mb.x1 - mb.x0 <= 4096 && mb.y1 - mb.y0 <= 4096) prepareFakeMapArea(mb.x0, mb.y0, mb.x1, mb.y1)
+  if (!worldMaps && mb.x0 !== Infinity && mb.x1 - mb.x0 <= 4096 && mb.y1 - mb.y0 <= 4096) prepareFakeMapArea(mb.x0, mb.y0, mb.x1, mb.y1)
   let mapCount = 0
   for (const e of structure.entities ?? []) {
     const id = e.nbt?.id

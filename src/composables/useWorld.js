@@ -1,5 +1,6 @@
 import { reactive, readonly } from "vue"
 import { readWorldZip, readRegionFile, buildSelection, unzipEntry, chunkSurface, readChunk, switchDimension } from "../world.js"
+import { readNBT } from "../nbt.js"
 import { useStructure } from "./useStructure.js"
 import { useBuild } from "./useBuild.js"
 import { useStructures } from "./useStructures.js"
@@ -353,6 +354,27 @@ function loadForecast() {
 const hasStructure = rel => !!world?.structures.has(rel)
 const readStructureBytes = rel => unzipEntry(world.structures.get(rel))
 
+function mapEntry(id) {
+  const root = world?.root ?? ""
+  return world?.files?.get(root + "data/minecraft/maps/" + id + ".dat")
+    ?? world?.files?.get(root + "data/map_" + id + ".dat")
+}
+
+const hasMap = id => !!mapEntry(id)
+
+async function readMap(id) {
+  const entry = mapEntry(id)
+  if (!entry) return null
+  try {
+    const nbt = await readNBT(await unzipEntry(entry))
+    const c = nbt.data?.colors
+    if (!c || c.length < 16384) return null
+    return Array.isArray(c) ? Uint8Array.from(c) : new Uint8Array(c.buffer, c.byteOffset, c.length)
+  } catch {
+    return null
+  }
+}
+
 let rangeTimer = null
 function setYRange(lo, hi) {
   const yMin = Math.min(lo, hi), yMax = Math.max(lo, hi)
@@ -374,7 +396,7 @@ function setYRange(lo, hi) {
 export function useWorld() {
   return {
     state: readonly(state), openWorld, toggleChunk, isSelected, clearSelection, selectRect, rectHasSelected, loadSelected, closeWorld,
-    hasStructure, readStructureBytes, setYRange,
+    hasStructure, readStructureBytes, readMap, hasMap, setYRange,
     getChunks: () => world?.chunks ?? [],
     setScanFocus, fillGridWindow, loadForecast, answerMemWarn, restoreLoad, setDimension,
     dismissStopped: () => { state.stopped = null },

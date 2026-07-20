@@ -55,7 +55,7 @@ export async function readWorldZip(buf, onProgress) {
     structList.push({ rel, ns: m[2], path: m[3] })
   }
   const data = await readDimension(files, dims[0].prefix, onProgress)
-  return { name, structures, structList, files, dims, dimension: dims[0].id, ...data }
+  return { name, structures, structList, files, root, dims, dimension: dims[0].id, ...data }
 }
 
 async function readDimension(files, prefix, onProgress) {

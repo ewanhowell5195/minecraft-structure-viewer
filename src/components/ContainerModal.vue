@@ -5,6 +5,7 @@ import { usePacks } from "../composables/usePacks.js"
 import { useContainer } from "../composables/useContainer.js"
 import { useStructure } from "../composables/useStructure.js"
 import { useWalk } from "../composables/useWalk.js"
+import { useWorld } from "../composables/useWorld.js"
 import { getFont, measure, drawText } from "../mcfont.js"
 import { drawTooltip, onTooltipFrame, MARGIN } from "../tooltip.js"
 import { describeTable, prettyName } from "../loot.js"
@@ -114,6 +115,14 @@ const itemData = computed(() => {
 })
 
 const isMapItem = computed(() => /(^|:)filled_map$/.test(state.item?.id ?? ""))
+
+// with the world open, frame maps render the save's real artwork: no stand-in note
+const worldApi = useWorld()
+const isRealMap = computed(() => {
+  const it = state.item
+  const n = Number(it?.components?.["minecraft:map_id"] ?? it?.tag?.map)
+  return worldApi.state.active && Number.isFinite(n) && worldApi.hasMap(n)
+})
 
 let hlImgs = null, hlAssets = null
 async function loadHl() {
@@ -386,7 +395,7 @@ watch(() => [state.open, state.stacks, state.gui], () => {
               <NbtTree :value="itemData.value" />
             </div>
             <div v-else class="empty">No item data.</div>
-            <p v-if="isMapItem && state.fromFrame" class="map-note">
+            <p v-if="isMapItem && state.fromFrame && !isRealMap" class="map-note">
               The shown map previews here are generated stand-ins. Minecraft keeps map artwork in the
               world save, so the real map image is not available in a structure file.
             </p>
