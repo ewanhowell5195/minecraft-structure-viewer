@@ -24,6 +24,22 @@ const willTruncate = computed(() => {
   return world.loadForecast()
 })
 
+const fakePct = ref(0)
+let fakeTimer = null
+watch(() => !!(state.loading && !state.loading.total), active => {
+  clearInterval(fakeTimer)
+  if (active) {
+    fakePct.value = 0
+    fakeTimer = setInterval(() => { fakePct.value += (10 - fakePct.value) * 0.08 }, 100)
+  }
+}, { immediate: true })
+
+const loadPct = computed(() => {
+  const l = state.loading
+  if (!l) return 0
+  return l.total ? 10 + l.done / l.total * 90 : fakePct.value
+})
+
 const DIM_LABELS = { overworld: "Overworld", the_nether: "The Nether", the_end: "The End" }
 const dimLabel = d => DIM_LABELS[d] ?? d
 
@@ -256,7 +272,7 @@ function onDblClick() {
     </select>
     <div v-if="state.error" class="err">{{ state.error }}</div>
     <div v-if="state.loading" class="loadbar">
-      <div class="fill" :style="{ width: state.loading.total ? (state.loading.done / state.loading.total * 100) + '%' : '0%' }"></div>
+      <div class="fill" :style="{ width: loadPct + '%' }"></div>
     </div>
     <template v-if="state.chunkCount">
       <canvas ref="mapEl" class="map" @pointerdown="onDown" @pointermove="onMove"
