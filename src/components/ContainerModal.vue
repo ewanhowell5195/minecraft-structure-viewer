@@ -460,7 +460,7 @@ watch(() => [state.open, state.stacks, state.gui], () => {
             Re-roll
           </button>
           <span class="roll-stats" v-if="state.rolls > 1">
-            {{ state.rolls }} opens · {{ state.pileTotal }} item{{ state.pileTotal === 1 ? "" : "s" }}
+            {{ state.rolls.toLocaleString("en") }} opens · {{ state.pileTotal.toLocaleString("en") }} item{{ state.pileTotal === 1 ? "" : "s" }}
           </span>
           <span v-else></span>
           <div class="right">
