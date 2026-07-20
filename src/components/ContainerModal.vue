@@ -291,7 +291,7 @@ async function drawItemsInner(c, K, seq) {
   if (seq !== itemSeq) return
   for (const st of state.stacks) {
     if (st.count <= 1) continue
-    const t = String(st.count)
+    const t = String(Math.min(st.count, 999))
     const [ix, iy] = inner(K, st.slot)
     const tx = (ix + 17) * S - measure(font, t) * S, ty = (iy + 9) * S
     drawText(ctx, font, t, tx + S, ty + S, { scale: S, color: "#3f3f3f" })
