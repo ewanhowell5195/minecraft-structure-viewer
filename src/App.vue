@@ -45,6 +45,20 @@ const walkState = walk.state
 const { locked } = useLock()
 const { state: containerState } = useContainer()
 
+const worldState = useWorld().state
+let tabBeforeWorld = null
+watch(() => worldState.active, on => {
+  if (on) {
+    if (tab.value === "structures") {
+      tabBeforeWorld = "structures"
+      tab.value = "features"
+    }
+  } else if (tabBeforeWorld && tab.value === "features") {
+    tab.value = tabBeforeWorld
+    tabBeforeWorld = null
+  }
+})
+
 const minimalReady = ref(!minimal)
 const notFound = ref("")
 // refreshed on pointerdown so the link always carries the current url state
@@ -205,7 +219,7 @@ onMounted(async () => {
       <div v-if="libError" class="lib-error">Renderer failed: {{ libError }}</div>
       <template v-else>
         <PacksSection />
-        <StructuresSection v-show="tab === 'structures'" />
+        <StructuresSection v-show="tab === 'structures' && !worldState.active" />
         <FeaturesSection v-show="tab === 'features'" />
         <WorldSection />
         <ViewSection />
