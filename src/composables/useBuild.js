@@ -11,7 +11,7 @@ import { makeSignTexts, plainText } from "../signs.js"
 import { JIGSAW, parseState } from "../transforms.js"
 import { isInspectable, readTrialSpawnerConfig } from "../loot.js"
 import { getFont, measure, drawText } from "../mcfont.js"
-import { drawFakeMap, randomiseFakeMapWorld } from "../mapgen.js"
+import { drawFakeMap, prepareFakeMapArea, randomiseFakeMapWorld } from "../mapgen.js"
 import { minimal } from "../minimal.js"
 
 const packs = usePacks()
@@ -587,6 +587,21 @@ async function attachEntities(structure, lib, assets) {
   clockFrames = []
   frameCtx = { lib, assets }
   mapLightEnv = lib.LIGHT_DIMENSIONS?.[buildDim] ?? FALLBACK_ENV
+  const mb = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity }
+  for (const e of structure.entities ?? []) {
+    if (typeof e.nbt?.id !== "string" || !FRAME.test(e.nbt.id)) continue
+    if (!/(^|:)filled_map$/.test(e.nbt.Item?.id ?? "")) continue
+    const sample = MAP_SAMPLE[FACING6[Number(e.nbt.Facing ?? 3)] ?? "south"]
+    if (!sample) continue
+    const bx = Math.floor(e.pos[0]), by = Math.floor(e.pos[1]), bz = Math.floor(e.pos[2])
+    for (const [cx, cy] of [[0, 0], [127, 127]]) {
+      const [u, v] = sample(bx, by, bz, cx, cy)
+      mb.x0 = Math.min(mb.x0, u); mb.x1 = Math.max(mb.x1, u)
+      mb.y0 = Math.min(mb.y0, v); mb.y1 = Math.max(mb.y1, v)
+    }
+  }
+  if (mb.x0 !== Infinity && mb.x1 - mb.x0 <= 4096 && mb.y1 - mb.y0 <= 4096) prepareFakeMapArea(mb.x0, mb.y0, mb.x1, mb.y1)
+  let mapCount = 0
   for (const e of structure.entities ?? []) {
     const id = e.nbt?.id
     if (typeof id !== "string") continue
@@ -674,6 +689,7 @@ async function attachEntities(structure, lib, assets) {
           markerTextures.push(fake.tex)
           draws++
         } catch {}
+        if (++mapCount % 4 === 0) await yieldTask()
       }
       if (frame && typeof frameItem === "string" && /(^|:)clock$/.test(frameItem)) {
         clockFrames.push({ holder: g.getObjectByName("frameItem"), item: frameItem, components: e.nbt.Item.components ?? {}, glow })

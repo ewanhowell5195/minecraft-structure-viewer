@@ -18,6 +18,7 @@ const state = reactive({
   oldWorld: false,
   dimensions: [],
   dimension: "",
+  structs: [],
   regionFile: false,
   rev: 0,
   yMin: 60,
@@ -130,6 +131,7 @@ async function openWorld(file, cacheIt = true) {
       } catch {}
     }
     useStructures().setWorldStructures([...world.structures.keys()])
+    state.structs = world.structList ?? []
     if (cacheIt) cacheFile("world", file)
   } catch (err) {
     world = null
@@ -139,6 +141,7 @@ async function openWorld(file, cacheIt = true) {
     state.selCount = 0
     state.dimensions = []
     state.dimension = ""
+    state.structs = []
     state.error = String(err.message ?? err)
   } finally {
     state.busy = false
@@ -332,6 +335,7 @@ function closeWorld() {
   state.oldWorld = false
   state.dimensions = []
   state.dimension = ""
+  state.structs = []
   useStructures().setWorldStructures([])
   uncache("world")
   setWorldParams(false)

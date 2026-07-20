@@ -1105,13 +1105,23 @@ export function randomiseFakeMapWorld() {
   offY = (Math.floor(Math.random() * 4096) - 2048) * 128
 }
 
-export async function drawFakeMap(canvas, sample, id) {
+function ensureRenderer() {
   if (!R) {
     glCanvas = document.createElement("canvas")
     glCanvas.width = glCanvas.height = 128
     R = createRenderer(glCanvas)
     R.resize(128, 128)
   }
+}
+
+export function prepareFakeMapArea(x0, y0, x1, y1) {
+  ensureRenderer()
+  lastRect = { x0: x0 + offX - PREP_PAD, y0: y0 + offY - PREP_PAD, x1: x1 + offX + PREP_PAD, y1: y1 + offY + PREP_PAD }
+  R.prepareRivers(lastRect)
+}
+
+export async function drawFakeMap(canvas, sample, id) {
+  ensureRenderer()
   const [u0, v0] = sample(0, 0)
   const [u1, v1] = sample(127, 127)
   const x0 = Math.min(u0, u1) + offX, y0 = Math.min(v0, v1) + offY

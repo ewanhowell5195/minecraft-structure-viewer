@@ -46,13 +46,16 @@ export async function readWorldZip(buf, onProgress) {
   }
 
   const structures = new Map()
+  const structList = []
   for (const [p, entry] of files) {
-    const m = p.match(/^(.*?)generated\/([^/]+)\/structures\/(.+)\.nbt$/)
+    const m = p.match(/^(.*?)generated\/([^/]+)\/structures?\/(.+)\.nbt$/)
     if (!m || m[1] !== root) continue
-    structures.set("world/" + (m[2] === "minecraft" ? "" : m[2] + "/") + m[3], entry)
+    const rel = "world/" + (m[2] === "minecraft" ? "" : m[2] + "/") + m[3]
+    structures.set(rel, entry)
+    structList.push({ rel, ns: m[2], path: m[3] })
   }
   const data = await readDimension(files, dims[0].prefix, onProgress)
-  return { name, structures, files, dims, dimension: dims[0].id, ...data }
+  return { name, structures, structList, files, dims, dimension: dims[0].id, ...data }
 }
 
 async function readDimension(files, prefix, onProgress) {

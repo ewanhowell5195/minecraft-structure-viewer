@@ -34,7 +34,7 @@ let blockVocab = [], itemVocab = [], entityVocab = [], advPromise = null
 let worldNames = []
 
 function refreshNames() {
-  state.names = Array.from(structPath.keys()).concat(Object.keys(GENERATED), worldNames).sort(numeric)
+  state.names = Array.from(structPath.keys()).concat(Object.keys(GENERATED)).sort(numeric)
   if (state.selected.length) state.selected = state.selected.filter(rel => has(rel))
 }
 

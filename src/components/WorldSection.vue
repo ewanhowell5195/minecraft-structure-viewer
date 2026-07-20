@@ -1,12 +1,20 @@
 <script setup>
-import { computed, nextTick, onMounted, ref, watch } from "vue"
+import { computed, nextTick, onMounted, provide, ref, watch } from "vue"
 import { useWorld } from "../composables/useWorld.js"
+import { useStructures } from "../composables/useStructures.js"
+import { useStructure } from "../composables/useStructure.js"
+import { useContextMenu } from "../composables/useContextMenu.js"
 import { useLock } from "../composables/useLock.js"
 import { createGridRenderer, GRID } from "../world.js"
+import { numeric } from "../transforms.js"
 import Modal from "./Modal.vue"
+import TreeFolder from "./TreeFolder.vue"
 
 const world = useWorld()
 const { state } = world
+const structures = useStructures()
+const { loadVanilla, loadMany } = useStructure()
+const ctx = useContextMenu()
 const { locked } = useLock()
 const collapsed = ref(false)
 const mapEl = ref(null)
@@ -39,6 +47,42 @@ const loadPct = computed(() => {
   if (!l) return 0
   return l.total ? 10 + l.done / l.total * 90 : fakePct.value
 })
+
+provide("treeApi", {
+  selected: () => structures.state.selected,
+  open: (rel, ev) => loadVanilla(rel, ev),
+  loadAll: rels => loadMany(rels),
+  fileMenu: null
+})
+
+// the save's generated structures; namespaces only show when there are several
+const structTree = computed(() => {
+  const multiNs = new Set(state.structs.map(s => s.ns)).size > 1
+  const entries = state.structs
+    .map(s => ({ rel: s.rel, path: multiNs ? s.ns + "/" + s.path : s.path }))
+    .sort((a, b) => numeric(a.path, b.path))
+  const root = { dirs: new Map(), files: [] }
+  for (const { rel, path } of entries) {
+    const parts = path.split("/")
+    let node = root
+    for (let i = 0; i < parts.length - 1; i++) {
+      if (!node.dirs.has(parts[i])) node.dirs.set(parts[i], { dirs: new Map(), files: [] })
+      node = node.dirs.get(parts[i])
+    }
+    node.files.push(rel)
+  }
+  return root
+})
+
+const rootExpand = ref(0), rootCollapse = ref(0)
+function onStructRootMenu(e) {
+  const rels = state.structs.map(s => s.rel)
+  ctx.open(e, [
+    { label: `Load all (${rels.length})`, icon: "stacks", disabled: locked.value || !rels.length, action: () => loadMany(rels) },
+    { label: "Expand all", icon: "unfold_more", action: () => rootExpand.value++ },
+    { label: "Collapse all", icon: "unfold_less", action: () => rootCollapse.value++ }
+  ])
+}
 
 const DIM_LABELS = { overworld: "Overworld", the_nether: "The Nether", the_end: "The End" }
 const dimLabel = d => DIM_LABELS[d] ?? d
@@ -306,6 +350,12 @@ function onDblClick() {
         </button>
         <button :disabled="!state.selCount" @click="world.clearSelection()">Clear</button>
       </div>
+      <div v-if="state.structs.length" class="tree" :class="{ disabled: locked }">
+        <div class="tree-root" title="Right-click for options" @contextmenu.prevent="onStructRootMenu($event)">World Structures</div>
+        <div class="root-children">
+          <TreeFolder :node="structTree" :expand-token="rootExpand" :collapse-token="rootCollapse" />
+        </div>
+      </div>
     </template>
     <Modal v-if="state.memWarn" :width="340" :z="250" :closable="false" :dismissable="false" style="--modal-gap: 0px" class="mw">
       <h3>Large selection</h3>
@@ -409,6 +459,35 @@ h2 .icon .material-symbols-outlined,
   height: 100%;
   background: #4c8dff;
   transition: width 0.15s;
+}
+
+.tree {
+  max-height: 220px;
+  overflow: auto;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  user-select: none;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+
+.tree-root {
+  color: var(--text);
+  font-weight: 600;
+  padding: 1px 0;
+  cursor: context-menu;
+  user-select: none;
+}
+
+.tree-root:hover { color: #fff; }
+
+.root-children { margin-left: 14px; }
+
+.tree.disabled {
+  opacity: 0.5;
+  pointer-events: none;
 }
 
 .mw :deep(.modal-panel) {
