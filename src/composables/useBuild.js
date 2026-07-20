@@ -1474,15 +1474,6 @@ async function build(structure = source, refit = true, slice = false) {
     sceneApi.syncAspect()
     if (old) sceneApi.contentRoots.delete(old)
     if (animator) sceneApi.animators.delete(animator)
-    const doorDraws = attachDoors(doorEntries)
-    const entityDraws = await attachEntities(structure, lib, assets) + await attachSpawnerEggs(structure, lib, assets) + await attachShelves(structure, lib, assets)
-    try {
-      const signs = await makeSignTexts(structure)
-      if (signs) root.add(signs)
-    } catch {}
-    animator = lib.createAnimator(root)
-    sceneApi.animators.add(animator)
-    useSlicers().onBuild(root, position, [sx, sy, sz], slicedApplied)
     const parts = structure.__parts ?? [{ off: [0, 0, 0], size: structure.size }]
     // cave cells are clipped to the grid footprint so the outline closes along the grid edge
     let caveWire = null
@@ -1523,6 +1514,15 @@ async function build(structure = source, refit = true, slice = false) {
       }
     }), caveWire)
     if (refit) sceneApi.fit()
+    const doorDraws = attachDoors(doorEntries)
+    const entityDraws = await attachEntities(structure, lib, assets) + await attachSpawnerEggs(structure, lib, assets) + await attachShelves(structure, lib, assets)
+    try {
+      const signs = await makeSignTexts(structure)
+      if (signs) root.add(signs)
+    } catch {}
+    animator = lib.createAnimator(root)
+    sceneApi.animators.add(animator)
+    useSlicers().onBuild(root, position, [sx, sy, sz], slicedApplied)
     state.info = {
       size: `${sx}×${sy}×${sz}`,
       blocks: placedCount,
