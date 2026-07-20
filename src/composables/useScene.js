@@ -212,7 +212,7 @@ let gridRects = []
 
 // rects x/z/y are world units, w/d are blocks; cave is world units
 function setGrids(rects, cave = null) {
-  gridRects = rects.map(r => ({ x0: r.x, z0: r.z, x1: r.x + r.w * 16, z1: r.z + r.d * 16 }))
+  gridRects = rects.map(r => ({ x0: r.x, z0: r.z, x1: r.x + r.w * 16, z1: r.z + r.d * 16, y: r.y ?? 0 }))
   if (gridGroup) {
     gridGroup.removeFromParent()
     gridGroup.traverse(o => {
@@ -236,7 +236,16 @@ const _bb = new THREE.Box3()
 function sceneBounds() {
   _bb.makeEmpty()
   for (const r of contentRoots) _bb.expandByObject(r)
-  if (_bb.isEmpty()) _bb.set(new THREE.Vector3(-8, -8, -8), new THREE.Vector3(8, 8, 8))
+  if (_bb.isEmpty()) {
+    if (gridRects.length) {
+      for (const r of gridRects) {
+        _bb.expandByPoint(new THREE.Vector3(r.x0, r.y, r.z0))
+        _bb.expandByPoint(new THREE.Vector3(r.x1, r.y + 16, r.z1))
+      }
+    } else {
+      _bb.set(new THREE.Vector3(-8, -8, -8), new THREE.Vector3(8, 8, 8))
+    }
+  }
   return _bb
 }
 
