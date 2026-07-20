@@ -200,6 +200,18 @@ function manmade(name) {
 // scratch for the packed-index halves; palettes cap at 4096 so 820 longs is the most
 const u32Scratch = new Uint32Array(2048)
 
+export async function chunkYExtent(world, chunk) {
+  const nbt = await readChunk(world, chunk)
+  let top = -Infinity, bottom = Infinity
+  for (const s of nbt.sections ?? []) {
+    const pal = s.block_states?.palette
+    if (!pal || !pal.some(e => !AIR.test(e?.Name ?? ""))) continue
+    if (s.Y * 16 + 15 > top) top = s.Y * 16 + 15
+    if (s.Y * 16 < bottom) bottom = s.Y * 16
+  }
+  return top === -Infinity ? null : { top, bottom }
+}
+
 export async function chunkSurface(world, chunk, yMin = -Infinity, yMax = Infinity) {
   const nbt = await readChunk(world, chunk)
   const sections = (nbt.sections ?? [])

@@ -339,6 +339,11 @@ function onDblClick() {
             @click="world.setYRange(60, 100)">
             <span class="material-symbols-outlined">restart_alt</span>
           </button>
+          <button v-if="state.rangeWarn" class="reset warn"
+            title="Nothing is visible here in this Y range. Click to switch to a suggested range"
+            @click="world.applySuggestedRange()">
+            <span class="material-symbols-outlined">warning</span>
+          </button>
         </div>
       </div>
       <div class="row">
@@ -622,4 +627,6 @@ h2 .icon .material-symbols-outlined,
 }
 
 .yrange .reset .material-symbols-outlined { font-size: 16px; }
+
+.yrange .warn { color: #e0b34c; }
 </style>

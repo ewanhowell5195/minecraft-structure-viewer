@@ -1,5 +1,5 @@
 import { reactive, readonly } from "vue"
-import { readWorldZip, readRegionFile, buildSelection, unzipEntry, chunkSurface, readChunk, switchDimension } from "../world.js"
+import { readWorldZip, readRegionFile, buildSelection, unzipEntry, chunkSurface, chunkYExtent, readChunk, switchDimension } from "../world.js"
 import { readNBT } from "../nbt.js"
 import { useStructure } from "./useStructure.js"
 import { useBuild } from "./useBuild.js"
@@ -20,6 +20,7 @@ const state = reactive({
   dimensions: [],
   dimension: "",
   structs: [],
+  rangeWarn: false,
   regionFile: false,
   rev: 0,
   yMin: 60,
@@ -34,6 +35,8 @@ let queue = [], qi = 0
 let focusTimer = null
 let lastFocus = ""
 let pumping = false
+let focus = null
+let autoRange = false
 
 function setScanFocus(x0, z0, x1, z1) {
   const key = x0 + "," + z0 + "," + x1 + "," + z1
@@ -42,6 +45,7 @@ function setScanFocus(x0, z0, x1, z1) {
   clearTimeout(focusTimer)
   focusTimer = setTimeout(() => {
     if (!world) return
+    focus = { x0, z0, x1, z1 }
     const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2
     const rings = []
     for (const c of world.chunks) {
@@ -75,7 +79,56 @@ async function pump() {
     }
   }
   pumping = false
-  if (world === w) state.rev++
+  if (world === w) {
+    state.rev++
+    evalRange()
+  }
+}
+
+const visibleChunks = () => !focus || !world ? []
+  : world.chunks.filter(c => c.cx >= focus.x0 && c.cx <= focus.x1 && c.cz >= focus.z0 && c.cz <= focus.z1)
+
+function evalRange() {
+  const vis = visibleChunks()
+  if (!vis.length) {
+    state.rangeWarn = false
+    return
+  }
+  for (const c of vis) {
+    const s = surface.get(c.cx + "," + c.cz)
+    if (s === undefined) return
+    if (s !== null) {
+      state.rangeWarn = false
+      autoRange = false
+      return
+    }
+  }
+  if (autoRange) {
+    autoRange = false
+    applySuggestedRange()
+  } else {
+    state.rangeWarn = true
+  }
+}
+
+async function applySuggestedRange() {
+  const w = world
+  if (!w) return
+  let chunks = visibleChunks()
+  if (!chunks.length) chunks = w.chunks
+  const step = Math.max(1, Math.floor(chunks.length / 12))
+  let top = -Infinity, bottom = Infinity
+  for (let i = 0; i < chunks.length; i += step) {
+    if (world !== w) return
+    let r = null
+    try { r = await chunkYExtent(w, chunks[i]) } catch {}
+    if (!r) continue
+    if (r.top > top) top = r.top
+    if (r.bottom < bottom) bottom = r.bottom
+  }
+  if (top === -Infinity) return
+  state.rangeWarn = false
+  setYRange(Math.max(-64, Math.max(bottom, top - 40)), Math.min(320, top))
 }
 
 function fillGridWindow(d, w0x, w0z, size, tpc) {
@@ -106,10 +159,13 @@ async function openWorld(file, cacheIt = true) {
   state.active = true
   state.name = file.name.replace(/\.(zip|mca)$/i, "")
   state.loading = { done: 0, total: 0 }
+  state.rangeWarn = false
   surface.clear()
   queue = []
   qi = 0
   lastFocus = ""
+  focus = null
+  autoRange = true
   try {
     state.regionFile = /\.mca$/i.test(file.name)
     world = state.regionFile
@@ -161,6 +217,9 @@ async function applyDimension(id) {
   queue = []
   qi = 0
   lastFocus = ""
+  focus = null
+  state.rangeWarn = false
+  autoRange = true
 }
 
 async function setDimension(id) {
@@ -337,6 +396,7 @@ function closeWorld() {
   state.dimensions = []
   state.dimension = ""
   state.structs = []
+  state.rangeWarn = false
   useStructures().setWorldStructures([])
   uncache("world")
   setWorldParams(false)
@@ -381,6 +441,7 @@ function setYRange(lo, hi) {
   if (yMin === state.yMin && yMax === state.yMax) return
   state.yMin = yMin
   state.yMax = yMax
+  state.rangeWarn = false
   // the surface preview clips to the y range, so a change rescans (debounced for slider drags)
   clearTimeout(rangeTimer)
   rangeTimer = setTimeout(() => {
@@ -396,7 +457,7 @@ function setYRange(lo, hi) {
 export function useWorld() {
   return {
     state: readonly(state), openWorld, toggleChunk, isSelected, clearSelection, selectRect, rectHasSelected, loadSelected, closeWorld,
-    hasStructure, readStructureBytes, readMap, hasMap, setYRange,
+    hasStructure, readStructureBytes, readMap, hasMap, setYRange, applySuggestedRange,
     getChunks: () => world?.chunks ?? [],
     setScanFocus, fillGridWindow, loadForecast, answerMemWarn, restoreLoad, setDimension,
     dismissStopped: () => { state.stopped = null },
