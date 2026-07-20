@@ -37,4 +37,5 @@ const pct = computed(() => {
 .build-progress.light { background: #e8d44d; }
 .build-progress.build { background: var(--accent); }
 .build-progress.optimise { background: var(--green); }
+.build-progress.maps { background: #4cc9b0; }
 </style>

@@ -613,9 +613,11 @@ async function attachEntities(structure, lib, assets) {
   mapLightEnv = lib.LIGHT_DIMENSIONS?.[buildDim] ?? FALLBACK_ENV
   const mb = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity }
   const worldMaps = useWorld().state.active
+  let mapTotal = 0
   for (const e of structure.entities ?? []) {
     if (typeof e.nbt?.id !== "string" || !FRAME.test(e.nbt.id)) continue
     if (!/(^|:)filled_map$/.test(e.nbt.Item?.id ?? "")) continue
+    mapTotal++
     const sample = MAP_SAMPLE[FACING6[Number(e.nbt.Facing ?? 3)] ?? "south"]
     if (!sample) continue
     const bx = Math.floor(e.pos[0]), by = Math.floor(e.pos[1]), bz = Math.floor(e.pos[2])
@@ -714,7 +716,12 @@ async function attachEntities(structure, lib, assets) {
           markerTextures.push(fake.tex)
           draws++
         } catch {}
-        if (++mapCount % 4 === 0) await yieldTask()
+        mapCount++
+        if (mapTotal > 1) {
+          state.status = `generating maps… ${Math.round(mapCount / mapTotal * 100)}%`
+          state.progress = { phase: "maps", done: mapCount, total: mapTotal }
+        }
+        if (mapCount % 4 === 0) await yieldTask()
       }
       if (frame && typeof frameItem === "string" && /(^|:)clock$/.test(frameItem)) {
         clockFrames.push({ holder: g.getObjectByName("frameItem"), item: frameItem, components: e.nbt.Item.components ?? {}, glow })

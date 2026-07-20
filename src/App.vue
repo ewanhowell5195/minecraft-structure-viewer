@@ -101,7 +101,7 @@ function splashCancel() {
 // zero-width breaks so long structure paths wrap at their slashes
 const splashName = computed(() => current.name.replace(/\//g, "/\u200B"))
 
-const STAGE_LABELS = { light: "lighting", build: "building", optimise: "optimising" }
+const STAGE_LABELS = { light: "lighting", build: "building", optimise: "optimising", maps: "generating maps" }
 const splashStatus = computed(() => {
   // pack and jar downloads run concurrently; show both, but "loading…" is
   // just the pre-download placeholder and never worth a second slot
