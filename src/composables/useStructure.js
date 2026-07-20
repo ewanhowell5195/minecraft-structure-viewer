@@ -15,6 +15,7 @@ import { useFeatures } from "./useFeatures.js"
 import { generateFeature } from "../features/index.js"
 import { mix, rand32, rnd } from "../transforms.js"
 import { isRemote, prefetchRemote, fetchRemote, remoteName } from "../remote.js"
+import { applyProcessors, seedFor } from "../processors.js"
 import { cacheFile, uncache } from "../userCache.js"
 
 const READERS = { nbt: readStructure, litematic: readLitematic, schem: readSchem, mcstructure: readMcstructure }
@@ -366,7 +367,17 @@ async function readVanilla(rel) {
     return (await gen(undefined, { seed: 0 })).structure
   }
   const lib = await loadLibrary()
-  const s = await readStructure(await lib.readFile(zp, packs.assets.value))
+  let s = await readStructure(await lib.readFile(zp, packs.assets.value))
+  // the pool/structure processors the game runs at placement (mossify, rot,
+  // aging, the outpost overgrown overlay), rolled deterministically per rel
+  await structures.computeProcessors()
+  const pe = structures.processorEntry(rel)
+  if (pe) {
+    s = await applyProcessors(s, pe, rnd(seedFor(rel)), async orel => {
+      const ozp = structures.zipPathOf(orel)
+      return ozp ? readStructure(await lib.readFile(ozp, packs.assets.value)) : null
+    })
+  }
   // randomised builtins load deterministically at seed 0; Re-roll picks a fresh seed
   return fixBuiltin(rel, s, 0)
 }

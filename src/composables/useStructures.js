@@ -7,6 +7,7 @@ import { numeric, strip } from "../transforms.js"
 import { readStructure } from "../nbt.js"
 import { lootTableItems, readTrialSpawnerConfig } from "../loot.js"
 import { matchIndex } from "../advfilter.js"
+import { buildProcessorIndex } from "../processors.js"
 import { yieldTask } from "../yield.js"
 
 // structures? also matches the legacy/mod plural folder
@@ -32,6 +33,23 @@ let blockIndex = null, itemIndex = null, entityIndex = null
 let blockVocab = [], itemVocab = [], entityVocab = [], advPromise = null
 
 let worldNames = []
+let procIndex = null, procPromise = null
+
+function computeProcessors() {
+  procPromise ??= (async () => {
+    const lib = await loadLibrary()
+    const assets = packs.assets.value
+    if (!assets) return
+    const td = new TextDecoder()
+    const readJson = async p => {
+      try { const b = await lib.readFile(p, assets); return b ? JSON.parse(td.decode(b)) : null } catch { return null }
+    }
+    procIndex = await buildProcessorIndex(Array.from(await allZipKeys()), readJson, Array.from(structPath.keys()))
+  })()
+  return procPromise
+}
+
+const processorEntry = rel => procIndex?.get(rel)
 
 function refreshNames() {
   state.names = Array.from(structPath.keys()).concat(Object.keys(GENERATED)).sort(numeric)
@@ -213,6 +231,8 @@ async function refresh() {
     worldgenPromise = null
     starterSet = standaloneSet = structDepth = structRadius = null
     advPromise = null
+    procPromise = null
+    procIndex = null
     blockIndex = itemIndex = entityIndex = null
     blockVocab = itemVocab = entityVocab = []
     state.worldgenReady = false
@@ -254,5 +274,5 @@ const getStructRadius = name => structRadius?.get(name)
 const advVocab = () => state.filterMode === "item" ? itemVocab : state.filterMode === "entity" ? entityVocab : blockVocab
 
 export function useStructures() {
-  return { state: readonly(state), stateMut: state, refresh, computeWorldgen, computeAdvIndex, advVocab, filteredNames, visibleNames, zipPathOf, has, getStructDepth, getStructRadius, setWorldStructures }
+  return { state: readonly(state), stateMut: state, refresh, computeWorldgen, computeAdvIndex, computeProcessors, processorEntry, advVocab, filteredNames, visibleNames, zipPathOf, has, getStructDepth, getStructRadius, setWorldStructures }
 }
