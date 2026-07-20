@@ -1,13 +1,10 @@
 <script setup>
 import { tab } from "../composables/useTab.js"
-import { useWorld } from "../composables/useWorld.js"
-
-const worldState = useWorld().state
 </script>
 
 <template>
   <nav class="tabs">
-    <button v-if="!worldState.active" :class="{ active: tab === 'structures' }" @click="tab = 'structures'">Structures</button>
+    <button :class="{ active: tab === 'structures' }" @click="tab = 'structures'">Structures</button>
     <button :class="{ active: tab === 'features' }" @click="tab = 'features'">Features</button>
   </nav>
 </template>

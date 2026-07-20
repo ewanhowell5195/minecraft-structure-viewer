@@ -46,18 +46,6 @@ const { locked } = useLock()
 const { state: containerState } = useContainer()
 
 const worldState = useWorld().state
-let tabBeforeWorld = null
-watch(() => worldState.active, on => {
-  if (on) {
-    if (tab.value === "structures") {
-      tabBeforeWorld = "structures"
-      tab.value = "features"
-    }
-  } else if (tabBeforeWorld && tab.value === "features") {
-    tab.value = tabBeforeWorld
-    tabBeforeWorld = null
-  }
-})
 
 const minimalReady = ref(!minimal)
 const notFound = ref("")
@@ -220,7 +208,7 @@ onMounted(async () => {
       <template v-else>
         <PacksSection />
         <StructuresSection v-show="tab === 'structures' && !worldState.active" />
-        <FeaturesSection v-show="tab === 'features'" />
+        <FeaturesSection v-show="tab === 'features' && !worldState.active" />
         <WorldSection />
         <ViewSection />
         <SlicersSection />
