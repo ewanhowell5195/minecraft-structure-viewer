@@ -121,8 +121,14 @@ function computeBounds() {
   }
   const [hx, hz] = bestBucket.split(",").map(Number)
   let homeCx = hx * 32 + 16, homeCz = hz * 32 + 16
-  origin: for (let z = -8; z < 8; z++) for (let x = -8; x < 8; x++) {
-    if (present.has(x + "," + z)) { homeCx = 0; homeCz = 0; break origin }
+  // the origin bias targets world spawns; a lone region file centers on itself
+  if (state.regionFile) {
+    homeCx = (minCx + maxCx + 1) / 2
+    homeCz = (minCz + maxCz + 1) / 2
+  } else {
+    origin: for (let z = -8; z < 8; z++) for (let x = -8; x < 8; x++) {
+      if (present.has(x + "," + z)) { homeCx = 0; homeCz = 0; break origin }
+    }
   }
   bounds = { minCx, maxCx, minCz, maxCz, present, homeCx, homeCz }
   fitView()
