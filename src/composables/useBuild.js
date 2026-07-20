@@ -1031,7 +1031,9 @@ function rayHit(ox, oy, oz, dx, dy, dz, REACH = 80) {
     if (i == null) continue
     const b = structure.blocks[i]
     const bName = structure.palette[b.state]?.Name ?? ""
-    if ((isInspectable(bName) || b.nbt?.LootTable || /(^|[:_])spawner$/.test(bName)) && shapeT(bx, by, bz, structure.palette[b.state])) {
+    if (!state.technical && /(^|:)(barrier|light|structure_void)$/.test(bName)) continue
+    const e = structure.palette[b.state]
+    if ((isInspectable(bName) || b.nbt?.LootTable || /(^|[:_])spawner$/.test(bName)) && shapeT(bx, by, bz, e)) {
       return entT < t ? { entity: entM } : { container: b }
     }
     const cx = bx * 16 + rx, cy = by * 16 + ry, cz = bz * 16 + rz
@@ -1172,6 +1174,7 @@ function restoreFull() {
   current.value = fullBundle.structure
   state.info = fullBundle.info
   relightFakeMaps()
+  applyTechnicalVisibility()
   root.visible = true
   sceneApi.contentRoots.add(root)
   sceneApi.syncAspect()
@@ -1324,7 +1327,7 @@ async function build(structure = source, refit = true, slice = false) {
       lighting: state.lighting === "world" ? { dimension: buildDim, light: newLight ?? false, daytime: state.daytime } : state.lighting,
       keepTemplates: true,
       ignoreAtlases: true,
-      technical: state.technical,
+      technical: true,
       animate: false,
       onProgress: (stage, done, tot) => {
         if (stage.name === "optimize") {
@@ -1527,6 +1530,7 @@ async function build(structure = source, refit = true, slice = false) {
       draws: drawCalls + doorDraws + entityDraws,
       tris
     }
+    applyTechnicalVisibility()
     state.status = ""
     // a new source (or a full build of the same one) invalidates the kept full build
     if (prevSource !== source || !slicedApplied) discardFull()
@@ -1561,9 +1565,16 @@ watch(() => state.hideStructureBlocks, v => {
   localStorage.setItem("hideStructureBlocks", String(v))
   build(undefined, false)
 })
+// scenes always build the icons; the toggle only flips their visibility, so
+// no rebuild. icons are the billboard meshes, kept unmerged by the optimizer
+function applyTechnicalVisibility() {
+  root?.traverse(o => {
+    if (o.isMesh && o.userData.billboard) o.visible = state.technical
+  })
+}
 watch(() => state.technical, v => {
   localStorage.setItem("technicalBlocks", String(v))
-  build(undefined, false)
+  applyTechnicalVisibility()
 })
 
 async function exportCurrent(format, name) {

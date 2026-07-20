@@ -46,7 +46,7 @@ const collapsed = ref(true)
         </label>
       </template>
       <label class="check" title="Show barrier, light, and structure void blocks as their icons">
-        <input type="checkbox" v-model="buildState.technical" :disabled="locked">
+        <input type="checkbox" v-model="buildState.technical">
         Technical blocks
       </label>
       <label class="check">
