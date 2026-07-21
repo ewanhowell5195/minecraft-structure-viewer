@@ -231,6 +231,8 @@ export function makeDebug(kind) {
     put(8, 1, 0, "blue_wall_banner", { facing: "south" })
     put(10, 0, 0, "bell", { attachment: "floor", facing: "south", powered: "false" })
     put(12, 0, 0, "decorated_pot", { facing: "south", cracked: "false", waterlogged: "false" })
+    put(14, 0, 0, "dragon_head", { rotation: "8", powered: "true" })
+    put(16, 0, 0, "piglin_head", { rotation: "8", powered: "true" })
     return finish()
   }
 
