@@ -230,6 +230,7 @@ export function makeDebug(kind) {
     put(6, 0, 0, "red_banner", { rotation: "8" })
     put(8, 1, 0, "blue_wall_banner", { facing: "south" })
     put(10, 0, 0, "bell", { attachment: "floor", facing: "south", powered: "false" })
+    put(12, 0, 0, "decorated_pot", { facing: "south", cracked: "false", waterlogged: "false" })
     return finish()
   }
 
