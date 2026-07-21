@@ -759,10 +759,10 @@ async function attachEntities(structure, lib, assets) {
         if (blockId) {
           const g = new THREE.Group()
           g.userData.daytime = daytimeUniform
-          if (!invisible) {
+          if (!frame) {
             for (const model of await lib.parseBlockstate(assets, blockId, { data, ignoreAtlases: true })) {
               const data = await lib.resolveModelData(assets, model)
-              await lib.loadModel(g, assets, data, { display: {}, lighting: lightingOpt(sceneLight), animate: false, ...(glow ? { emission: 15 } : null) })
+              await lib.loadModel(g, assets, data, { display: {}, lighting: lightingOpt(sceneLight), animate: false })
             }
           }
           if (frame && frameItem && !frameMap) {
@@ -787,7 +787,7 @@ async function attachEntities(structure, lib, assets) {
             } catch {}
           }
           if (frame && FRAME_ROT[facing]) g.rotation.set(FRAME_ROT[facing][0], FRAME_ROT[facing][1], 0)
-          if (g.children.length || invisible) template = g
+          if (g.children.length || frame) template = g
         }
       } catch {}
       groupCache.set(key, template)
@@ -1456,6 +1456,20 @@ async function build(structure = source, refit = true, slice = false) {
       if (e.__biome) entry.biome = e.__biome
       inputIdx[i] = inputBlocks.length
       inputBlocks.push(entry)
+    }
+    // frame models ride the main scene mesh as blocks (facing blockstates are a
+    // lib override); only the contained item stays an entity attachment
+    for (const e of structure.entities ?? []) {
+      const id = e.nbt?.id
+      if (typeof id !== "string" || !FRAME.test(id) || Number(e.nbt.Invisible ?? 0) === 1) continue
+      inputBlocks.push({
+        id: id.includes("glow") ? "minecraft:glow_item_frame" : "minecraft:item_frame",
+        pos: [Math.floor(e.pos[0]), Math.floor(e.pos[1]), Math.floor(e.pos[2])],
+        properties: {
+          facing: FACING6[Number(e.nbt.Facing ?? 3)] ?? "south",
+          map: /(^|:)filled_map$/.test(e.nbt.Item?.id ?? "") ? "true" : "false"
+        }
+      })
     }
     const total = inputBlocks.length
 
