@@ -321,7 +321,7 @@ function attachDoors(entries) {
   const structure = current.value
   doorByCell = new Map()
   doorSlots = new Map()
-  if (!entries.length) return 0
+  if (!entries.length) return
   function slotFor(stateIdx) {
     const key = stateRender.get(stateIdx).key
     let s = doorSlots.get(key)
@@ -332,7 +332,6 @@ function attachDoors(entries) {
     e.openSlot = slotFor(e.openIdx)
     e.closedSlot = slotFor(e.closedIdx)
   }
-  let draws = 0
 
   // wood variants share model geometry and differ only by texture, so their
   // textures pack into one atlas addressed by a per-instance uv rect, and
@@ -365,7 +364,6 @@ function attachDoors(entries) {
       for (let i = 0; i < s.count; i++) im.setMatrixAt(i, _dzero)
       root.add(im)
       s.meshes.push({ im, base: m.base, offset: 0 })
-      draws++
     }
   }
 
@@ -429,7 +427,6 @@ function attachDoors(entries) {
       b.geometry.setAttribute("uvRect", new THREE.InstancedBufferAttribute(uvRect, 4))
       for (let i = 0; i < b.total; i++) im.setMatrixAt(i, _dzero)
       root.add(im)
-      draws++
     }
   }
   for (const e of entries) {
@@ -443,7 +440,6 @@ function attachDoors(entries) {
     const [x, y, z] = reg.b.pos
     reg.pair = doorByCell.get(x + "," + (y + 1) + "," + z) || doorByCell.get(x + "," + (y - 1) + "," + z) || null
   }
-  return draws
 }
 
 // yaw snaps to the nearest cardinal like the game's Direction.fromYRot
@@ -519,12 +515,11 @@ async function nameTagSprite(text) {
 
 async function attachEntityTag(nbt, wx, topY, wz) {
   const label = plainText(nbt?.CustomName ?? "")
-  if (!label) return 0
+  if (!label) return
   const tag = await nameTagSprite(label)
-  if (!tag) return 0
+  if (!tag) return
   tag.position.set(wx, topY + 3 + tag.scale.y / 2, wz)
   root.add(tag)
-  return 1
 }
 
 const FRAME = /(^|:)(glow_)?item_frame$/
@@ -723,7 +718,6 @@ async function precomputeMapArt(structure, lib, assets) {
 }
 
 async function attachEntities(structure, lib, assets) {
-  let draws = 0
   const groupCache = new Map()
   const texCache = new Map()
   const sprites = []
@@ -811,7 +805,6 @@ async function attachEntities(structure, lib, assets) {
         box = new THREE.Box3().setFromObject(g)
       }
       root.add(g)
-      g.traverse(o => { if (o.isMesh) draws++ })
       if (frameMap) {
         try {
           const mbx = Math.floor(e.pos[0]), mby = Math.floor(e.pos[1]), mbz = Math.floor(e.pos[2])
@@ -838,7 +831,7 @@ async function attachEntities(structure, lib, assets) {
       entityMarkers.push(noBox
         ? { stack: [e], x: wx, y: wy - 8, z: wz }
         : { stack: [e], x: wx, y: box.min.y, z: wz, h: box.max.y - box.min.y, ...(frame ? { box } : null) })
-      draws += await attachEntityTag(e.nbt, wx, noBox ? wy + 8 : box.max.y, wz)
+      await attachEntityTag(e.nbt, wx, noBox ? wy + 8 : box.max.y, wz)
       continue
     }
     sprites.push({ e, name, wx, wy, wz })
@@ -870,7 +863,6 @@ async function attachEntities(structure, lib, assets) {
         for (let i = 0; i < bases.length; i++) im.setMatrixAt(i, _fiM.multiplyMatrices(bases[i], o.matrixWorld))
         im.frustumCulled = false
         root.add(im)
-        draws++
       })
     } catch {}
   }
@@ -920,7 +912,6 @@ async function attachEntities(structure, lib, assets) {
     for (const f of fakeMaps) f.attr = geo.attributes.color
     root.add(mesh)
     markerTextures.push(tex)
-    draws++
   }
 
   const clusters = []
@@ -970,17 +961,14 @@ async function attachEntities(structure, lib, assets) {
     spr.scale.set(scale, scale, 1)
     spr.position.set(cx, cy - 8 + ENTITY_BOX / 2, cz)
     root.add(spr)
-    draws++
     entityMarkers.push({ stack: c.map(s => s.e), x: cx, y: cy - 8, z: cz })
-    for (const s of c) draws += await attachEntityTag(s.e.nbt, s.wx, s.wy - 8 + ENTITY_BOX, s.wz)
+    for (const s of c) await attachEntityTag(s.e.nbt, s.wx, s.wy - 8 + ENTITY_BOX, s.wz)
   }
   for (const tex of texCache.values()) if (tex) markerTextures.push(tex)
   relightFakeMaps()
-  return draws
 }
 
 async function attachSpawnerEggs(structure, lib, assets) {
-  let draws = 0
   const texCache = new Map()
   for (const b of structure.blocks) {
     if (!/(^|[:_])spawner$/.test(structure.palette[b.state]?.Name ?? "")) continue
@@ -998,17 +986,14 @@ async function attachSpawnerEggs(structure, lib, assets) {
     spr.scale.set(9, 9, 1)
     spr.position.set(b.pos[0] * 16, b.pos[1] * 16, b.pos[2] * 16)
     root.add(spr)
-    draws++
   }
   for (const tex of texCache.values()) if (tex) markerTextures.push(tex)
-  return draws
 }
 
 const SHELF_DISPLAY = { type: "fallback", display: "on_shelf" }
 const SHELF_YAW = { south: 0, west: -Math.PI / 2, north: Math.PI, east: Math.PI / 2 }
 
 async function attachShelves(structure, lib, assets) {
-  let draws = 0
   const cache = new Map()
   for (const b of structure.blocks) {
     const entry = structure.palette[b.state]
@@ -1056,9 +1041,7 @@ async function attachShelves(structure, lib, assets) {
     g.rotation.y = SHELF_YAW[entry.Properties?.facing] ?? Math.PI
     g.position.set(b.pos[0] * 16, b.pos[1] * 16, b.pos[2] * 16)
     root.add(g)
-    g.traverse(o => { if (o.isMesh) draws++ })
   }
-  return draws
 }
 
 function boxForEntity(m) {
@@ -1317,6 +1300,28 @@ function blockBoxes(b) {
   return out
 }
 
+function sceneStats(group) {
+  let draws = 0, tris = 0
+  group.traverse(o => {
+    if (!o.visible || !(o.isMesh || o.isSprite)) return
+    const n = o.isInstancedMesh ? o.count : 1
+    if (!n) return
+    const g = o.geometry
+    const indices = g.index?.count ?? g.attributes.position?.count ?? 0
+    const mats = [].concat(o.material)
+    if (g.groups?.length) {
+      for (const grp of g.groups) {
+        if (!grp.count || mats[grp.materialIndex]?.visible === false) continue
+        draws++
+        tris += (grp.count === Infinity ? indices - grp.start : grp.count) / 3 * n
+      }
+    } else if (mats[0]?.visible !== false) {
+      draws++
+      tris += indices / 3 * n
+    }
+  })
+  return { draws, tris: Math.round(tris) }
+}
 
 function disposeGroup(g) {
   if (!g) return
@@ -1637,7 +1642,7 @@ async function build(structure = source, refit = true, slice = false) {
       }
     }
 
-    let loaderDraws = 0, loaderTris = 0, loaderCount = 0
+    let loaderCount = 0
     for (const b of structure.blocks) {
       if (!structure.palette[b.state]?.__loaderKey) continue
       const tmpl = await buildStateTemplate(b.state)
@@ -1650,19 +1655,12 @@ async function build(structure = source, refit = true, slice = false) {
       inst.position.set(b.pos[0] * 16, b.pos[1] * 16, b.pos[2] * 16)
       handle.group.add(inst)
       loaderCount++
-      inst.traverse(o => {
-        if (!o.isMesh) return
-        loaderDraws++
-        loaderTris += (o.geometry.index?.count ?? o.geometry.attributes.position?.count ?? 0) / 3
-      })
     }
 
     // tiny builds are all fixed cost and would poison the per-block rates
     if (total >= 2000 && tOpt) savePerf((tOpt - tBuild) / total, (performance.now() - tOpt) / total)
     handle.group.position.copy(position)
     const next = handle.group
-    const drawCalls = handle.drawCalls + loaderDraws
-    const tris = handle.tris + loaderTris
     const placedCount = total + doorEntries.length + loaderCount
 
     const old = root, oldHandle = sceneHandle, oldMarkerTex = markerTextures,
@@ -1717,8 +1715,10 @@ async function build(structure = source, refit = true, slice = false) {
       }
     }), caveWire)
     if (refit) sceneApi.fit()
-    const doorDraws = attachDoors(doorEntries)
-    const entityDraws = await attachEntities(structure, lib, assets) + await attachSpawnerEggs(structure, lib, assets) + await attachShelves(structure, lib, assets)
+    attachDoors(doorEntries)
+    await attachEntities(structure, lib, assets)
+    await attachSpawnerEggs(structure, lib, assets)
+    await attachShelves(structure, lib, assets)
     try {
       const signs = await makeSignTexts(structure)
       if (signs) root.add(signs)
@@ -1730,8 +1730,7 @@ async function build(structure = source, refit = true, slice = false) {
       size: `${sx}×${sy}×${sz}`,
       blocks: placedCount,
       palette: handle.palette.length,
-      draws: drawCalls + doorDraws + entityDraws,
-      tris
+      ...sceneStats(root)
     }
     applyTechnicalVisibility()
     useBooks().refresh()
