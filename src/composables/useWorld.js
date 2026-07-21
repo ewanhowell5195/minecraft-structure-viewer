@@ -170,7 +170,7 @@ async function openWorld(file, cacheIt = true) {
     state.regionFile = /\.mca$/i.test(file.name)
     world = state.regionFile
       ? readRegionFile(await file.arrayBuffer(), file.name)
-      : await readWorldZip(await file.arrayBuffer(), (done, total) => { state.loading = { done, total } })
+      : await readWorldZip(file, (done, total) => { state.loading = { done, total } })
     selected.clear()
     state.name = world.name || file.name.replace(/\.(zip|mca)$/i, "")
     state.chunkCount = world.chunks.length

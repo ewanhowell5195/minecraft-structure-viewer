@@ -1,4 +1,3 @@
-import { loadLibrary } from "./lib.js"
 import { readNBT } from "./nbt.js"
 
 const AIR = /(^|:)(air|cave_air|void_air)$/
@@ -8,13 +7,121 @@ async function inflate(data, format) {
   return new Uint8Array(await new Response(stream).arrayBuffer())
 }
 
-export const unzipEntry = entry => entry.method === 8 ? inflate(entry.data, "deflate-raw") : entry.data
+const sliceBytes = async (blob, start, end) => new Uint8Array(await blob.slice(start, end).arrayBuffer())
+
+// central directory only (zip64 aware); entry bytes stay on disk until read,
+// so multi-GB world zips never need the whole file in memory
+export async function parseZipBlob(blob) {
+  const size = blob.size
+  const tail = await sliceBytes(blob, Math.max(0, size - 66000), size)
+  let e = -1
+  for (let i = tail.length - 22; i >= 0; i--) {
+    if (tail[i] === 0x50 && tail[i + 1] === 0x4b && tail[i + 2] === 0x05 && tail[i + 3] === 0x06) { e = i; break }
+  }
+  if (e === -1) throw new Error("not a zip file (no end of central directory record)")
+  const tdv = new DataView(tail.buffer, tail.byteOffset, tail.byteLength)
+  let count = tdv.getUint16(e + 10, true)
+  let cdSize = tdv.getUint32(e + 12, true)
+  let cdOff = tdv.getUint32(e + 16, true)
+  if ((cdOff === 0xFFFFFFFF || cdSize === 0xFFFFFFFF || count === 0xFFFF) && e >= 20 && tdv.getUint32(e - 20, true) === 0x07064b50) {
+    const off64 = Number(tdv.getBigUint64(e - 12, true))
+    const rec = await sliceBytes(blob, off64, off64 + 56)
+    const rdv = new DataView(rec.buffer)
+    if (rdv.getUint32(0, true) === 0x06064b50) {
+      count = Number(rdv.getBigUint64(32, true))
+      cdSize = Number(rdv.getBigUint64(40, true))
+      cdOff = Number(rdv.getBigUint64(48, true))
+    }
+  }
+  const cd = await sliceBytes(blob, cdOff, cdOff + cdSize)
+  const dv = new DataView(cd.buffer, cd.byteOffset, cd.byteLength)
+  const td = new TextDecoder()
+  const files = new Map()
+  let o = 0
+  for (let i = 0; i < count && o + 46 <= cd.length; i++) {
+    const nameLen = dv.getUint16(o + 28, true)
+    const extraLen = dv.getUint16(o + 30, true)
+    const commentLen = dv.getUint16(o + 32, true)
+    const filePath = td.decode(cd.subarray(o + 46, o + 46 + nameLen))
+    if (!filePath.endsWith("/")) {
+      const method = dv.getUint16(o + 10, true)
+      let compressedSize = dv.getUint32(o + 20, true)
+      const uncompressedSize = dv.getUint32(o + 24, true)
+      let localOffset = dv.getUint32(o + 42, true)
+      if (compressedSize === 0xFFFFFFFF || localOffset === 0xFFFFFFFF || uncompressedSize === 0xFFFFFFFF) {
+        let eo = o + 46 + nameLen
+        const end = eo + extraLen
+        while (eo + 4 <= end) {
+          const id = dv.getUint16(eo, true), sz = dv.getUint16(eo + 2, true)
+          if (id === 1) {
+            let fo = eo + 4
+            if (uncompressedSize === 0xFFFFFFFF) fo += 8
+            if (compressedSize === 0xFFFFFFFF) {
+              compressedSize = Number(dv.getBigUint64(fo, true))
+              fo += 8
+            }
+            if (localOffset === 0xFFFFFFFF) localOffset = Number(dv.getBigUint64(fo, true))
+            break
+          }
+          eo += 4 + sz
+        }
+      }
+      files.set(filePath, { method, blob, localOffset, compressedSize })
+    }
+    o += 46 + nameLen + extraLen + commentLen
+  }
+  return files
+}
+
+async function entryStart(entry) {
+  const head = await sliceBytes(entry.blob, entry.localOffset, entry.localOffset + 30)
+  const dv = new DataView(head.buffer)
+  return entry.localOffset + 30 + dv.getUint16(26, true) + dv.getUint16(28, true)
+}
+
+async function entryData(entry) {
+  if (entry.data) return entry.data
+  const start = await entryStart(entry)
+  return sliceBytes(entry.blob, start, start + entry.compressedSize)
+}
+
+export const unzipEntry = async entry => {
+  const data = await entryData(entry)
+  return entry.method === 8 ? inflate(data, "deflate-raw") : data
+}
+
+// the first `want` decompressed bytes without inflating the rest: region
+// headers are 8KB out of multi-MB entries
+async function entryPrefix(entry, want) {
+  if (entry.data) return (await unzipEntry(entry)).subarray(0, want)
+  const start = await entryStart(entry)
+  if (entry.method !== 8) return sliceBytes(entry.blob, start, start + Math.min(want, entry.compressedSize))
+  const reader = entry.blob.slice(start, start + entry.compressedSize).stream()
+    .pipeThrough(new DecompressionStream("deflate-raw")).getReader()
+  const chunks = []
+  let got = 0
+  while (got < want) {
+    const { done, value } = await reader.read()
+    if (done) break
+    chunks.push(value)
+    got += value.length
+  }
+  reader.cancel().catch(() => {})
+  const out = new Uint8Array(Math.min(got, want))
+  let off = 0
+  for (const c of chunks) {
+    const n = Math.min(c.length, out.length - off)
+    out.set(c.subarray(0, n), off)
+    off += n
+    if (off >= out.length) break
+  }
+  return out
+}
 
 const DIM_ORDER = { overworld: 0, the_nether: 1, the_end: 2 }
 
-export async function readWorldZip(buf, onProgress) {
-  const lib = await loadLibrary()
-  const files = lib.parseZip(new Uint8Array(buf))
+export async function readWorldZip(blob, onProgress) {
+  const files = await parseZipBlob(blob)
   const prefixes = new Set()
   for (const p of files.keys()) {
     const m = p.match(/^(.*?)region\/r\.-?\d+\.-?\d+\.mca$/)
@@ -73,19 +180,18 @@ async function readDimension(files, prefix, onProgress) {
   const total = regions.length + eRegions.length
   for (const [m, entry] of regions) {
     onProgress?.(done++, total)
-    const bytes = await unzipEntry(entry)
-    if (bytes.length < 8192) continue
+    const header = await entryPrefix(entry, 4096)
+    if (header.length < 4096) continue
     const key = m[2] + "," + m[3]
-    regionBufs.set(key, bytes)
-    scanRegion(bytes, Number(m[2]), Number(m[3]), key, chunks)
+    regionBufs.set(key, entry)
+    scanRegion(header, Number(m[2]), Number(m[3]), key, chunks)
   }
   if (!chunks.length) throw new Error("the region files contain no chunks")
   for (const [m, entry] of eRegions) {
     onProgress?.(done++, total)
-    const bytes = await unzipEntry(entry)
-    if (bytes.length >= 8192) entityBufs.set(m[2] + "," + m[3], bytes)
+    entityBufs.set(m[2] + "," + m[3], entry)
   }
-  return { regionBufs, entityBufs, chunks }
+  return { regionBufs, entityBufs, chunks, regionCache: new Map() }
 }
 
 export async function switchDimension(world, id, onProgress) {
@@ -112,7 +218,7 @@ export function readRegionFile(buf, fileName) {
   const chunks = []
   scanRegion(bytes, rx, rz, key, chunks)
   if (!chunks.length) throw new Error("the region file contains no chunks")
-  return { name: "", regionBufs: new Map([[key, bytes]]), entityBufs: new Map(), chunks, structures: new Map() }
+  return { name: "", regionBufs: new Map([[key, bytes]]), entityBufs: new Map(), chunks, structures: new Map(), regionCache: new Map() }
 }
 
 async function readChunkFrom(bytes, index) {
@@ -128,7 +234,29 @@ async function readChunkFrom(bytes, index) {
   throw new Error(`unsupported chunk compression ${method}`)
 }
 
-export const readChunk = (world, chunk) => readChunkFrom(world.regionBufs.get(chunk.region), chunk.index)
+// lazy worlds keep zip entries in the bufs maps; inflated regions live in a
+// small LRU so a browse can't accumulate the whole world in memory
+const REGION_CACHE_MAX = 24
+async function regionData(world, kind, key) {
+  const src = kind === "entity" ? world.entityBufs : world.regionBufs
+  const v = src?.get(key)
+  if (!v) return null
+  if (v instanceof Uint8Array) return v
+  const cache = world.regionCache
+  const ck = kind + ":" + key
+  const hit = cache.get(ck)
+  if (hit) {
+    cache.delete(ck)
+    cache.set(ck, hit)
+    return hit
+  }
+  const bytes = await unzipEntry(v)
+  cache.set(ck, bytes)
+  while (cache.size > REGION_CACHE_MAX) cache.delete(cache.keys().next().value)
+  return bytes
+}
+
+export const readChunk = async (world, chunk) => readChunkFrom(await regionData(world, "region", chunk.region), chunk.index)
 
 const PLANTS = new Set(["poppy", "dandelion", "oxeye_daisy", "azure_bluet", "cornflower", "allium",
   "lilac", "peony", "sunflower", "wither_rose", "wheat", "beetroots", "carrots", "potatoes",
@@ -375,8 +503,8 @@ export async function buildSelection(world, selected, { yMin = -Infinity, yMax =
     if (blocks.length > cap) { capped = true; break }
     if ((loaded & 15) === 15 && over()) { truncated = true; break }
     loaded++
-    const ebytes = world.entityBufs?.get(c.region)
-    if (ebytes) {
+    const ebytes = await regionData(world, "entity", c.region)
+    if (ebytes && ebytes.length >= 8192) {
       const enbt = await readChunkFrom(ebytes, c.index)
       for (const e of enbt?.Entities ?? []) {
         const p = e.Pos
