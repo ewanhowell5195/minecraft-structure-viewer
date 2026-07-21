@@ -135,12 +135,24 @@ function computeBounds() {
 }
 
 function fitView() {
-  const px = pxFor(ZI_BASE)
+  const sel = world.selectionBounds()
+  let zi = ZI_BASE
+  let cx, cz
+  if (sel) {
+    const need = Math.max(sel.maxCx - sel.minCx, sel.maxCz - sel.minCz) + 3
+    while (zi > 0 && W / pxFor(zi) < need) zi--
+    cx = (sel.minCx + sel.maxCx + 1) / 2
+    cz = (sel.minCz + sel.maxCz + 1) / 2
+  } else {
+    cx = bounds.homeCx
+    cz = bounds.homeCz
+  }
+  const px = pxFor(zi)
   view = {
-    zi: ZI_BASE,
+    zi,
     px,
-    cx0: bounds.homeCx - W / px / 2,
-    cz0: bounds.homeCz - W / px / 2
+    cx0: cx - W / px / 2,
+    cz0: cz - W / px / 2
   }
 }
 
@@ -186,6 +198,7 @@ function draw() {
 }
 
 watch(() => [state.rev, state.active, collapsed.value], () => nextTick(draw))
+watch(() => state.focusRev, () => nextTick(() => { if (bounds) { fitView(); draw() } }))
 onMounted(() => nextTick(draw))
 const ro = new ResizeObserver(() => draw())
 watch(mapEl, (el, old) => {

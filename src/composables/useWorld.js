@@ -23,6 +23,7 @@ const state = reactive({
   rangeWarn: false,
   regionFile: false,
   rev: 0,
+  focusRev: 0,
   yMin: 60,
   yMax: 100
 })
@@ -279,6 +280,19 @@ function selectRect(aCx, aCz, bCx, bCz) {
 
 const isSelected = key => selected.has(key)
 
+function selectionBounds() {
+  if (!selected.size) return null
+  let minCx = Infinity, maxCx = -Infinity, minCz = Infinity, maxCz = -Infinity
+  for (const k of selected) {
+    const [x, z] = k.split(",").map(Number)
+    if (x < minCx) minCx = x
+    if (x > maxCx) maxCx = x
+    if (z < minCz) minCz = z
+    if (z > maxCz) maxCz = z
+  }
+  return { minCx, maxCx, minCz, maxCz }
+}
+
 async function packSel() {
   const stream = new Blob([[...selected].join(";")]).stream().pipeThrough(new CompressionStream("deflate-raw"))
   const bytes = new Uint8Array(await new Response(stream).arrayBuffer())
@@ -330,6 +344,7 @@ async function restoreLoad(wy, wsel, wdim) {
   state.selCount = selected.size
   state.rev++
   if (!selected.size) return
+  state.focusRev++
   let probe
   try { probe = await buildSelection(world, selected, { yMin: state.yMin, yMax: state.yMax, cap: 24000 }) } catch (err) {
     if (err?.oldChunks) state.oldWorld = true
@@ -456,7 +471,7 @@ function setYRange(lo, hi) {
 
 export function useWorld() {
   return {
-    state: readonly(state), openWorld, toggleChunk, isSelected, clearSelection, selectRect, rectHasSelected, loadSelected, closeWorld,
+    state: readonly(state), openWorld, toggleChunk, isSelected, clearSelection, selectRect, rectHasSelected, selectionBounds, loadSelected, closeWorld,
     hasStructure, readStructureBytes, readMap, hasMap, setYRange, applySuggestedRange,
     getChunks: () => world?.chunks ?? [],
     setScanFocus, fillGridWindow, loadForecast, answerMemWarn, restoreLoad, setDimension,
