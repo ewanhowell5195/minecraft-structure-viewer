@@ -712,7 +712,7 @@ async function mapArtFor(bx, by, bz, facing, id) {
   if (colors) {
     const bg = await mapBackground()
     if (bg) canvas.getContext("2d").drawImage(bg, 0, 0, 128, 128)
-    drawRealMap(canvas, sample, colors)
+    drawRealMap(canvas, sample, colors, frameCtx.lib.MAP_COLORS)
   } else {
     await drawFakeMap(canvas, sample, id)
   }
@@ -845,25 +845,7 @@ async function attachEntities(structure, lib, assets) {
         box = new THREE.Box3().setFromObject(g)
       }
       root.add(g)
-      if (frameMap) {
-        try {
-          const mbx = Math.floor(e.pos[0]), mby = Math.floor(e.pos[1]), mbz = Math.floor(e.pos[2])
-          const art = await mapArtFor(mbx, mby, mbz, facing, mapIdOf(e.nbt.Item))
-          fakeMaps.push({
-            art, facing, bx: mbx, by: mby, bz: mbz,
-            rot: Number(e.nbt.ItemRotation ?? 0),
-            off: invisible ? 7.85 : MAP_OFF,
-            light: glow ? null : sceneLight?.lightAt(mbx, mby, mbz) ?? null
-          })
-        } catch {}
-        if (++mapCount % 16 === 0) await yieldTask()
-      }
-      if (frame && invisible && typeof frameItem === "string" && !frameMap && !LIVE_ITEM.test(frameItem)) {
-        const bkey = frameItem + "|" + JSON.stringify(e.nbt.Item.components ?? {}) + (glow ? "|glow" : "")
-        let ib = frameItemBuckets.get(bkey)
-        if (!ib) frameItemBuckets.set(bkey, ib = { item: frameItem, components: e.nbt.Item.components ?? {}, glow, entries: [] })
-        ib.entries.push({ facing, rot: Number(e.nbt.ItemRotation ?? 0), z: invisible ? 8 : 7, wx, wy, wz })
-      }
+
       if (frame && typeof frameItem === "string" && /(^|:)clock$/.test(frameItem)) {
         clockFrames.push({ holder: g.getObjectByName("frameItem"), item: frameItem, components: e.nbt.Item.components ?? {}, glow })
       }
@@ -1610,19 +1592,23 @@ async function build(structure = source, refit = true, slice = false) {
     // lib override); only the contained item stays an entity attachment
     for (const e of structure.entities ?? []) {
       const id = e.nbt?.id
-      if (typeof id !== "string" || !FRAME.test(id) || Number(e.nbt.Invisible ?? 0) === 1) continue
+      if (typeof id !== "string" || !FRAME.test(id)) continue
       const item = e.nbt.Item?.id ?? ""
+      const invisible = Number(e.nbt.Invisible ?? 0) === 1
+      if (invisible && (!item || LIVE_ITEM.test(item))) continue
       const map = /(^|:)filled_map$/.test(item)
       const entry = {
         id: id.includes("glow") ? "minecraft:glow_item_frame" : "minecraft:item_frame",
         pos: [Math.floor(e.pos[0]), Math.floor(e.pos[1]), Math.floor(e.pos[2])],
+        overlay: true,
         properties: {
           facing: FACING6[Number(e.nbt.Facing ?? 3)] ?? "south",
           map: map ? "true" : "false"
         }
       }
-      if (typeof item === "string" && item && !map && !LIVE_ITEM.test(item)) {
+      if (typeof item === "string" && item && !LIVE_ITEM.test(item)) {
         entry.nbt = { Item: e.nbt.Item, ItemRotation: e.nbt.ItemRotation }
+        if (invisible) entry.nbt.Invisible = 1
       }
       inputBlocks.push(entry)
     }
@@ -1642,6 +1628,11 @@ async function build(structure = source, refit = true, slice = false) {
     let tOpt = null
 
     const handle = await lib.createScene(assets, inputBlocks, {
+      mapArt: async (id, info) => {
+        const colors = id != null ? await useWorld().readMap(id) : null
+        if (colors) return lib.renderMapColors(assets, colors)
+        return mapArtFor(Math.floor(info?.pos?.[0] ?? 0), Math.floor(info?.pos?.[1] ?? 0), Math.floor(info?.pos?.[2] ?? 0), info?.facing ?? "north", id)
+      },
       lighting: state.lighting === "world" ? { dimension: buildDim, light: newLight ?? false, daytime: state.daytime } : state.lighting,
       keepTemplates: true,
       ignoreAtlases: true,
@@ -1909,9 +1900,13 @@ const getRoot = () => root
 const getTemplates = () => templates
 const getNonSolid = () => nonSolid
 
+async function clearMapArt() {
+  try { (await loadLibrary()).disposeMapArt?.(packs.assets.value) } catch {}
+}
+
 export function useBuild() {
   return {
     state, current, build, cancel, answerWarn, setRestoreGate, restoreGateCheck, getRoot, getTemplates, getNonSolid, showFull, restoreFull,
-    blockAt, blockEntryAt, boxForBlock, boxForEntity, markerUnderRay, rayHit, interact, aimDoor, blockBoxes, exportCurrent
+    blockAt, blockEntryAt, boxForBlock, boxForEntity, markerUnderRay, rayHit, interact, aimDoor, blockBoxes, exportCurrent, clearMapArt
   }
 }

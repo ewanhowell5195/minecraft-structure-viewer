@@ -311,6 +311,9 @@ function restore(snap) {
 
 async function apply(refit = true) {
   if (!loaded.length) return
+  // map art carries across anything world-derived; a fresh non-world structure clears it
+  const w = useWorld()
+  if (!loaded.every(e => e.world || (e.rel && !e.feature && w.hasStructure(e.rel)))) await buildApi.clearMapArt()
   const features = useFeatures()
   structures.stateMut.selected = loaded.filter(e => e.rel && !e.feature).map(e => e.rel)
   features.stateMut.selected = Array.from(new Set(loaded.filter(e => e.feature).map(e => e.rel)))
@@ -672,7 +675,7 @@ function loadObject(structure, name, keepWorld = false) {
     try {
       setStructureParam(null, undefined, undefined, undefined, keepWorld)
       state.field = null
-      loaded = [{ structure, name }]
+      loaded = [{ structure, name, world: keepWorld }]
       if (await apply() === false) return restore(snap)
       uncache("structure")
       if (!keepWorld) uncache("world")
