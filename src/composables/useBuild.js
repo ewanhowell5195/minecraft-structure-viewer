@@ -11,7 +11,7 @@ import { makeSignTexts, plainText } from "../signs.js"
 import { JIGSAW, parseState } from "../transforms.js"
 import { isInspectable, readTrialSpawnerConfig } from "../loot.js"
 import { getFont, measure, drawText } from "../mcfont.js"
-import { drawFakeMap, drawRealMap, prepareFakeMapArea, randomiseFakeMapWorld } from "../mapgen.js"
+import { drawFakeMap, prepareFakeMapArea, randomiseFakeMapWorld } from "../mapgen.js"
 import { useWorld } from "./useWorld.js"
 import { useBooks } from "./useBooks.js"
 import { minimal } from "../minimal.js"
@@ -204,7 +204,6 @@ let clockTimer = null
 watch(() => state.daytime, v => {
   daytimeUniform.value = v
   if (sceneHandle?.group.userData.daytime) sceneHandle.group.userData.daytime.value = v
-  relightFakeMaps()
   clearTimeout(clockTimer)
   clockTimer = setTimeout(updateClocks, 150)
 })
@@ -564,75 +563,13 @@ const FRAME = /(^|:)(glow_)?item_frame$/
 const FACING6 = ["down", "up", "north", "south", "west", "east"]
 const FRAME_ROT = { south: [0, Math.PI], west: [0, Math.PI / 2], east: [0, -Math.PI / 2], up: [-Math.PI / 2, Math.PI], down: [Math.PI / 2, Math.PI] }
 const LIVE_ITEM = /(^|:)(compass|clock)$/
-const _fiM = new THREE.Matrix4(), _fiE = new THREE.Euler()
-const MAP_OFF = 6.85
-const MAP_DIR = { north: [0, 0, 1], south: [0, 0, -1], east: [-1, 0, 0], west: [1, 0, 0], up: [0, -1, 0], down: [0, 1, 0] }
 
-let fakeMaps = []
-const FALLBACK_ENV = { skyLightFactor: "overworld", skyLightColor: 0x7A7AFF, ambientColor: 0x0A0A0A, blockLightTint: 0xFFD88C }
-let mapLightEnv = FALLBACK_ENV
-const hexRGB = v => [(v >> 16 & 255) / 255, (v >> 8 & 255) / 255, (v & 255) / 255]
-
-// mirrors the library shader's world lighting so the basic-material map planes
-// match; no directional shade, the game draws maps with the lightmap only
-function relightFakeMaps() {
-  const env = mapLightEnv ?? FALLBACK_ENV
-  const amb = hexRGB(env.ambientColor)
-  const skyTint = hexRGB(env.skyLightColor)
-  const blockTint = hexRGB(env.blockLightTint)
-  const touched = new Set()
-  for (const f of fakeMaps) {
-    let r = 1, g = 1, b = 1
-    if (state.lighting === "world" && f.light) {
-      let skyFactor, sc
-      if (env.skyLightFactor === "overworld") {
-        const td = ((state.daytime - 730) % 24000 + 24000) % 24000 + 730
-        if (td < 11270) { skyFactor = 1; sc = [1, 1, 1] }
-        else if (td < 13140) { const k = (td - 11270) / 1870; skyFactor = 1 + (0.24 - 1) * k; sc = skyTint.map(c => 1 + (c - 1) * k) }
-        else if (td < 22860) { skyFactor = 0.24; sc = skyTint }
-        else { const k = (td - 22860) / 1870; skyFactor = 0.24 + (1 - 0.24) * k; sc = skyTint.map(c => c + (1 - c) * k) }
-      } else {
-        skyFactor = env.skyLightFactor
-        sc = skyTint
-      }
-      const bl = f.light.block / 15, sl = f.light.sky / 15
-      const skyB = sl / (4 - 3 * sl) * skyFactor
-      const blockB = bl / (4 - 3 * bl) * 1.4
-      const t = 0.9 * (2 * bl - 1) * (2 * bl - 1)
-      const bc = blockTint.map(c => c + (1 - c) * t)
-      r = Math.min(1, amb[0] + sc[0] * skyB + bc[0] * blockB)
-      g = Math.min(1, amb[1] + sc[1] * skyB + bc[1] * blockB)
-      b = Math.min(1, amb[2] + sc[2] * skyB + bc[2] * blockB)
-      const mx = Math.max(r, g, b)
-      if (mx > 0) {
-        const inv = 1 - mx
-        const scale = (1 - inv * inv * inv * inv) / mx
-        r += (r * scale - r) * 0.5
-        g += (g * scale - g) * 0.5
-        b += (b * scale - b) * 0.5
-      }
-    }
-    _mapTint.setRGB(r, g, b, THREE.SRGBColorSpace)
-    for (let k = f.qi * 4; k < f.qi * 4 + 4; k++) f.attr.setXYZ(k, _mapTint.r, _mapTint.g, _mapTint.b)
-    touched.add(f.attr)
-  }
-  for (const a of touched) a.needsUpdate = true
-}
-const _mapTint = new THREE.Color()
 
 function mapIdOf(it) {
   const n = Number(it?.components?.["minecraft:map_id"] ?? it?.tag?.map)
   return Number.isFinite(n) ? n : null
 }
 
-const MAP_GEO = {
-  north: g => g.rotateY(Math.PI),
-  south: g => g,
-  east: g => g.rotateY(Math.PI / 2),
-  west: g => g.rotateY(-Math.PI / 2),
-  up: g => g.rotateX(-Math.PI / 2),
-  down: g => g.rotateX(Math.PI / 2)
-}
 const COMPASS_2D = { south: 0, west: 1, north: 2, east: 3 }
 function compassValue(facing, rot) {
   const corr = facing === "up" ? 90 : facing === "down" ? -90 : 0
@@ -688,34 +625,13 @@ const MAP_SAMPLE = {
 
 let mapArtCache = new Map()
 
-let mapBgPromise = null
-function mapBackground() {
-  return mapBgPromise ??= (async () => {
-    try {
-      const bytes = frameCtx && await frameCtx.lib.readFile("assets/minecraft/textures/map/map_background.png", frameCtx.assets)
-      if (!bytes) return null
-      return await createImageBitmap(new Blob([bytes], { type: "image/png" }))
-    } catch {
-      return null
-    }
-  })()
-}
-
 async function mapArtFor(bx, by, bz, facing, id) {
   const key = (id == null ? "p:" + bx + "," + by + "," + bz : id) + "|" + facing
   let canvas = mapArtCache.get(key)
   if (canvas) return canvas
   canvas = document.createElement("canvas")
   canvas.width = canvas.height = 128
-  const sample = (cx, cy) => MAP_SAMPLE[facing](bx, by, bz, cx, cy)
-  const colors = id == null ? null : await useWorld().readMap(id)
-  if (colors) {
-    const bg = await mapBackground()
-    if (bg) canvas.getContext("2d").drawImage(bg, 0, 0, 128, 128)
-    drawRealMap(canvas, sample, colors, frameCtx.lib.MAP_COLORS)
-  } else {
-    await drawFakeMap(canvas, sample, id)
-  }
+  await drawFakeMap(canvas, (cx, cy) => MAP_SAMPLE[facing](bx, by, bz, cx, cy), id)
   mapArtCache.set(key, canvas)
   return canvas
 }
@@ -724,7 +640,6 @@ async function precomputeMapArt(structure, lib, assets) {
   mapArtCache = new Map()
   randomiseFakeMapWorld()
   frameCtx = { lib, assets }
-  mapBgPromise = null
   const jobs = []
   const mb = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity }
   for (const e of structure.entities ?? []) {
@@ -733,8 +648,10 @@ async function precomputeMapArt(structure, lib, assets) {
     const facing = FACING6[Number(e.nbt.Facing ?? 3)] ?? "south"
     const sample = MAP_SAMPLE[facing]
     if (!sample) continue
+    const id = mapIdOf(e.nbt.Item)
+    if (id != null && useWorld().hasMap(id)) continue
     const bx = Math.floor(e.pos[0]), by = Math.floor(e.pos[1]), bz = Math.floor(e.pos[2])
-    jobs.push({ bx, by, bz, facing, id: mapIdOf(e.nbt.Item) })
+    jobs.push({ bx, by, bz, facing, id })
     for (const [cx, cy] of [[0, 0], [127, 127]]) {
       const [u, v] = sample(bx, by, bz, cx, cy)
       mb.x0 = Math.min(mb.x0, u); mb.x1 = Math.max(mb.x1, u)
@@ -760,13 +677,9 @@ async function attachEntities(structure, lib, assets) {
   const groupCache = new Map()
   const texCache = new Map()
   const sprites = []
-  const frameItemBuckets = new Map()
   entityMarkers = []
   pendingMarkers = []
-  fakeMaps = []
   clockFrames = []
-  mapLightEnv = lib.LIGHT_DIMENSIONS?.[buildDim] ?? FALLBACK_ENV
-  let mapCount = 0
   for (const e of structure.entities ?? []) {
     const id = e.nbt?.id
     if (typeof id !== "string") continue
@@ -859,85 +772,6 @@ async function attachEntities(structure, lib, assets) {
     sprites.push({ e, name, wx, wy, wz })
   }
 
-  // frames holding the same item share one instanced mesh per item model part;
-  // compasses and clocks stay per-frame since their models are placement state
-  for (const b of frameItemBuckets.values()) {
-    try {
-      const disp = { type: "fallback", display: "fixed" }
-      const tmpl = new THREE.Group()
-      tmpl.userData.daytime = daytimeUniform
-      for (const m of await lib.parseItemDefinition(assets, b.item, { data: b.components, display: disp, ignoreAtlases: true })) {
-        const resolved = await lib.resolveModelData(assets, m)
-        await lib.loadModel(tmpl, assets, resolved, { display: disp, lighting: lightingOpt(sceneLight), animate: false, ...(b.glow ? { emission: 15 } : null) })
-      }
-      tmpl.updateMatrixWorld(true)
-      const bases = b.entries.map(f => {
-        const m = new THREE.Matrix4().makeTranslation(f.wx, f.wy, f.wz)
-        const r = FRAME_ROT[f.facing]
-        if (r) m.multiply(_fiM.makeRotationFromEuler(_fiE.set(r[0], r[1], 0)))
-        m.multiply(_fiM.makeTranslation(0, 0, f.z))
-        if (f.rot) m.multiply(_fiM.makeRotationZ(f.rot * Math.PI / 4))
-        return m.multiply(_fiM.makeScale(0.5, 0.5, 0.5))
-      })
-      tmpl.traverse(o => {
-        if (!o.isMesh) return
-        const merged = mergeInstanceSource(o.geometry, o.material)
-        if (!merged) return
-        const im = new THREE.InstancedMesh(merged.geometry, merged.material, bases.length)
-        for (let i = 0; i < bases.length; i++) im.setMatrixAt(i, _fiM.multiplyMatrices(bases[i], o.matrixWorld))
-        im.frustumCulled = false
-        root.add(im)
-      })
-    } catch {}
-  }
-
-  // all map planes share one atlas texture and one mesh; per-map light tints
-  // live in vertex colors so relighting stays a buffer update
-  if (fakeMaps.length) {
-    const n = fakeMaps.length
-    const acols = Math.ceil(Math.sqrt(n))
-    const atlas = document.createElement("canvas")
-    atlas.width = acols * 128
-    atlas.height = Math.ceil(n / acols) * 128
-    const ctx = atlas.getContext("2d")
-    const posArr = new Float32Array(n * 12)
-    const uvArr = new Float32Array(n * 8)
-    const colArr = new Float32Array(n * 12).fill(1)
-    const index = new Uint32Array(n * 6)
-    for (let i = 0; i < n; i++) {
-      const f = fakeMaps[i]
-      const tx = (i % acols) * 128, ty = ((i / acols) | 0) * 128
-      ctx.drawImage(f.art, tx, ty)
-      const g = new THREE.PlaneGeometry(16, 16)
-      const spin = (((f.rot % 4) + 4) % 4) * Math.PI / 2
-      if (spin) g.rotateZ(spin)
-      MAP_GEO[f.facing](g)
-      const d = MAP_DIR[f.facing]
-      g.translate(f.bx * 16 + d[0] * f.off, f.by * 16 + d[1] * f.off, f.bz * 16 + d[2] * f.off)
-      posArr.set(g.attributes.position.array, i * 12)
-      const uv = g.attributes.uv
-      for (let k = 0; k < 4; k++) {
-        uvArr[(i * 4 + k) * 2] = (tx + 0.5 + uv.getX(k) * 127) / atlas.width
-        uvArr[(i * 4 + k) * 2 + 1] = 1 - (ty + 0.5 + (1 - uv.getY(k)) * 127) / atlas.height
-      }
-      for (let k = 0; k < 6; k++) index[i * 6 + k] = g.index.array[k] + i * 4
-      f.qi = i
-      delete f.art
-    }
-    const geo = new THREE.BufferGeometry()
-    geo.setAttribute("position", new THREE.BufferAttribute(posArr, 3))
-    geo.setAttribute("uv", new THREE.BufferAttribute(uvArr, 2))
-    geo.setAttribute("color", new THREE.BufferAttribute(colArr, 3))
-    geo.setIndex(new THREE.BufferAttribute(index, 1))
-    const tex = new THREE.CanvasTexture(atlas)
-    tex.colorSpace = THREE.SRGBColorSpace
-    tex.magFilter = THREE.NearestFilter
-    const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: tex, vertexColors: true }))
-    for (const f of fakeMaps) f.attr = geo.attributes.color
-    root.add(mesh)
-    markerTextures.push(tex)
-  }
-
   const clusters = []
   const touches = (a, b) => Math.abs(a.wx - b.wx) < ENTITY_BOX && Math.abs(a.wy - b.wy) < ENTITY_BOX && Math.abs(a.wz - b.wz) < ENTITY_BOX
   for (const s of sprites) {
@@ -985,7 +819,6 @@ async function attachEntities(structure, lib, assets) {
     entityMarkers.push({ stack: c.map(s => s.e), x: cx, y: cy - 8, z: cz })
     for (const s of c) await attachEntityTag(s.e.nbt, s.wx, s.wy - 8 + ENTITY_BOX, s.wz)
   }
-  relightFakeMaps()
 }
 
 async function attachSpawnerEggs(structure, lib, assets) {
@@ -1444,10 +1277,9 @@ function showFull(on) {
 function restoreFull() {
   if (!fullBundle || state.building) return false
   const old = root, oldHandle = sceneHandle, oldMarkerTex = markerTextures, oldAnimator = animator, oldLight = sceneLight
-  ;({ group: root, handle: sceneHandle, inputIdxOf, nonSolidPalette, markerTextures, animator, entityMarkers, doorByCell, sceneLight, fakeMaps, mapLightEnv } = fullBundle)
+  ;({ group: root, handle: sceneHandle, inputIdxOf, nonSolidPalette, markerTextures, animator, entityMarkers, doorByCell, sceneLight } = fullBundle)
   current.value = fullBundle.structure
   state.info = fullBundle.info
-  relightFakeMaps()
   applyTechnicalVisibility()
   useBooks().refresh()
   root.visible = true
@@ -1765,7 +1597,7 @@ async function build(structure = source, refit = true, slice = false) {
     const placedCount = total + doorEntries.length + loaderCount
 
     const old = root, oldHandle = sceneHandle, oldMarkerTex = markerTextures,
-      oldAnimator = animator, oldMarkers = entityMarkers, oldDoors = doorByCell, oldLight = sceneLight, oldFakeMaps = fakeMaps, oldMapEnv = mapLightEnv
+      oldAnimator = animator, oldMarkers = entityMarkers, oldDoors = doorByCell, oldLight = sceneLight
     root = next
     sceneHandle = handle
     inputIdxOf = inputIdx
@@ -1844,7 +1676,7 @@ async function build(structure = source, refit = true, slice = false) {
       fullBundle = {
         group: old, handle: oldHandle, inputIdxOf: prevInputIdx, nonSolidPalette: prevNonSolidPalette,
         markerTextures: oldMarkerTex, animator: oldAnimator,
-        structure: prevCurrent, info: prevInfo, entityMarkers: oldMarkers, doorByCell: oldDoors, sceneLight: oldLight, fakeMaps: oldFakeMaps, mapLightEnv: oldMapEnv
+        structure: prevCurrent, info: prevInfo, entityMarkers: oldMarkers, doorByCell: oldDoors, sceneLight: oldLight
       }
     } else if (old) {
       disposeGroup(old)
