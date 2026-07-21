@@ -236,6 +236,81 @@ export function makeDebug(kind) {
     return finish()
   }
 
+  // ambient occlusion situations on a bright uniform floor (enable Lighting, disable Fullbright)
+  if (kind === "ao") {
+    const floor = (x0, z0, x1, z1, y = 0, name = "smooth_quartz") => {
+      for (let x = x0; x <= x1; x++) for (let z = z0; z <= z1; z++) put(x, y, z, name)
+    }
+    floor(0, 0, 33, 13)
+
+    // 1: single cube; corner shading in every direction around it
+    put(2, 1, 2, "quartz_block")
+
+    // 2: 2x2 slab of cubes; interior seams sit inside one merged floor rect
+    floor(5, 1, 6, 2, 1, "quartz_block")
+
+    // 3: L corner, two 3-tall walls meeting; three-way concave corner at the base
+    for (let y = 1; y <= 3; y++) {
+      for (let x = 9; x <= 12; x++) put(x, y, 2, "quartz_block")
+      for (let z = 3; z <= 5; z++) put(9, y, z, "quartz_block")
+    }
+
+    // 4: one-wide trench between two 2-tall walls; both-sides-blocked corners at the floor
+    for (let y = 1; y <= 2; y++) for (let x = 15; x <= 18; x++) {
+      put(x, y, 1, "quartz_block")
+      put(x, y, 3, "quartz_block")
+    }
+
+    // 5: floating cube one air gap up; soft shadow below, dark rim on its underside
+    put(21, 3, 2, "quartz_block")
+
+    // 6: diagonal-only contact, horizontally and vertically; the corner-cell rule alone
+    put(24, 1, 1, "quartz_block")
+    put(25, 1, 2, "quartz_block")
+    put(28, 1, 2, "quartz_block")
+    put(29, 2, 3, "quartz_block")
+
+    // 7: 4-tall pillar; wall faces shade against the floor only at the base
+    for (let y = 1; y <= 4; y++) put(32, y, 2, "quartz_block")
+
+    // 8: non-occluders; none of these should darken the floor or each other
+    put(2, 1, 7, "quartz_slab", { type: "bottom", waterlogged: "false" })
+    put(4, 1, 7, "quartz_stairs", { facing: "east", half: "bottom", shape: "straight", waterlogged: "false" })
+    put(6, 1, 7, "oak_fence", { north: "false", south: "false", east: "false", west: "false", waterlogged: "false" })
+    put(8, 1, 7, "torch")
+
+    // 9: emissive: glowstone casts onto the cubes but its own faces stay clean
+    put(11, 1, 7, "quartz_block")
+    put(12, 1, 7, "glowstone")
+    put(13, 1, 7, "quartz_block")
+
+    // 10: covered one-wide corridor, open at both ends; heavy stacked occlusion inside
+    for (let x = 16; x <= 21; x++) {
+      put(x, 1, 6, "quartz_block")
+      put(x, 1, 8, "quartz_block")
+      put(x, 2, 7, "quartz_block")
+    }
+
+    // 11: rimmed water tray; fluid faces render without AO
+    floor(24, 6, 28, 8, 1, "quartz_block")
+    for (let x = 24; x <= 28; x++) for (let z = 6; z <= 8; z++) {
+      if (x === 24 || x === 28 || z === 6 || z === 8) put(x, 2, z, "quartz_block")
+      else put(x, 2, z, "water", { level: "0" })
+    }
+
+    // 12: stepped terrace; concave shading where each riser meets the tread
+    floor(3, 10, 8, 12, 1, "quartz_block")
+    floor(4, 10, 8, 12, 2, "quartz_block")
+    for (let x = 5; x <= 8; x++) for (let z = 10; z <= 12; z++) put(x, 3, z, "quartz_block")
+
+    // 13: ceiling plate on posts; underside shading against the supports
+    put(12, 1, 11, "quartz_block")
+    put(15, 1, 11, "quartz_block")
+    floor(11, 10, 16, 12, 2, "quartz_block")
+
+    return finish()
+  }
+
   // billboarded technical icons: barrier, every light level, structure void
   if (kind === "billboard") {
     put(0, 0, 0, "barrier")
