@@ -229,6 +229,7 @@ export function makeDebug(kind) {
     put(4, 0, 0, "shulker_box", { facing: "up" })
     put(6, 0, 0, "red_banner", { rotation: "8" })
     put(8, 1, 0, "blue_wall_banner", { facing: "south" })
+    put(10, 0, 0, "bell", { attachment: "floor", facing: "south", powered: "false" })
     return finish()
   }
 
