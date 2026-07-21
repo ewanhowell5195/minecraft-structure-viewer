@@ -227,6 +227,8 @@ export function makeDebug(kind) {
     put(0, 0, 0, "enchanting_table")
     put(2, 0, 0, "chest", { facing: "south", type: "single", waterlogged: "false" })
     put(4, 0, 0, "shulker_box", { facing: "up" })
+    put(6, 0, 0, "red_banner", { rotation: "8" })
+    put(8, 1, 0, "blue_wall_banner", { facing: "south" })
     return finish()
   }
 
