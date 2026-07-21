@@ -8,6 +8,7 @@ import { useSlicers } from "./useSlicers.js"
 import { useStructures } from "./useStructures.js"
 import { readLootTable, readTrialSpawnerConfig, rollLoot, sampleTable, stackKey, prettyName, isInspectable } from "../loot.js"
 import { parseState } from "../transforms.js"
+import { useBooks } from "./useBooks.js"
 
 const sceneApi = useScene()
 const buildApi = useBuild()
@@ -382,9 +383,28 @@ function itemBack() {
   state.item = null
 }
 
+// a double chest shares one lid across its two halves, so both blocks pose
+const CW = { north: "east", east: "south", south: "west", west: "north" }
+const SIDE_VEC = { north: [0, -1], east: [1, 0], south: [0, 1], west: [-1, 0] }
+let openLids = []
+function poseLids(block, entry, on) {
+  const positions = [block.pos]
+  const t = entry?.Properties?.type
+  if ((t === "left" || t === "right") && entry?.Properties?.facing) {
+    let dir = CW[entry.Properties.facing] ?? "east"
+    if (t === "right") dir = CW[CW[dir]]
+    const v = SIDE_VEC[dir]
+    positions.push([block.pos[0] + v[0], block.pos[1], block.pos[2] + v[1]])
+  }
+  const books = useBooks()
+  for (const pos of positions) books.setLid(pos, on)
+  openLids = on ? positions : []
+}
+
 async function open(block) {
   const entry = buildApi.current.value?.palette[block.state]
   const name = entry?.Name ?? "minecraft:chest"
+  poseLids(block, entry, true)
   state.pick = null
   state.error = ""
   state.note = ""
@@ -548,6 +568,9 @@ function close() {
   state.open = false
   state.pick = null
   state.item = null
+  const books = useBooks()
+  for (const pos of openLids) books.setLid(pos, false)
+  openLids = []
   refreshHover()
 }
 

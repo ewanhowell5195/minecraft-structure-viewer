@@ -3,6 +3,7 @@ import * as THREE from "three"
 import { useScene } from "./useScene.js"
 import { useBuild } from "./useBuild.js"
 import { useContainer } from "./useContainer.js"
+import { useBooks } from "./useBooks.js"
 import { useLock } from "./useLock.js"
 
 // movement numbers are the vanilla ones throughout; world units: 16 = one block
@@ -400,6 +401,7 @@ function enter() {
   const perspCam = sceneApi.perspCam
   if (sceneApi.camera !== perspCam) sceneApi.setOrthoManual(false)
   state.on = true
+  useBooks().setRange(3)
   fly.on = false
   fly.speed = FLY_SPEED_DEFAULT
   noclip = false
@@ -475,6 +477,7 @@ function exit() {
   const perspCam = sceneApi.perspCam
   state.on = false
   state.suspended = false
+  useBooks().setRange(16)
   noclip = false
   stopFlying()
   sceneApi.controls.enabled = true

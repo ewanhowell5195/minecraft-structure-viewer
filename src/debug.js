@@ -222,6 +222,14 @@ export function makeDebug(kind) {
     return finish()
   }
 
+  // dynamic special models: the animated book plus poseable chest and shulker
+  if (kind === "dynamic") {
+    put(0, 0, 0, "enchanting_table")
+    put(2, 0, 0, "chest", { facing: "south", type: "single", waterlogged: "false" })
+    put(4, 0, 0, "shulker_box", { facing: "up" })
+    return finish()
+  }
+
   // billboarded technical icons: barrier, every light level, structure void
   if (kind === "billboard") {
     put(0, 0, 0, "barrier")

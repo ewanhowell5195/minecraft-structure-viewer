@@ -13,6 +13,7 @@ import { isInspectable, readTrialSpawnerConfig } from "../loot.js"
 import { getFont, measure, drawText } from "../mcfont.js"
 import { drawFakeMap, drawRealMap, prepareFakeMapArea, randomiseFakeMapWorld } from "../mapgen.js"
 import { useWorld } from "./useWorld.js"
+import { useBooks } from "./useBooks.js"
 import { minimal } from "../minimal.js"
 
 const packs = usePacks()
@@ -1175,6 +1176,7 @@ function restoreFull() {
   state.info = fullBundle.info
   relightFakeMaps()
   applyTechnicalVisibility()
+  useBooks().refresh()
   root.visible = true
   sceneApi.contentRoots.add(root)
   sceneApi.syncAspect()
@@ -1531,6 +1533,7 @@ async function build(structure = source, refit = true, slice = false) {
       tris
     }
     applyTechnicalVisibility()
+    useBooks().refresh()
     state.status = ""
     // a new source (or a full build of the same one) invalidates the kept full build
     if (prevSource !== source || !slicedApplied) discardFull()
