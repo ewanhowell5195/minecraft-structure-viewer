@@ -284,41 +284,29 @@ const TYPES = {
 
   async random_selector(world, json, rand, resolvePlaced, ox, oy, oz) {
     for (const entry of json.features) {
-      if (rand() < entry.chance) {
-        const inner = await resolvePlaced(entry.feature)
-        if (inner) return generate(world, inner, rand, resolvePlaced, ox, oy, oz)
-      }
+      if (rand() < entry.chance) return generatePlaced(world, entry.feature, rand, resolvePlaced, ox, oy, oz)
     }
-    const inner = await resolvePlaced(json.default)
-    if (inner) return generate(world, inner, rand, resolvePlaced, ox, oy, oz)
+    return generatePlaced(world, json.default, rand, resolvePlaced, ox, oy, oz)
   },
 
   async weighted_random_selector(world, json, rand, resolvePlaced, ox, oy, oz) {
     const entry = pickWeighted(json.features ?? json.distribution, rand)
-    const inner = await resolvePlaced(entry.data)
-    if (inner) return generate(world, inner, rand, resolvePlaced, ox, oy, oz)
+    return generatePlaced(world, entry.data, rand, resolvePlaced, ox, oy, oz)
   },
 
   async simple_random_selector(world, json, rand, resolvePlaced, ox, oy, oz) {
     const list = json.features
     const pick = Array.isArray(list) ? list[nextInt(rand, list.length)] : list
-    const inner = await resolvePlaced(pick)
-    if (inner) return generate(world, inner, rand, resolvePlaced, ox, oy, oz)
+    return generatePlaced(world, pick, rand, resolvePlaced, ox, oy, oz)
   },
 
   async random_boolean_selector(world, json, rand, resolvePlaced, ox, oy, oz) {
-    const inner = await resolvePlaced(rand() < 0.5 ? json.feature_true : json.feature_false)
-    if (inner) return generate(world, inner, rand, resolvePlaced, ox, oy, oz)
+    return generatePlaced(world, rand() < 0.5 ? json.feature_true : json.feature_false, rand, resolvePlaced, ox, oy, oz)
   },
 
   async sequence(world, json, rand, resolvePlaced, ox, oy, oz) {
-    for (const entry of json.features) {
-      const pos = entry && typeof entry === "object"
-        ? applyPlacement(world, entry.placement, rand, ox, oy, oz)
-        : [ox, oy, oz]
-      if (!pos) continue
-      const inner = await resolvePlaced(entry)
-      if (inner) await generate(world, inner, rand, resolvePlaced, ...pos)
+    for (const entry of [json.features].flat()) {
+      await generatePlaced(world, entry, rand, resolvePlaced, ox, oy, oz)
     }
   },
 
@@ -692,13 +680,8 @@ Object.assign(TYPES, {
   },
 
   async overlay(world, json, rand, resolvePlaced, ox, oy, oz) {
-    for (const entry of json.features) {
-      const pos = entry && typeof entry === "object"
-        ? applyPlacement(world, entry.placement, rand, ox, oy, oz)
-        : [ox, oy, oz]
-      if (!pos) continue
-      const inner = await resolvePlaced(entry)
-      if (inner) await generate(world, inner, rand, resolvePlaced, ...pos)
+    for (const entry of [json.features].flat()) {
+      await generatePlaced(world, entry, rand, resolvePlaced, ox, oy, oz)
     }
   },
 
@@ -1217,17 +1200,20 @@ Object.assign(TYPES, {
 
   async vines(world, json, rand, resolvePlaced, ox, oy, oz) {
     for (let dy = 0; dy < 3; dy++) world.set(ox, oy + dy, oz + 1, { Name: "minecraft:stone" })
-    for (let dy = 0; dy < 3; dy++) world.set(ox, oy + dy, oz, { Name: "minecraft:vine", Properties: { south: "true" } })
+    for (let dy = 0; dy < 3; dy++) world.set(ox, oy + dy, oz, { Name: "minecraft:vine", Properties: { south: "true", up: "false" } })
   },
 
   async multiface_growth(world, json, rand, resolvePlaced, ox, oy, oz) {
     const host = { Name: [json.can_be_placed_on ?? "minecraft:stone"].flat()[0] }
     const block = json.block ?? "minecraft:glow_lichen"
+    // all six faces stated: bare multiface blocks default down=true for
+    // visible standalone renders, which would add phantom floor faces here
+    const faces = { down: "false", up: "false", north: "false", south: "true", east: "false", west: "false" }
     for (let dx = -1; dx <= 1; dx++) for (let dy = 0; dy < 3; dy++) {
       world.set(ox + dx, oy + dy, oz + 1, host)
     }
     for (let dx = -1; dx <= 1; dx++) for (let dy = 0; dy < 3; dy++) {
-      if (rand() < 0.6) world.set(ox + dx, oy + dy, oz, { Name: block, Properties: { south: "true" } })
+      if (rand() < 0.6) world.set(ox + dx, oy + dy, oz, { Name: block, Properties: faces })
     }
   },
 
@@ -1270,11 +1256,6 @@ Object.assign(TYPES, {
       if (rand() < 0.12) {
         world.set(ox + dx, oy, oz + dz, { Name: "minecraft:sculk_vein", Properties: { down: "true" } })
       }
-    }
-    if (rand() < (json.catalyst_chance ?? 0)) world.set(ox, oy, oz, { Name: "minecraft:sculk_catalyst", Properties: { bloom: "false" } })
-    const growths = sampleInt(json.extra_rare_growths, rand)
-    for (let i = 0; i < growths; i++) {
-      world.set(ox + nextInt(rand, 5) - 2, oy, oz + nextInt(rand, 5) - 2, { Name: "minecraft:sculk_shrieker", Properties: { can_summon: "true", shrieking: "false", waterlogged: "false" } })
     }
     if ((json.growth_rounds ?? 0) > 0 || rand() < 0.5) {
       world.set(ox + nextInt(rand, 5) - 2, oy, oz + nextInt(rand, 5) - 2, { Name: "minecraft:sculk_sensor", Properties: { power: "0", sculk_sensor_phase: "inactive", waterlogged: "false" } })
@@ -1361,6 +1342,10 @@ function testPredicate(world, pred, x, y, z) {
       return fluids.includes("water") && c.Properties?.waterlogged === "true"
     }
     case "matching_block_tag": return strip(pred.tag) === "air" ? !world.get(px, py, pz) : false
+    case "has_sturdy_face": {
+      const c = world.get(px, py, pz)
+      return !!c && !/(^|:)(water|lava)$/.test(c.Name)
+    }
   }
   return true
 }
@@ -1370,7 +1355,7 @@ async function placeCoral(world, placed, rand, resolvePlaced, x, y, z) {
   const inner = await resolvePlaced(placed)
   if (!inner) return false
   const pos = placed && typeof placed === "object" && placed.placement
-    ? applyPlacement(world, placed.placement, rand, x, y, z)
+    ? applyPlacement(world, placed.placement, rand, x, y, z)[0]
     : [x, y, z]
   if (!pos || world.get(...pos)) return false
   const guarded = Object.create(world)
@@ -1379,35 +1364,79 @@ async function placeCoral(world, placed, rand, resolvePlaced, x, y, z) {
   return !!world.get(...pos)
 }
 
-// only offsets, scans and rarity matter for a single showcase placement;
-// counts and biome/height filters have no meaning here
+// inline {feature, placement} wrappers nest arbitrarily (a selector entry can
+// wrap a placed ref that wraps another); each level runs its own modifiers
+async function generatePlaced(world, ref, rand, resolvePlaced, x, y, z) {
+  if (ref && typeof ref === "object" && ref.type === undefined && ref.feature !== undefined) {
+    for (const pos of applyPlacement(world, ref.placement, rand, x, y, z)) {
+      await generatePlaced(world, ref.feature, rand, resolvePlaced, ...pos)
+    }
+    return
+  }
+  const inner = await resolvePlaced(ref)
+  if (inner) await generate(world, inner, rand, resolvePlaced, x, y, z)
+}
+
+// the game's placement pipeline is a position stream: each modifier maps every
+// position to zero or more; biome/height filters have no meaning here and pass
+// through. Returns the surviving positions.
+// world-reading filters assume real terrain around the feature; when the empty
+// showcase world fails one wholesale it is skipped, while partial elimination
+// still means what it means (rand-driven filters always apply)
+const WORLD_FILTERS = new Set(["environment_scan", "block_predicate_filter"])
 function applyPlacement(world, mods, rand, x, y, z) {
+  let positions = [[x, y, z]]
   for (const mod of mods ?? []) {
-    switch (strip(mod.type)) {
-      case "offset":
-        x += mod.x ?? 0; y += mod.y ?? 0; z += mod.z ?? 0
-        break
-      case "rarity_filter":
-        if (nextInt(rand, mod.chance) !== 0) return null
-        break
-      case "random_chance":
-        if (rand() >= mod.chance) return null
-        break
-      case "environment_scan": {
-        const step = strip(mod.direction_of_search) === "down" ? -1 : 1
-        let found = null
-        for (let i = 0; i <= (mod.max_steps ?? 10); i++) {
-          const py = y + i * step
-          if (testPredicate(world, mod.target_condition, x, py, z)) { found = py; break }
-          if (mod.allowed_search_condition && !testPredicate(world, mod.allowed_search_condition, x, py, z)) break
+    const next = []
+    for (const [px, py, pz] of positions) {
+      switch (strip(mod.type)) {
+        case "offset":
+          next.push([px + sampleInt(mod.x, rand), py + sampleInt(mod.y, rand), pz + sampleInt(mod.z, rand)])
+          break
+        case "count": {
+          const n = sampleInt(mod.count, rand)
+          for (let i = 0; i < n; i++) next.push([px, py, pz])
+          break
         }
-        if (found === null) return null
-        y = found
-        break
+        case "cuboid": {
+          const h = sampleInt(mod.y_size, rand)
+          const w = sampleInt(mod.xz_size, rand)
+          const l = sampleInt(mod.xz_size, rand)
+          const edges = mod.include_edges !== false
+          const interior = mod.include_interior !== false
+          for (let dx = 0; dx <= w; dx++) for (let dy = 0; dy <= h; dy++) for (let dz = 0; dz <= l; dz++) {
+            const bx = dx === 0 || dx === w, by = dy === 0 || dy === h, bz = dz === 0 || dz === l
+            if (!edges && ((bx && by) || (bz && by) || (bx && bz))) continue
+            if (!interior && !(bx || by || bz)) continue
+            next.push([px + dx, py + dy, pz + dz])
+          }
+          break
+        }
+        case "rarity_filter":
+          if (nextInt(rand, mod.chance) === 0) next.push([px, py, pz])
+          break
+        case "random_chance":
+          if (rand() < mod.chance) next.push([px, py, pz])
+          break
+        case "block_predicate_filter":
+          if (testPredicate(world, mod.predicate, px, py, pz)) next.push([px, py, pz])
+          break
+        case "environment_scan": {
+          const step = strip(mod.direction_of_search) === "down" ? -1 : 1
+          for (let i = 0; i <= (mod.max_steps ?? 10); i++) {
+            const sy = py + i * step
+            if (testPredicate(world, mod.target_condition, px, sy, pz)) { next.push([px, sy, pz]); break }
+            if (mod.allowed_search_condition && !testPredicate(world, mod.allowed_search_condition, px, sy, pz)) break
+          }
+          break
+        }
+        default:
+          next.push([px, py, pz])
       }
     }
+    if (next.length || !positions.length || !WORLD_FILTERS.has(strip(mod.type))) positions = next
   }
-  return [x, y, z]
+  return positions
 }
 
 const STRUCT_AIR = /(^|:)(air|cave_air|void_air|structure_void|jigsaw|structure_block)$/
@@ -1460,6 +1489,13 @@ export const SUPPORTED = new Set(Object.keys(TYPES))
 export async function generateFeature(name, json, rand, resolvePlaced, loadStruct, pad) {
   const world = makeWorld()
   world.loadStruct = loadStruct
+  // empty-world adaptation: the bonemeal scatter is gated on nylium below, so
+  // seed the pad it would be bonemealing (crimson west half, warped east)
+  if (name?.endsWith("nylium_bonemeal")) {
+    for (let x = -2; x <= 2; x++) for (let z = -2; z <= 2; z++) {
+      world.set(x, -1, z, { Name: x < 0 ? "minecraft:crimson_nylium" : "minecraft:warped_nylium" })
+    }
+  }
   await generate(world, json, rand, resolvePlaced)
 
   // display-only (consumes no rand): trees get a grass layer one below origin,

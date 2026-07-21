@@ -127,7 +127,7 @@ const STRUCTURE_DUPES = [
   "void_start_platform"
 ]
 
-const isRef = x => typeof x === "string" || (x != null && typeof x === "object" && x.feature !== undefined && isRef(x.feature))
+const isRef = x => typeof x === "string" || (x != null && typeof x === "object" && x.type === undefined && x.feature !== undefined && !(x.placement?.length) && isRef(x.feature))
 
 // fossils also stamp templates but their overlay processors do real
 // generation, so anything beyond a pure stamp stays a feature

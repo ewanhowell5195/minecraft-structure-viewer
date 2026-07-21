@@ -1,3 +1,156 @@
 {
-  "type": "minecraft:weeping_vines"
+  "features": [
+    {
+      "feature": {
+        "block": {
+          "state": {
+            "Name": "minecraft:nether_wart_block"
+          },
+          "type": "minecraft:simple_state_provider"
+        },
+        "accepted_neighbors": [
+          "minecraft:netherrack",
+          "minecraft:nether_wart_block"
+        ],
+        "can_replace": {
+          "tag": "minecraft:air",
+          "type": "minecraft:matching_block_tag"
+        },
+        "attempts": 200,
+        "xz_offset": {
+          "min": -5,
+          "max": 5,
+          "plateau": 0,
+          "type": "minecraft:trapezoid"
+        },
+        "y_offset": {
+          "min": -4,
+          "max": 1,
+          "plateau": 3,
+          "type": "minecraft:trapezoid"
+        },
+        "type": "minecraft:random_neighbor_spread"
+      },
+      "placement": []
+    },
+    {
+      "feature": {
+        "layers": [
+          {
+            "height": {
+              "distribution": [
+                {
+                  "data": {
+                    "min_inclusive": 1,
+                    "max_inclusive": 8,
+                    "type": "minecraft:uniform"
+                  },
+                  "weight": 10
+                },
+                {
+                  "data": {
+                    "min_inclusive": 2,
+                    "max_inclusive": 17,
+                    "type": "minecraft:uniform"
+                  },
+                  "weight": 2
+                },
+                {
+                  "data": 1,
+                  "weight": 3
+                }
+              ],
+              "type": "minecraft:weighted_list"
+            },
+            "provider": {
+              "state": {
+                "Name": "minecraft:weeping_vines_plant"
+              },
+              "type": "minecraft:simple_state_provider"
+            }
+          },
+          {
+            "height": 1,
+            "provider": {
+              "source": {
+                "state": {
+                  "Properties": {
+                    "age": "0"
+                  },
+                  "Name": "minecraft:weeping_vines"
+                },
+                "type": "minecraft:simple_state_provider"
+              },
+              "property": "age",
+              "values": {
+                "min_inclusive": 17,
+                "max_inclusive": 25,
+                "type": "minecraft:uniform"
+              },
+              "type": "minecraft:randomized_int_state_provider"
+            }
+          }
+        ],
+        "direction": "down",
+        "allowed_placement": {
+          "tag": "minecraft:air",
+          "type": "minecraft:matching_block_tag"
+        },
+        "prioritize_tip": true,
+        "type": "minecraft:block_column"
+      },
+      "placement": [
+        {
+          "count": 100,
+          "type": "minecraft:count"
+        },
+        {
+          "x": {
+            "min": -7,
+            "max": 7,
+            "plateau": 0,
+            "type": "minecraft:trapezoid"
+          },
+          "y": {
+            "min": -4,
+            "max": 1,
+            "plateau": 3,
+            "type": "minecraft:trapezoid"
+          },
+          "z": {
+            "min": -7,
+            "max": 7,
+            "plateau": 0,
+            "type": "minecraft:trapezoid"
+          },
+          "type": "minecraft:offset"
+        },
+        {
+          "predicate": {
+            "predicates": [
+              {
+                "tag": "minecraft:air",
+                "type": "minecraft:matching_block_tag"
+              },
+              {
+                "offset": [
+                  0,
+                  1,
+                  0
+                ],
+                "blocks": [
+                  "minecraft:netherrack",
+                  "minecraft:nether_wart_block"
+                ],
+                "type": "minecraft:matching_blocks"
+              }
+            ],
+            "type": "minecraft:all_of"
+          },
+          "type": "minecraft:block_predicate_filter"
+        }
+      ]
+    }
+  ],
+  "type": "minecraft:overlay"
 }
