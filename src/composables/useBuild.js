@@ -435,11 +435,6 @@ const FRAME_ROT = { south: [0, Math.PI], west: [0, Math.PI / 2], east: [0, -Math
 const MAP_OFF = 6.85
 const MAP_DIR = { north: [0, 0, 1], south: [0, 0, -1], east: [-1, 0, 0], west: [1, 0, 0], up: [0, -1, 0], down: [0, 1, 0] }
 
-function placeFakeMap(f) {
-  const d = MAP_DIR[f.facing]
-  f.mesh.position.set(f.bx * 16 + d[0] * f.off, f.by * 16 + d[1] * f.off, f.bz * 16 + d[2] * f.off)
-}
-
 let fakeMaps = []
 const FALLBACK_ENV = { skyLightFactor: "overworld", skyLightColor: 0x7A7AFF, ambientColor: 0x0A0A0A, blockLightTint: 0xFFD88C }
 let mapLightEnv = FALLBACK_ENV
@@ -452,6 +447,7 @@ function relightFakeMaps() {
   const amb = hexRGB(env.ambientColor)
   const skyTint = hexRGB(env.skyLightColor)
   const blockTint = hexRGB(env.blockLightTint)
+  const touched = new Set()
   for (const f of fakeMaps) {
     let r = 1, g = 1, b = 1
     if (state.lighting === "world" && f.light) {
@@ -483,9 +479,13 @@ function relightFakeMaps() {
         b += (b * scale - b) * 0.5
       }
     }
-    f.mesh.material.color.setRGB(r, g, b, THREE.SRGBColorSpace)
+    _mapTint.setRGB(r, g, b, THREE.SRGBColorSpace)
+    for (let k = f.qi * 4; k < f.qi * 4 + 4; k++) f.attr.setXYZ(k, _mapTint.r, _mapTint.g, _mapTint.b)
+    touched.add(f.attr)
   }
+  for (const a of touched) a.needsUpdate = true
 }
+const _mapTint = new THREE.Color()
 
 function mapIdOf(it) {
   const n = Number(it?.components?.["minecraft:map_id"] ?? it?.tag?.map)
@@ -567,36 +567,59 @@ function mapBackground() {
   })()
 }
 
-async function makeFakeMap(bx, by, bz, facing, id, rot = 0, off = MAP_OFF) {
-  const cacheKey = id == null ? null : id + "|" + facing
-  let canvas = cacheKey == null ? null : mapArtCache.get(cacheKey)
-  if (!canvas) {
-    canvas = document.createElement("canvas")
-    canvas.width = canvas.height = 128
-    const sample = (cx, cy) => MAP_SAMPLE[facing](bx, by, bz, cx, cy)
-    const colors = id == null ? null : await useWorld().readMap(id)
-    if (colors) {
-      const bg = await mapBackground()
-      if (bg) canvas.getContext("2d").drawImage(bg, 0, 0, 128, 128)
-      drawRealMap(canvas, sample, colors)
-    } else {
-      await drawFakeMap(canvas, sample, id)
-    }
-    if (cacheKey != null) mapArtCache.set(cacheKey, canvas)
+async function mapArtFor(bx, by, bz, facing, id) {
+  const key = (id == null ? "p:" + bx + "," + by + "," + bz : id) + "|" + facing
+  let canvas = mapArtCache.get(key)
+  if (canvas) return canvas
+  canvas = document.createElement("canvas")
+  canvas.width = canvas.height = 128
+  const sample = (cx, cy) => MAP_SAMPLE[facing](bx, by, bz, cx, cy)
+  const colors = id == null ? null : await useWorld().readMap(id)
+  if (colors) {
+    const bg = await mapBackground()
+    if (bg) canvas.getContext("2d").drawImage(bg, 0, 0, 128, 128)
+    drawRealMap(canvas, sample, colors)
+  } else {
+    await drawFakeMap(canvas, sample, id)
   }
-  const tex = new THREE.CanvasTexture(canvas)
-  tex.colorSpace = THREE.SRGBColorSpace
-  tex.magFilter = THREE.NearestFilter
-  const geo = new THREE.PlaneGeometry(16, 16)
-  const spin = (((rot % 4) + 4) % 4) * Math.PI / 2
-  if (spin) geo.rotateZ(spin)
-  MAP_GEO[facing](geo)
-  const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: tex }))
-  const f = { mesh, tex, facing, bx, by, bz, off }
-  placeFakeMap(f)
-  f.light = sceneLight?.lightAt(bx, by, bz) ?? null
-  fakeMaps.push(f)
-  return f
+  mapArtCache.set(key, canvas)
+  return canvas
+}
+
+async function precomputeMapArt(structure, lib, assets) {
+  mapArtCache = new Map()
+  randomiseFakeMapWorld()
+  frameCtx = { lib, assets }
+  mapBgPromise = null
+  const jobs = []
+  const mb = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity }
+  for (const e of structure.entities ?? []) {
+    if (typeof e.nbt?.id !== "string" || !FRAME.test(e.nbt.id)) continue
+    if (!/(^|:)filled_map$/.test(e.nbt.Item?.id ?? "")) continue
+    const facing = FACING6[Number(e.nbt.Facing ?? 3)] ?? "south"
+    const sample = MAP_SAMPLE[facing]
+    if (!sample) continue
+    const bx = Math.floor(e.pos[0]), by = Math.floor(e.pos[1]), bz = Math.floor(e.pos[2])
+    jobs.push({ bx, by, bz, facing, id: mapIdOf(e.nbt.Item) })
+    for (const [cx, cy] of [[0, 0], [127, 127]]) {
+      const [u, v] = sample(bx, by, bz, cx, cy)
+      mb.x0 = Math.min(mb.x0, u); mb.x1 = Math.max(mb.x1, u)
+      mb.y0 = Math.min(mb.y0, v); mb.y1 = Math.max(mb.y1, v)
+    }
+  }
+  if (!jobs.length) return
+  if (!useWorld().state.active && mb.x1 - mb.x0 <= 4096 && mb.y1 - mb.y0 <= 4096) prepareFakeMapArea(mb.x0, mb.y0, mb.x1, mb.y1)
+  let done = 0
+  for (const j of jobs) {
+    await mapArtFor(j.bx, j.by, j.bz, j.facing, j.id)
+    done++
+    if (jobs.length > 1) {
+      state.status = `generating maps… ${Math.round(done / jobs.length * 100)}%`
+      state.progress = { phase: "maps", done, total: jobs.length }
+    }
+    if (done % 4 === 0) await yieldTask()
+  }
+  state.progress = null
 }
 
 async function attachEntities(structure, lib, assets) {
@@ -605,30 +628,9 @@ async function attachEntities(structure, lib, assets) {
   const texCache = new Map()
   const sprites = []
   entityMarkers = []
-  mapArtCache = new Map()
   fakeMaps = []
-  randomiseFakeMapWorld()
   clockFrames = []
-  frameCtx = { lib, assets }
-  mapBgPromise = null
   mapLightEnv = lib.LIGHT_DIMENSIONS?.[buildDim] ?? FALLBACK_ENV
-  const mb = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity }
-  const worldMaps = useWorld().state.active
-  let mapTotal = 0
-  for (const e of structure.entities ?? []) {
-    if (typeof e.nbt?.id !== "string" || !FRAME.test(e.nbt.id)) continue
-    if (!/(^|:)filled_map$/.test(e.nbt.Item?.id ?? "")) continue
-    mapTotal++
-    const sample = MAP_SAMPLE[FACING6[Number(e.nbt.Facing ?? 3)] ?? "south"]
-    if (!sample) continue
-    const bx = Math.floor(e.pos[0]), by = Math.floor(e.pos[1]), bz = Math.floor(e.pos[2])
-    for (const [cx, cy] of [[0, 0], [127, 127]]) {
-      const [u, v] = sample(bx, by, bz, cx, cy)
-      mb.x0 = Math.min(mb.x0, u); mb.x1 = Math.max(mb.x1, u)
-      mb.y0 = Math.min(mb.y0, v); mb.y1 = Math.max(mb.y1, v)
-    }
-  }
-  if (!worldMaps && mb.x0 !== Infinity && mb.x1 - mb.x0 <= 4096 && mb.y1 - mb.y0 <= 4096) prepareFakeMapArea(mb.x0, mb.y0, mb.x1, mb.y1)
   let mapCount = 0
   for (const e of structure.entities ?? []) {
     const id = e.nbt?.id
@@ -711,18 +713,16 @@ async function attachEntities(structure, lib, assets) {
       g.traverse(o => { if (o.isMesh) draws++ })
       if (frameMap) {
         try {
-          const fake = await makeFakeMap(Math.floor(e.pos[0]), Math.floor(e.pos[1]), Math.floor(e.pos[2]), facing, mapIdOf(e.nbt.Item), Number(e.nbt.ItemRotation ?? 0), invisible ? 7.85 : MAP_OFF)
-          if (glow) fake.light = null
-          root.add(fake.mesh)
-          markerTextures.push(fake.tex)
-          draws++
+          const mbx = Math.floor(e.pos[0]), mby = Math.floor(e.pos[1]), mbz = Math.floor(e.pos[2])
+          const art = await mapArtFor(mbx, mby, mbz, facing, mapIdOf(e.nbt.Item))
+          fakeMaps.push({
+            art, facing, bx: mbx, by: mby, bz: mbz,
+            rot: Number(e.nbt.ItemRotation ?? 0),
+            off: invisible ? 7.85 : MAP_OFF,
+            light: glow ? null : sceneLight?.lightAt(mbx, mby, mbz) ?? null
+          })
         } catch {}
-        mapCount++
-        if (mapTotal > 1) {
-          state.status = `generating maps… ${Math.round(mapCount / mapTotal * 100)}%`
-          state.progress = { phase: "maps", done: mapCount, total: mapTotal }
-        }
-        if (mapCount % 4 === 0) await yieldTask()
+        if (++mapCount % 16 === 0) await yieldTask()
       }
       if (frame && typeof frameItem === "string" && /(^|:)clock$/.test(frameItem)) {
         clockFrames.push({ holder: g.getObjectByName("frameItem"), item: frameItem, components: e.nbt.Item.components ?? {}, glow })
@@ -735,6 +735,54 @@ async function attachEntities(structure, lib, assets) {
       continue
     }
     sprites.push({ e, name, wx, wy, wz })
+  }
+
+  // all map planes share one atlas texture and one mesh; per-map light tints
+  // live in vertex colors so relighting stays a buffer update
+  if (fakeMaps.length) {
+    const n = fakeMaps.length
+    const acols = Math.ceil(Math.sqrt(n))
+    const atlas = document.createElement("canvas")
+    atlas.width = acols * 128
+    atlas.height = Math.ceil(n / acols) * 128
+    const ctx = atlas.getContext("2d")
+    const posArr = new Float32Array(n * 12)
+    const uvArr = new Float32Array(n * 8)
+    const colArr = new Float32Array(n * 12).fill(1)
+    const index = new Uint32Array(n * 6)
+    for (let i = 0; i < n; i++) {
+      const f = fakeMaps[i]
+      const tx = (i % acols) * 128, ty = ((i / acols) | 0) * 128
+      ctx.drawImage(f.art, tx, ty)
+      const g = new THREE.PlaneGeometry(16, 16)
+      const spin = (((f.rot % 4) + 4) % 4) * Math.PI / 2
+      if (spin) g.rotateZ(spin)
+      MAP_GEO[f.facing](g)
+      const d = MAP_DIR[f.facing]
+      g.translate(f.bx * 16 + d[0] * f.off, f.by * 16 + d[1] * f.off, f.bz * 16 + d[2] * f.off)
+      posArr.set(g.attributes.position.array, i * 12)
+      const uv = g.attributes.uv
+      for (let k = 0; k < 4; k++) {
+        uvArr[(i * 4 + k) * 2] = (tx + 0.5 + uv.getX(k) * 127) / atlas.width
+        uvArr[(i * 4 + k) * 2 + 1] = 1 - (ty + 0.5 + (1 - uv.getY(k)) * 127) / atlas.height
+      }
+      for (let k = 0; k < 6; k++) index[i * 6 + k] = g.index.array[k] + i * 4
+      f.qi = i
+      delete f.art
+    }
+    const geo = new THREE.BufferGeometry()
+    geo.setAttribute("position", new THREE.BufferAttribute(posArr, 3))
+    geo.setAttribute("uv", new THREE.BufferAttribute(uvArr, 2))
+    geo.setAttribute("color", new THREE.BufferAttribute(colArr, 3))
+    geo.setIndex(new THREE.BufferAttribute(index, 1))
+    const tex = new THREE.CanvasTexture(atlas)
+    tex.colorSpace = THREE.SRGBColorSpace
+    tex.magFilter = THREE.NearestFilter
+    const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: tex, vertexColors: true }))
+    for (const f of fakeMaps) f.attr = geo.attributes.color
+    root.add(mesh)
+    markerTextures.push(tex)
+    draws++
   }
 
   const clusters = []
@@ -1240,6 +1288,7 @@ async function build(structure = source, refit = true, slice = false) {
     buildDim = !state.fullbright && /^(the_nether|the_end)$/.test(unsliced.dimension) ? unsliced.dimension : "overworld"
     state.dimension = buildDim
     await resolveLegacyNames(structure, lib, assets)
+    await precomputeMapArt(structure, lib, assets)
 
     // flood filled over what actually builds, so a slice relights; oversized scenes skip it
     if (state.lighting === "world" && !state.fullbright && lib.computeSceneLight && (sx + 2) * (sy + 2) * (sz + 2) <= 48000000) {
