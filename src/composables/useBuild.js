@@ -858,7 +858,7 @@ async function attachEntities(structure, lib, assets) {
         } catch {}
         if (++mapCount % 16 === 0) await yieldTask()
       }
-      if (frame && typeof frameItem === "string" && !frameMap && !LIVE_ITEM.test(frameItem)) {
+      if (frame && invisible && typeof frameItem === "string" && !frameMap && !LIVE_ITEM.test(frameItem)) {
         const bkey = frameItem + "|" + JSON.stringify(e.nbt.Item.components ?? {}) + (glow ? "|glow" : "")
         let ib = frameItemBuckets.get(bkey)
         if (!ib) frameItemBuckets.set(bkey, ib = { item: frameItem, components: e.nbt.Item.components ?? {}, glow, entries: [] })
@@ -1104,7 +1104,7 @@ async function attachShelves(structure, lib, assets) {
     const facing = entry.Properties?.facing ?? "north"
     const g = new THREE.Group()
     for (const it of items) {
-      if (typeof it?.id !== "string") continue
+      if (typeof it?.id !== "string" || !LIVE_ITEM.test(it.id)) continue
       const compass = /(^|:)compass$/.test(it.id)
       const clock = /(^|:)clock$/.test(it.id)
       const key = it.id + "|" + JSON.stringify(it.components ?? null) + (compass ? "|" + facing : "")
@@ -1599,6 +1599,10 @@ async function build(structure = source, refit = true, slice = false) {
       const entry = { id: name, pos: b.pos }
       if (props) entry.properties = props
       if (e.__biome) entry.biome = e.__biome
+      if (b.nbt?.Items && /(^|_)shelf$/.test(name.replace(/^minecraft:/, ""))) {
+        const items = b.nbt.Items.filter(it => typeof it?.id === "string" && !LIVE_ITEM.test(it.id))
+        if (items.length) entry.nbt = { Items: items, align_items_to_bottom: b.nbt.align_items_to_bottom }
+      }
       inputIdx[i] = inputBlocks.length
       inputBlocks.push(entry)
     }
@@ -1607,14 +1611,20 @@ async function build(structure = source, refit = true, slice = false) {
     for (const e of structure.entities ?? []) {
       const id = e.nbt?.id
       if (typeof id !== "string" || !FRAME.test(id) || Number(e.nbt.Invisible ?? 0) === 1) continue
-      inputBlocks.push({
+      const item = e.nbt.Item?.id ?? ""
+      const map = /(^|:)filled_map$/.test(item)
+      const entry = {
         id: id.includes("glow") ? "minecraft:glow_item_frame" : "minecraft:item_frame",
         pos: [Math.floor(e.pos[0]), Math.floor(e.pos[1]), Math.floor(e.pos[2])],
         properties: {
           facing: FACING6[Number(e.nbt.Facing ?? 3)] ?? "south",
-          map: /(^|:)filled_map$/.test(e.nbt.Item?.id ?? "") ? "true" : "false"
+          map: map ? "true" : "false"
         }
-      })
+      }
+      if (typeof item === "string" && item && !map && !LIVE_ITEM.test(item)) {
+        entry.nbt = { Item: e.nbt.Item, ItemRotation: e.nbt.ItemRotation }
+      }
+      inputBlocks.push(entry)
     }
     const total = inputBlocks.length
 
