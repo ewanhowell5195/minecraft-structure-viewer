@@ -293,11 +293,28 @@ function setDoorInstance(stateIdx, slot, pos, visible) {
   const r = stateRender.get(stateIdx)
   const s = r && doorSlots.get(r.key)
   if (!s) return
-  for (const im of s.meshes) {
-    if (visible) im.setMatrixAt(slot, _dm.makeTranslation(pos[0] * 16, pos[1] * 16, pos[2] * 16).multiply(r.rot).multiply(im.userData.baseMatrix))
-    else im.setMatrixAt(slot, _dzero)
-    im.instanceMatrix.needsUpdate = true
+  for (const m of s.meshes) {
+    if (visible) m.im.setMatrixAt(m.offset + slot, _dm.makeTranslation(pos[0] * 16, pos[1] * 16, pos[2] * 16).multiply(r.rot).multiply(m.base))
+    else m.im.setMatrixAt(m.offset + slot, _dzero)
+    m.im.instanceMatrix.needsUpdate = true
   }
+}
+
+const doorGeoHashes = new WeakMap()
+function doorGeoHash(geo) {
+  let h = doorGeoHashes.get(geo)
+  if (h !== undefined) return h
+  h = 0x811c9dc5
+  for (const name of ["position", "normal", "uv"]) {
+    const arr = geo.attributes[name]?.array
+    if (!arr) continue
+    const bytes = new Uint8Array(arr.buffer, arr.byteOffset, arr.byteLength)
+    for (let i = 0; i < bytes.length; i++) h = (h ^ bytes[i]) * 0x01000193 >>> 0
+  }
+  const idx = geo.index?.array
+  if (idx) for (let i = 0; i < idx.length; i++) h = (h ^ idx[i]) * 0x01000193 >>> 0
+  doorGeoHashes.set(geo, h)
+  return h
 }
 
 function attachDoors(entries) {
@@ -316,23 +333,104 @@ function attachDoors(entries) {
     e.closedSlot = slotFor(e.closedIdx)
   }
   let draws = 0
+
+  // wood variants share model geometry and differ only by texture, so their
+  // textures pack into one atlas addressed by a per-instance uv rect, and
+  // every state with the same shape lands in one instanced draw
+  const atlasable = new Map(), legacy = new Map()
   for (const [key, s] of doorSlots) {
     const tmpl = canonDoorTmpl.get(key)
     if (!tmpl) continue
     tmpl.updateMatrixWorld(true)
+    const list = []
+    let ok = true
     tmpl.traverse(o => {
       if (!o.isMesh) return
-      // the library shader handles USE_INSTANCING, so materials are shared as-is
-      const im = new THREE.InstancedMesh(o.geometry, o.material, s.count)
-      im.userData.baseMatrix = o.matrixWorld.clone()
+      const mats = [].concat(o.material)
+      const textured = mats.filter(m => m.uniforms?.map?.value)
+      const tex = textured[0]?.uniforms.map.value
+      if (!tex?.image?.width || !textured.every(m => m.uniforms.map.value === tex)) ok = false
+      list.push({ geometry: o.geometry, material: o.material, mats, tex, base: o.matrixWorld.clone() })
+    })
+    ;(ok && list.length ? atlasable : legacy).set(key, list)
+  }
+
+  for (const [key, list] of legacy) {
+    const s = doorSlots.get(key)
+    for (const m of list) {
+      const im = new THREE.InstancedMesh(m.geometry, m.material, s.count)
       im.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
       // geometry bounds would frustum-cull the spread instances wrongly
       im.frustumCulled = false
       for (let i = 0; i < s.count; i++) im.setMatrixAt(i, _dzero)
       root.add(im)
-      s.meshes.push(im)
+      s.meshes.push({ im, base: m.base, offset: 0 })
       draws++
+    }
+  }
+
+  if (atlasable.size) {
+    const texList = [], texIndex = new Map()
+    for (const list of atlasable.values()) for (const m of list) {
+      if (!texIndex.has(m.tex)) { texIndex.set(m.tex, texList.length); texList.push(m.tex) }
+    }
+    const cols = Math.ceil(Math.sqrt(texList.length))
+    const tileW = Math.max(...texList.map(t => t.image.width))
+    const tileH = Math.max(...texList.map(t => t.image.height))
+    const atlas = document.createElement("canvas")
+    atlas.width = cols * tileW
+    atlas.height = Math.ceil(texList.length / cols) * tileH
+    const ctx = atlas.getContext("2d")
+    const rects = texList.map((t, i) => {
+      const x = (i % cols) * tileW, y = ((i / cols) | 0) * tileH
+      ctx.drawImage(t.image, x, y)
+      return [x / atlas.width, 1 - (y + t.image.height) / atlas.height, t.image.width / atlas.width, t.image.height / atlas.height]
     })
+    const atlasTex = new THREE.CanvasTexture(atlas)
+    atlasTex.colorSpace = THREE.NoColorSpace
+    atlasTex.magFilter = atlasTex.minFilter = THREE.NearestFilter
+    atlasTex.generateMipmaps = false
+    markerTextures.push(atlasTex)
+    let patched = null
+    const patchMat = src => {
+      if (patched) return patched
+      patched = src.clone()
+      patched.uniforms.map.value = atlasTex
+      patched.vertexShader = patched.vertexShader
+        .replace("varying vec2 vUv;", "varying vec2 vUv;\n      attribute vec4 uvRect;")
+        .replace("vUv = uv;", "vUv = uv * uvRect.zw + uvRect.xy;")
+      return patched
+    }
+
+    const buckets = new Map()
+    for (const [key, list] of atlasable) {
+      const s = doorSlots.get(key)
+      for (const m of list) {
+        const gh = doorGeoHash(m.geometry)
+        let b = buckets.get(gh)
+        if (!b) buckets.set(gh, b = { geometry: m.geometry, parts: [], total: 0 })
+        b.parts.push({ s, base: m.base, rect: rects[texIndex.get(m.tex)], count: s.count, mats: m.mats, isArray: Array.isArray(m.material) })
+        b.total += s.count
+      }
+    }
+    for (const b of buckets.values()) {
+      const p0 = b.parts[0]
+      const material = p0.isArray ? p0.mats.map(m => m.uniforms?.map?.value ? patchMat(m) : m) : patchMat(p0.mats[0])
+      const im = new THREE.InstancedMesh(b.geometry, material, b.total)
+      im.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
+      im.frustumCulled = false
+      const uvRect = new Float32Array(b.total * 4)
+      let offset = 0
+      for (const p of b.parts) {
+        for (let i = 0; i < p.count; i++) uvRect.set(p.rect, (offset + i) * 4)
+        p.s.meshes.push({ im, base: p.base, offset })
+        offset += p.count
+      }
+      b.geometry.setAttribute("uvRect", new THREE.InstancedBufferAttribute(uvRect, 4))
+      for (let i = 0; i < b.total; i++) im.setMatrixAt(i, _dzero)
+      root.add(im)
+      draws++
+    }
   }
   for (const e of entries) {
     const open = structure.palette[e.b.state].Properties.open === "true"
