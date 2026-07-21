@@ -44,16 +44,16 @@ function portableMaterial(mat, caches) {
 
 // exporters can't represent invisible material groups, so those meshes
 // explode into one mesh per visible group
-function bakeMesh(scene, o, matrix, caches) {
+function bakeMesh(scene, o, matrix, caches, geometry = o.geometry) {
   const mats = [].concat(o.material)
-  const groups = o.geometry.groups
+  const groups = geometry.groups
   if (groups.length && mats.some(m => m?.visible === false)) {
-    const src = o.geometry.index
+    const src = geometry.index
     for (const g of groups) {
       const m = mats[g.materialIndex]
       if (!m || m.visible === false) continue
       const geo = new THREE.BufferGeometry()
-      for (const [name, attr] of Object.entries(o.geometry.attributes)) geo.setAttribute(name, attr)
+      for (const [name, attr] of Object.entries(geometry.attributes)) geo.setAttribute(name, attr)
       geo.setIndex(new THREE.BufferAttribute(src.array.slice(g.start, g.start + g.count), 1))
       const mesh = new THREE.Mesh(geo, portableMaterial(m, caches))
       mesh.applyMatrix4(matrix)
@@ -62,7 +62,7 @@ function bakeMesh(scene, o, matrix, caches) {
     return
   }
   const conv = mats.map(m => portableMaterial(m, caches))
-  const mesh = new THREE.Mesh(o.geometry, Array.isArray(o.material) ? conv : conv[0])
+  const mesh = new THREE.Mesh(geometry, Array.isArray(o.material) ? conv : conv[0])
   mesh.applyMatrix4(matrix)
   scene.add(mesh)
 }
@@ -73,6 +73,14 @@ function bakeGroup(scene, group, caches) {
   group.updateMatrixWorld(true)
   group.traverseVisible(o => {
     if (!o.isMesh) return
+    if (o.isBatchedMesh) {
+      for (const slot of o.userData.batchSlots ?? []) {
+        o.getMatrixAt(slot.id, _inst)
+        if (!_inst.elements[0] && !_inst.elements[5] && !_inst.elements[10]) continue
+        bakeMesh(scene, o, _instFull.multiplyMatrices(o.matrixWorld, _inst), caches, slot.geometry)
+      }
+      return
+    }
     if (o.isInstancedMesh) {
       for (let i = 0; i < o.count; i++) {
         o.getMatrixAt(i, _inst)

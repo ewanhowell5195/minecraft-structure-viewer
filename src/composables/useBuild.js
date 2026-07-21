@@ -294,9 +294,10 @@ function setDoorInstance(stateIdx, slot, pos, visible) {
   const s = r && doorSlots.get(r.key)
   if (!s) return
   for (const m of s.meshes) {
-    if (visible) m.im.setMatrixAt(m.offset + slot, _dm.makeTranslation(pos[0] * 16, pos[1] * 16, pos[2] * 16).multiply(r.rot).multiply(m.base))
-    else m.im.setMatrixAt(m.offset + slot, _dzero)
-    m.im.instanceMatrix.needsUpdate = true
+    const idx = m.ids ? m.ids[slot] : m.offset + slot
+    if (visible) m.im.setMatrixAt(idx, _dm.makeTranslation(pos[0] * 16, pos[1] * 16, pos[2] * 16).multiply(r.rot).multiply(m.base))
+    else m.im.setMatrixAt(idx, _dzero)
+    if (m.im.instanceMatrix) m.im.instanceMatrix.needsUpdate = true
   }
 }
 
@@ -440,46 +441,68 @@ function attachDoors(entries) {
     atlasTex.magFilter = atlasTex.minFilter = THREE.NearestFilter
     atlasTex.generateMipmaps = false
     markerTextures.push(atlasTex)
-    let patched = null
-    const patchMat = src => {
-      if (patched) return patched
-      patched = src.clone()
-      patched.uniforms.map.value = atlasTex
-      patched.vertexShader = patched.vertexShader
-        .replace("varying vec2 vUv;", "varying vec2 vUv;\n      attribute vec4 uvRect;")
-        .replace("vUv = uv;", "vUv = uv * uvRect.zw + uvRect.xy;")
-      return patched
-    }
-
-    const buckets = new Map()
+    // every atlasable door goes into one BatchedMesh: per-slot geometry copies
+    // with the atlas rect baked into the uvs, so no per-instance attribute or
+    // shader patch is needed and all doors render as a single draw
+    const variantCache = new Map()
+    const parts = [], mixed = []
+    let instances = 0, vertCount = 0, indexCount = 0
     for (const [key, list] of atlasable) {
       const s = doorSlots.get(key)
       for (const m of list) {
-        const gh = doorGeoHash(m.geometry)
-        let b = buckets.get(gh)
-        if (!b) buckets.set(gh, b = { geometry: m.geometry, parts: [], total: 0 })
-        b.parts.push({ s, base: m.base, rect: rects[texIndex.get(m.tex)], count: s.count, mats: m.mats, isArray: Array.isArray(m.material) })
-        b.total += s.count
+        const merged = mergeInstanceSource(m.geometry, m.material)
+        if (!merged) continue
+        if (Array.isArray(merged.material)) { mixed.push({ s, base: m.base, merged }); continue }
+        const rect = rects[texIndex.get(m.tex)]
+        const vk = doorGeoHash(merged.geometry) + "|" + rect.join(",")
+        let geo = variantCache.get(vk)
+        if (!geo) {
+          geo = new THREE.BufferGeometry()
+          for (const [name, attr] of Object.entries(merged.geometry.attributes)) geo.setAttribute(name, attr)
+          if (merged.geometry.index) geo.setIndex(merged.geometry.index)
+          const src = merged.geometry.attributes.uv
+          const uv = new Float32Array(src.count * 2)
+          for (let i = 0; i < src.count; i++) {
+            uv[i * 2] = src.getX(i) * rect[2] + rect[0]
+            uv[i * 2 + 1] = src.getY(i) * rect[3] + rect[1]
+          }
+          geo.setAttribute("uv", new THREE.BufferAttribute(uv, 2))
+          variantCache.set(vk, geo)
+        }
+        parts.push({ s, base: m.base, geometry: geo, count: s.count, srcMat: merged.material })
+        instances += s.count
+        vertCount += geo.attributes.position.count * s.count
+        indexCount += (geo.index ? geo.index.count : geo.attributes.position.count) * s.count
       }
     }
-    for (const b of buckets.values()) {
-      const p0 = b.parts[0]
-      const material = p0.isArray ? p0.mats.map(m => m.uniforms?.map?.value ? patchMat(m) : m) : patchMat(p0.mats[0])
-      const merged = mergeInstanceSource(b.geometry, material)
-      if (!merged) continue
-      const im = new THREE.InstancedMesh(merged.geometry, merged.material, b.total)
+    if (parts.length) {
+      const material = parts[0].srcMat.clone()
+      material.uniforms.map.value = atlasTex
+      const bm = new THREE.BatchedMesh(instances, vertCount, indexCount, material)
+      bm.frustumCulled = false
+      bm.perObjectFrustumCulled = false
+      bm.sortObjects = false
+      const batchSlots = []
+      for (const p of parts) {
+        const ids = []
+        for (let i = 0; i < p.count; i++) {
+          const id = bm.addGeometry(p.geometry)
+          ids.push(id)
+          bm.setMatrixAt(id, _dzero)
+          batchSlots.push({ id, geometry: p.geometry })
+        }
+        p.s.meshes.push({ im: bm, ids, base: p.base })
+      }
+      bm.userData.batchSlots = batchSlots
+      root.add(bm)
+    }
+    for (const f of mixed) {
+      const im = new THREE.InstancedMesh(f.merged.geometry, f.merged.material, f.s.count)
       im.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
       im.frustumCulled = false
-      const uvRect = new Float32Array(b.total * 4)
-      let offset = 0
-      for (const p of b.parts) {
-        for (let i = 0; i < p.count; i++) uvRect.set(p.rect, (offset + i) * 4)
-        p.s.meshes.push({ im, base: p.base, offset })
-        offset += p.count
-      }
-      merged.geometry.setAttribute("uvRect", new THREE.InstancedBufferAttribute(uvRect, 4))
-      for (let i = 0; i < b.total; i++) im.setMatrixAt(i, _dzero)
+      for (let i = 0; i < f.s.count; i++) im.setMatrixAt(i, _dzero)
       root.add(im)
+      f.s.meshes.push({ im, base: f.base, offset: 0 })
     }
   }
   for (const e of entries) {
@@ -1242,7 +1265,7 @@ function disposeGroup(g) {
   if (!g) return
   g.traverse(o => {
     if (!o.isMesh || o.userData.shared) return
-    if (o.isInstancedMesh) o.dispose()
+    if (o.isInstancedMesh || o.isBatchedMesh) o.dispose()
     o.geometry?.dispose()
     // ownsMap: sign canvases only; atlas and library textures are managed elsewhere
     if (o.userData.ownsMap) o.material?.map?.dispose?.()
