@@ -37,7 +37,7 @@ function faceData(t) {
   return { lines, color: typeof t.color === "string" ? t.color : "black", glow: !!t.has_glowing_text }
 }
 
-function makeFaceTexture(font, face, LH, MAXW) {
+function makeFaceCanvas(font, face, LH, MAXW) {
   const S = 4
   const c = document.createElement("canvas")
   c.width = MAXW * S
@@ -57,16 +57,14 @@ function makeFaceTexture(font, face, LH, MAXW) {
     }
     drawText(ctx, font, line, x, y, { scale: S, color: main })
   }
-  const tex = new THREE.CanvasTexture(c)
-  tex.magFilter = THREE.NearestFilter
-  return tex
+  return c
 }
 
 const YROT = { south: 0, west: 90, north: 180, east: 270 }
 const _m = new THREE.Matrix4()
 
 export async function makeSignTexts(structure) {
-  const group = new THREE.Group()
+  const quads = []
   let font = null
   for (const b of structure.blocks) {
     const e = structure.palette[b.state]
@@ -92,10 +90,6 @@ export async function makeSignTexts(structure) {
       : YROT[p.facing] ?? 0
     const angle = THREE.MathUtils.degToRad(-yrot)
     for (const f of faces) {
-      const mesh = new THREE.Mesh(
-        new THREE.PlaneGeometry(MAXW, 4 * LH),
-        new THREE.MeshBasicMaterial({ map: makeFaceTexture(font, f, LH, MAXW), transparent: true }))
-      mesh.userData.ownsMap = true
       const M = new THREE.Matrix4().makeTranslation(b.pos[0] * 16 - 8, b.pos[1] * 16 - 8, b.pos[2] * 16 - 8)
       M.multiply(_m.makeScale(16, 16, 16))
       if (hanging) {
@@ -110,10 +104,51 @@ export async function makeSignTexts(structure) {
       if (f.back) M.multiply(_m.makeRotationY(Math.PI))
       M.multiply(_m.makeTranslation(0, hanging ? -0.32 : 0.33333334, hanging ? 0.073 : 0.046666667))
       M.multiply(_m.makeScale(s, s, s))
-      mesh.matrixAutoUpdate = false
-      mesh.matrix.copy(M)
-      group.add(mesh)
+      quads.push({ canvas: makeFaceCanvas(font, f, LH, MAXW), M, w: MAXW, h: 4 * LH })
     }
   }
-  return group.children.length ? group : null
+  if (!quads.length) return null
+
+  // every text face shares one canvas atlas and one merged mesh
+  const area = quads.reduce((a, q) => a + q.canvas.width * q.canvas.height, 0)
+  const maxW = Math.max(Math.ceil(Math.sqrt(area)), ...quads.map(q => q.canvas.width))
+  let px = 0, py = 0, rowH = 0, aw = 0
+  const sorted = Array.from(quads).sort((a, b) => b.canvas.height - a.canvas.height)
+  for (const q of sorted) {
+    if (px + q.canvas.width > maxW) { px = 0; py += rowH; rowH = 0 }
+    q.tx = px
+    q.ty = py
+    px += q.canvas.width
+    rowH = Math.max(rowH, q.canvas.height)
+    aw = Math.max(aw, px)
+  }
+  const atlas = document.createElement("canvas")
+  atlas.width = aw
+  atlas.height = py + rowH
+  const ctx = atlas.getContext("2d")
+  const pos = new Float32Array(quads.length * 12)
+  const uv = new Float32Array(quads.length * 8)
+  const index = new (quads.length * 4 > 65535 ? Uint32Array : Uint16Array)(quads.length * 6)
+  const v = new THREE.Vector3()
+  quads.forEach((q, i) => {
+    ctx.drawImage(q.canvas, q.tx, q.ty)
+    const u0 = q.tx / atlas.width, u1 = (q.tx + q.canvas.width) / atlas.width
+    const v0 = 1 - (q.ty + q.canvas.height) / atlas.height, v1 = 1 - q.ty / atlas.height
+    const corners = [[-q.w / 2, q.h / 2, u0, v1], [q.w / 2, q.h / 2, u1, v1], [-q.w / 2, -q.h / 2, u0, v0], [q.w / 2, -q.h / 2, u1, v0]]
+    corners.forEach(([x, y, cu, cv], k) => {
+      v.set(x, y, 0).applyMatrix4(q.M)
+      pos.set([v.x, v.y, v.z], (i * 4 + k) * 3)
+      uv.set([cu, cv], (i * 4 + k) * 2)
+    })
+    index.set([i * 4, i * 4 + 2, i * 4 + 1, i * 4 + 2, i * 4 + 3, i * 4 + 1], i * 6)
+  })
+  const geo = new THREE.BufferGeometry()
+  geo.setAttribute("position", new THREE.BufferAttribute(pos, 3))
+  geo.setAttribute("uv", new THREE.BufferAttribute(uv, 2))
+  geo.setIndex(new THREE.BufferAttribute(index, 1))
+  const tex = new THREE.CanvasTexture(atlas)
+  tex.magFilter = THREE.NearestFilter
+  const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: tex, transparent: true }))
+  mesh.userData.ownsMap = true
+  return mesh
 }

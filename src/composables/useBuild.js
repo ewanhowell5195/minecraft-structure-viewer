@@ -241,6 +241,7 @@ let nonSolid = new Set()
 let sceneLight = null
 let entityMarkers = [] // root-local coords
 let markerTextures = []
+let pendingMarkers = []
 let doorByCell = new Map()
 let blockMap = null, blockMapFor = null
 
@@ -300,6 +301,55 @@ function setDoorInstance(stateIdx, slot, pos, visible) {
   }
 }
 
+// cube templates carry one geometry group per face even when every face shares
+// a material, and three.js draws once per group; rebucketing the index by
+// material turns 6 draws into 1 (invisible dummy faces drop out entirely)
+function mergeInstanceSource(geometry, material) {
+  const mats = [].concat(material)
+  if (!geometry.index || !geometry.groups?.length || mats.length < 2) return { geometry, material }
+  const keep = new Map()
+  for (const g of geometry.groups) {
+    const m = mats[g.materialIndex] ?? mats[0]
+    if (!m || m.visible === false) continue
+    let list = keep.get(m)
+    if (!list) keep.set(m, list = [])
+    list.push(g)
+  }
+  if (!keep.size) return null
+  const src = geometry.index.array
+  let total = 0
+  for (const list of keep.values()) for (const g of list) total += Math.min(g.count, src.length - g.start)
+  const index = new src.constructor(total)
+  const geo = new THREE.BufferGeometry()
+  for (const name in geometry.attributes) geo.setAttribute(name, geometry.attributes[name])
+  let offset = 0
+  const materials = []
+  for (const [m, list] of keep) {
+    const start = offset
+    for (const g of list) {
+      const count = Math.min(g.count, src.length - g.start)
+      index.set(src.subarray(g.start, g.start + count), offset)
+      offset += count
+    }
+    if (keep.size > 1) geo.addGroup(start, offset - start, materials.length)
+    materials.push(m)
+  }
+  geo.setIndex(new THREE.BufferAttribute(index, 1))
+  return { geometry: geo, material: materials.length > 1 ? materials : materials[0] }
+}
+
+function collapseGroupDraws(obj) {
+  obj.traverse(o => {
+    if (!o.isMesh || o.isInstancedMesh) return
+    const merged = mergeInstanceSource(o.geometry, o.material)
+    if (merged) {
+      o.geometry = merged.geometry
+      o.material = merged.material
+    }
+  })
+  return obj
+}
+
 const doorGeoHashes = new WeakMap()
 function doorGeoHash(geo) {
   let h = doorGeoHashes.get(geo)
@@ -357,7 +407,9 @@ function attachDoors(entries) {
   for (const [key, list] of legacy) {
     const s = doorSlots.get(key)
     for (const m of list) {
-      const im = new THREE.InstancedMesh(m.geometry, m.material, s.count)
+      const merged = mergeInstanceSource(m.geometry, m.material)
+      if (!merged) continue
+      const im = new THREE.InstancedMesh(merged.geometry, merged.material, s.count)
       im.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
       // geometry bounds would frustum-cull the spread instances wrongly
       im.frustumCulled = false
@@ -414,7 +466,9 @@ function attachDoors(entries) {
     for (const b of buckets.values()) {
       const p0 = b.parts[0]
       const material = p0.isArray ? p0.mats.map(m => m.uniforms?.map?.value ? patchMat(m) : m) : patchMat(p0.mats[0])
-      const im = new THREE.InstancedMesh(b.geometry, material, b.total)
+      const merged = mergeInstanceSource(b.geometry, material)
+      if (!merged) continue
+      const im = new THREE.InstancedMesh(merged.geometry, merged.material, b.total)
       im.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
       im.frustumCulled = false
       const uvRect = new Float32Array(b.total * 4)
@@ -424,7 +478,7 @@ function attachDoors(entries) {
         p.s.meshes.push({ im, base: p.base, offset })
         offset += p.count
       }
-      b.geometry.setAttribute("uvRect", new THREE.InstancedBufferAttribute(uvRect, 4))
+      merged.geometry.setAttribute("uvRect", new THREE.InstancedBufferAttribute(uvRect, 4))
       for (let i = 0; i < b.total; i++) im.setMatrixAt(i, _dzero)
       root.add(im)
     }
@@ -448,7 +502,7 @@ const ENTITY_BOX = 14
 // egg-less mobs borrow a lookalike's egg
 const EGG_ALIASES = { giant: "zombie", evoker_fangs: "evoker", llama_spit: "llama", wither_skull: "wither", shulker_bullet: "shulker" }
 
-async function entityMarkerTexture(lib, assets, name) {
+async function entityMarkerCanvas(lib, assets, name) {
   const c = document.createElement("canvas")
   c.width = 64
   c.height = 64
@@ -485,41 +539,25 @@ async function entityMarkerTexture(lib, assets, name) {
       drawText(ctx, font, "?", x, y, { scale: s, color: "#ffffff" })
     } catch { return null }
   }
-  const tex = new THREE.CanvasTexture(c)
-  tex.colorSpace = THREE.SRGBColorSpace
-  tex.magFilter = THREE.NearestFilter
-  return tex
-}
-
-async function nameTagSprite(text) {
-  try {
-    const font = await getFont()
-    const S = 4, pad = S * 2
-    const c = document.createElement("canvas")
-    c.width = Math.ceil(measure(font, text) * S) + pad * 2
-    c.height = font.ch * S + pad * 2
-    const ctx = c.getContext("2d")
-    ctx.fillStyle = "#00000059"
-    ctx.fillRect(0, 0, c.width, c.height)
-    drawText(ctx, font, text, pad, pad, { scale: S })
-    const tex = new THREE.CanvasTexture(c)
-    tex.colorSpace = THREE.SRGBColorSpace
-    tex.magFilter = THREE.NearestFilter
-    markerTextures.push(tex)
-    const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true }))
-    const H = 5
-    spr.scale.set(H * c.width / c.height, H, 1)
-    return spr
-  } catch { return null }
+  return c
 }
 
 async function attachEntityTag(nbt, wx, topY, wz) {
   const label = plainText(nbt?.CustomName ?? "")
   if (!label) return
-  const tag = await nameTagSprite(label)
-  if (!tag) return
-  tag.position.set(wx, topY + 3 + tag.scale.y / 2, wz)
-  root.add(tag)
+  try {
+    const font = await getFont()
+    const S = 4, pad = S * 2
+    const c = document.createElement("canvas")
+    c.width = Math.ceil(measure(font, label) * S) + pad * 2
+    c.height = font.ch * S + pad * 2
+    const ctx = c.getContext("2d")
+    ctx.fillStyle = "#00000059"
+    ctx.fillRect(0, 0, c.width, c.height)
+    drawText(ctx, font, label, pad, pad, { scale: S })
+    const H = 5, w = H * c.width / c.height
+    pendingMarkers.push({ canvas: c, x: wx, y: topY + 3 + H / 2, z: wz, w, h: H, blend: true })
+  } catch {}
 }
 
 const FRAME = /(^|:)(glow_)?item_frame$/
@@ -632,6 +670,7 @@ async function updateClocks() {
         const resolved = await lib.resolveModelData(assets, m)
         await lib.loadModel(tmp, assets, resolved, { display: disp, lighting: lightingOpt(sceneLight), animate: false, ...(cf.glow ? { emission: 15 } : null) })
       }
+      collapseGroupDraws(tmp)
       cf.holder.clear()
       for (const c of Array.from(tmp.children)) cf.holder.add(c)
     } catch {}
@@ -723,6 +762,7 @@ async function attachEntities(structure, lib, assets) {
   const sprites = []
   const frameItemBuckets = new Map()
   entityMarkers = []
+  pendingMarkers = []
   fakeMaps = []
   clockFrames = []
   mapLightEnv = lib.LIGHT_DIMENSIONS?.[buildDim] ?? FALLBACK_ENV
@@ -784,7 +824,7 @@ async function attachEntities(structure, lib, assets) {
             } catch {}
           }
           if (frame && FRAME_ROT[facing]) g.rotation.set(FRAME_ROT[facing][0], FRAME_ROT[facing][1], 0)
-          if (g.children.length || frame) template = g
+          if (g.children.length || frame) template = collapseGroupDraws(g)
         }
       } catch {}
       groupCache.set(key, template)
@@ -859,7 +899,9 @@ async function attachEntities(structure, lib, assets) {
       })
       tmpl.traverse(o => {
         if (!o.isMesh) return
-        const im = new THREE.InstancedMesh(o.geometry, o.material, bases.length)
+        const merged = mergeInstanceSource(o.geometry, o.material)
+        if (!merged) return
+        const im = new THREE.InstancedMesh(merged.geometry, merged.material, bases.length)
         for (let i = 0; i < bases.length; i++) im.setMatrixAt(i, _fiM.multiplyMatrices(bases[i], o.matrixWorld))
         im.frustumCulled = false
         root.add(im)
@@ -929,42 +971,38 @@ async function attachEntities(structure, lib, assets) {
     }
   }
   for (const c of clusters) {
-    for (const s of c) if (!texCache.has(s.name)) texCache.set(s.name, await entityMarkerTexture(lib, assets, s.name))
+    for (const s of c) if (!texCache.has(s.name)) texCache.set(s.name, await entityMarkerCanvas(lib, assets, s.name))
     const cx = c.reduce((a, s) => a + s.wx, 0) / c.length
     const cy = c.reduce((a, s) => a + s.wy, 0) / c.length
     const cz = c.reduce((a, s) => a + s.wz, 0) / c.length
-    let tex = texCache.get(c[0].name)
+    let canvas = texCache.get(c[0].name)
     let px = 64
-    if (c.length > 1) {
+    if (canvas && c.length > 1) {
       const off = 4 // one icon pixel at the 64px render scale
       px = 64 + (c.length - 1) * off
-      const canvas = document.createElement("canvas")
+      canvas = document.createElement("canvas")
       canvas.width = canvas.height = px
       const ctx = canvas.getContext("2d")
       ctx.imageSmoothingEnabled = false
       for (let i = c.length - 1; i >= 0; i--) {
         const t = texCache.get(c[i].name)
-        if (t) ctx.drawImage(t.image, (c.length - 1 - i) * off, (c.length - 1 - i) * off, 64, 64)
+        if (t) ctx.drawImage(t, (c.length - 1 - i) * off, (c.length - 1 - i) * off, 64, 64)
       }
-      tex = new THREE.CanvasTexture(canvas)
-      tex.colorSpace = THREE.SRGBColorSpace
-      tex.magFilter = THREE.NearestFilter
-      markerTextures.push(tex)
     }
-    // alpha test, not blending: a blended sprite writes depth for empty pixels and
-    // mis-sorts; SpriteMaterial defaults transparent to TRUE, so force it off
-    const mat = tex
-      ? new THREE.SpriteMaterial({ map: tex, alphaTest: 0.5, transparent: false })
-      : new THREE.SpriteMaterial({ color: 0xffffff, opacity: 0.4 })
-    const spr = new THREE.Sprite(mat)
+    let blend = false
+    if (!canvas) {
+      canvas = document.createElement("canvas")
+      canvas.width = canvas.height = 64
+      const ctx = canvas.getContext("2d")
+      ctx.fillStyle = "rgba(255, 255, 255, 0.4)"
+      ctx.fillRect(0, 0, 64, 64)
+      blend = true
+    }
     const scale = 10 * px / 64
-    spr.scale.set(scale, scale, 1)
-    spr.position.set(cx, cy - 8 + ENTITY_BOX / 2, cz)
-    root.add(spr)
+    pendingMarkers.push({ canvas, x: cx, y: cy - 8 + ENTITY_BOX / 2, z: cz, w: scale, h: scale, blend })
     entityMarkers.push({ stack: c.map(s => s.e), x: cx, y: cy - 8, z: cz })
     for (const s of c) await attachEntityTag(s.e.nbt, s.wx, s.wy - 8 + ENTITY_BOX, s.wz)
   }
-  for (const tex of texCache.values()) if (tex) markerTextures.push(tex)
   relightFakeMaps()
 }
 
@@ -979,15 +1017,77 @@ async function attachSpawnerEggs(structure, lib, assets) {
     }
     if (typeof id !== "string") continue
     const name = id.includes(":") ? id.split(":")[1] : id
-    if (!texCache.has(name)) texCache.set(name, await entityMarkerTexture(lib, assets, name))
-    const tex = texCache.get(name)
-    if (!tex) continue
-    const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, alphaTest: 0.5, transparent: false }))
-    spr.scale.set(9, 9, 1)
-    spr.position.set(b.pos[0] * 16, b.pos[1] * 16, b.pos[2] * 16)
-    root.add(spr)
+    if (!texCache.has(name)) texCache.set(name, await entityMarkerCanvas(lib, assets, name))
+    const canvas = texCache.get(name)
+    if (!canvas) continue
+    pendingMarkers.push({ canvas, x: b.pos[0] * 16, y: b.pos[1] * 16, z: b.pos[2] * 16, w: 9, h: 9, blend: false })
   }
-  for (const tex of texCache.values()) if (tex) markerTextures.push(tex)
+}
+
+// all markers share one atlas and one camera-facing instanced quad per blend
+// mode; icons alpha-test so their empty pixels keep depth-writing correctly,
+// name tags blend for the translucent backing
+function attachMarkerSprites() {
+  const _mm = new THREE.Matrix4()
+  for (const blend of [false, true]) {
+    const list = pendingMarkers.filter(m => m.blend === blend)
+    if (!list.length) continue
+    const area = list.reduce((a, m) => a + m.canvas.width * m.canvas.height, 0)
+    const maxW = Math.max(Math.ceil(Math.sqrt(area)), ...list.map(m => m.canvas.width))
+    let px = 0, py = 0, rowH = 0, aw = 0
+    for (const m of Array.from(list).sort((a, b) => b.canvas.height - a.canvas.height)) {
+      if (px + m.canvas.width > maxW) { px = 0; py += rowH; rowH = 0 }
+      m.tx = px
+      m.ty = py
+      px += m.canvas.width
+      rowH = Math.max(rowH, m.canvas.height)
+      aw = Math.max(aw, px)
+    }
+    const atlas = document.createElement("canvas")
+    atlas.width = aw
+    atlas.height = py + rowH
+    const ctx = atlas.getContext("2d")
+    const tex = new THREE.CanvasTexture(atlas)
+    tex.colorSpace = THREE.SRGBColorSpace
+    tex.magFilter = THREE.NearestFilter
+    markerTextures.push(tex)
+    const geo = new THREE.PlaneGeometry(1, 1)
+    const uvRect = new Float32Array(list.length * 4)
+    const mat = new THREE.ShaderMaterial({
+      uniforms: { map: { value: tex } },
+      vertexShader: `
+        attribute vec4 uvRect;
+        varying vec2 vUv;
+        void main() {
+          vUv = uvRect.xy + uv * uvRect.zw;
+          vec4 mv = modelViewMatrix * vec4(instanceMatrix[3].xyz, 1.0);
+          mv.xy += position.xy * vec2(length(instanceMatrix[0].xyz), length(instanceMatrix[1].xyz));
+          gl_Position = projectionMatrix * mv;
+        }
+      `,
+      fragmentShader: `
+        uniform sampler2D map;
+        varying vec2 vUv;
+        void main() {
+          vec4 c = texture2D(map, vUv);
+          ${blend ? "" : "if (c.a < 0.5) discard;"}
+          gl_FragColor = c;
+          #include <colorspace_fragment>
+        }
+      `,
+      transparent: blend
+    })
+    const im = new THREE.InstancedMesh(geo, mat, list.length)
+    im.frustumCulled = false
+    list.forEach((m, i) => {
+      ctx.drawImage(m.canvas, m.tx, m.ty)
+      uvRect.set([m.tx / atlas.width, 1 - (m.ty + m.canvas.height) / atlas.height, m.canvas.width / atlas.width, m.canvas.height / atlas.height], i * 4)
+      im.setMatrixAt(i, _mm.makeScale(m.w, m.h, 1).setPosition(m.x, m.y, m.z))
+    })
+    geo.setAttribute("uvRect", new THREE.InstancedBufferAttribute(uvRect, 4))
+    root.add(im)
+  }
+  pendingMarkers = []
 }
 
 const SHELF_DISPLAY = { type: "fallback", display: "on_shelf" }
@@ -1021,7 +1121,7 @@ async function attachShelves(structure, lib, assets) {
             const resolved = await lib.resolveModelData(assets, m)
             await lib.loadModel(inner, assets, resolved, { display: SHELF_DISPLAY, lighting: lightingOpt(sceneLight), animate: false })
           }
-          if (inner.children.length) template = { inner, box: new THREE.Box3().setFromObject(inner) }
+          if (inner.children.length) template = { inner: collapseGroupDraws(inner), box: new THREE.Box3().setFromObject(inner) }
         } catch {}
         cache.set(key, template)
       }
@@ -1719,6 +1819,7 @@ async function build(structure = source, refit = true, slice = false) {
     await attachEntities(structure, lib, assets)
     await attachSpawnerEggs(structure, lib, assets)
     await attachShelves(structure, lib, assets)
+    attachMarkerSprites()
     try {
       const signs = await makeSignTexts(structure)
       if (signs) root.add(signs)
