@@ -1440,6 +1440,9 @@ async function build(structure = source, refit = true, slice = false) {
         const items = b.nbt.Items.filter(it => typeof it?.id === "string" && !LIVE_ITEM.test(it.id))
         if (items.length) entry.nbt = { Items: items, align_items_to_bottom: b.nbt.align_items_to_bottom }
       }
+      if ((b.nbt?.patterns || b.nbt?.Patterns) && /(^|_)banner$/.test(name.replace(/^minecraft:/, ""))) {
+        entry.nbt = { patterns: b.nbt.patterns ?? b.nbt.Patterns }
+      }
       inputIdx[i] = inputBlocks.length
       inputBlocks.push(entry)
     }
