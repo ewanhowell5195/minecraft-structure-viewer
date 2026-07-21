@@ -530,6 +530,8 @@ async function attachEntityTag(nbt, wx, topY, wz) {
 const FRAME = /(^|:)(glow_)?item_frame$/
 const FACING6 = ["down", "up", "north", "south", "west", "east"]
 const FRAME_ROT = { south: [0, Math.PI], west: [0, Math.PI / 2], east: [0, -Math.PI / 2], up: [-Math.PI / 2, Math.PI], down: [Math.PI / 2, Math.PI] }
+const LIVE_ITEM = /(^|:)(compass|clock)$/
+const _fiM = new THREE.Matrix4(), _fiE = new THREE.Euler()
 const MAP_OFF = 6.85
 const MAP_DIR = { north: [0, 0, 1], south: [0, 0, -1], east: [-1, 0, 0], west: [1, 0, 0], up: [0, -1, 0], down: [0, 1, 0] }
 
@@ -725,6 +727,7 @@ async function attachEntities(structure, lib, assets) {
   const groupCache = new Map()
   const texCache = new Map()
   const sprites = []
+  const frameItemBuckets = new Map()
   entityMarkers = []
   fakeMaps = []
   clockFrames = []
@@ -765,7 +768,7 @@ async function attachEntities(structure, lib, assets) {
               await lib.loadModel(g, assets, data, { display: {}, lighting: lightingOpt(sceneLight), animate: false })
             }
           }
-          if (frame && frameItem && !frameMap) {
+          if (frame && typeof frameItem === "string" && !frameMap && LIVE_ITEM.test(frameItem)) {
             try {
               const disp = { type: "fallback", display: "fixed" }
               const itemGroup = new THREE.Group()
@@ -822,6 +825,12 @@ async function attachEntities(structure, lib, assets) {
         } catch {}
         if (++mapCount % 16 === 0) await yieldTask()
       }
+      if (frame && typeof frameItem === "string" && !frameMap && !LIVE_ITEM.test(frameItem)) {
+        const bkey = frameItem + "|" + JSON.stringify(e.nbt.Item.components ?? {}) + (glow ? "|glow" : "")
+        let ib = frameItemBuckets.get(bkey)
+        if (!ib) frameItemBuckets.set(bkey, ib = { item: frameItem, components: e.nbt.Item.components ?? {}, glow, entries: [] })
+        ib.entries.push({ facing, rot: Number(e.nbt.ItemRotation ?? 0), z: invisible ? 8 : 7, wx, wy, wz })
+      }
       if (frame && typeof frameItem === "string" && /(^|:)clock$/.test(frameItem)) {
         clockFrames.push({ holder: g.getObjectByName("frameItem"), item: frameItem, components: e.nbt.Item.components ?? {}, glow })
       }
@@ -833,6 +842,37 @@ async function attachEntities(structure, lib, assets) {
       continue
     }
     sprites.push({ e, name, wx, wy, wz })
+  }
+
+  // frames holding the same item share one instanced mesh per item model part;
+  // compasses and clocks stay per-frame since their models are placement state
+  for (const b of frameItemBuckets.values()) {
+    try {
+      const disp = { type: "fallback", display: "fixed" }
+      const tmpl = new THREE.Group()
+      tmpl.userData.daytime = daytimeUniform
+      for (const m of await lib.parseItemDefinition(assets, b.item, { data: b.components, display: disp, ignoreAtlases: true })) {
+        const resolved = await lib.resolveModelData(assets, m)
+        await lib.loadModel(tmpl, assets, resolved, { display: disp, lighting: lightingOpt(sceneLight), animate: false, ...(b.glow ? { emission: 15 } : null) })
+      }
+      tmpl.updateMatrixWorld(true)
+      const bases = b.entries.map(f => {
+        const m = new THREE.Matrix4().makeTranslation(f.wx, f.wy, f.wz)
+        const r = FRAME_ROT[f.facing]
+        if (r) m.multiply(_fiM.makeRotationFromEuler(_fiE.set(r[0], r[1], 0)))
+        m.multiply(_fiM.makeTranslation(0, 0, f.z))
+        if (f.rot) m.multiply(_fiM.makeRotationZ(f.rot * Math.PI / 4))
+        return m.multiply(_fiM.makeScale(0.5, 0.5, 0.5))
+      })
+      tmpl.traverse(o => {
+        if (!o.isMesh) return
+        const im = new THREE.InstancedMesh(o.geometry, o.material, bases.length)
+        for (let i = 0; i < bases.length; i++) im.setMatrixAt(i, _fiM.multiplyMatrices(bases[i], o.matrixWorld))
+        im.frustumCulled = false
+        root.add(im)
+        draws++
+      })
+    } catch {}
   }
 
   // all map planes share one atlas texture and one mesh; per-map light tints
