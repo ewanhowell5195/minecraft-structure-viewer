@@ -681,10 +681,22 @@ document.addEventListener("pointerlockchange", () => {
     } else exit()
   }
 })
+// chrome under pointer lock occasionally emits one giant bogus movement delta
+// when the hidden cursor resyncs (classically once the unclipped position
+// crosses a screen edge, so it reproduces after turning a set amount): the
+// camera snaps to a random angle. A real flick ramps up over successive
+// events, so an isolated delta far beyond its neighbour is dropped
+let prevMX = 0, prevMY = 0
+const spike = (v, prev) => Math.abs(v) > 200 && Math.abs(v) > 8 * (Math.abs(prev) + 4)
 document.addEventListener("mousemove", e => {
   if (!state.on || document.pointerLockElement !== sceneApi.canvas) return
-  walk.yaw -= e.movementX * 0.0024
-  walk.pitch = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, walk.pitch - e.movementY * 0.0024))
+  const dx = e.movementX, dy = e.movementY
+  const drop = spike(dx, prevMX) || spike(dy, prevMY)
+  prevMX = dx
+  prevMY = dy
+  if (drop) return
+  walk.yaw -= dx * 0.0024
+  walk.pitch = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, walk.pitch - dy * 0.0024))
 })
 addEventListener("keydown", e => {
   if (!state.on) return
