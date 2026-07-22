@@ -402,7 +402,7 @@ function poseLids(block, entry, on) {
 }
 
 async function open(block) {
-  const entry = buildApi.current.value?.palette[block.state]
+  const entry = block.entry ?? buildApi.current.value?.palette[block.state]
   const name = entry?.Name ?? "minecraft:chest"
   poseLids(block, entry, true)
   state.pick = null

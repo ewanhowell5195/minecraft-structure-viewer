@@ -5,6 +5,11 @@ import * as THREE from "three"
 // per-context by construction
 export const isPlane = el => el?.from && (el.from[0] === el.to[0] || el.from[1] === el.to[1] || el.from[2] === el.to[2])
 
+// blocks the lib loads as dynamic models (live part rigs, pose methods); their
+// rigs can't survive pack/revive, so streamed tiles exclude them from baked
+// geometry and build them live on the main thread
+export const DYNAMIC_BLOCKS = /(^|:)([a-z_]+_)?(banner|bell|chest|shulker_box|decorated_pot|enchanting_table|dragon_head|dragon_wall_head|piglin_head|piglin_wall_head)$/
+
 // state key -> Promise<bool>: true when every element is an axis plane, so
 // walk treats the block as soft (no collision)
 const softCache = new Map()

@@ -779,8 +779,8 @@ export function mergeTilePalettes(chunkGrids) {
 
 // combines own + ring chunk grids into one volume, drops buried cells, and
 // materializes createScene entries only for survivors (own entries first).
-// solidArr/doorArr are per global-palette-index (+1) flags
-export function assembleTile({ chunkGrids, maps, globalPalette, solidArr, doorArr, gcx0, gcz0, chunksAcross, yMin, yMax, origin, ownTest }) {
+// solidArr/doorArr/dynArr are per global-palette-index (+1) flags
+export function assembleTile({ chunkGrids, maps, globalPalette, solidArr, doorArr, dynArr, gcx0, gcz0, chunksAcross, yMin, yMax, origin, ownTest }) {
   const W = chunksAcross * 16
   const H = yMax - yMin + 1
   const tile = new Uint16Array(W * H * W)
@@ -812,7 +812,7 @@ export function assembleTile({ chunkGrids, maps, globalPalette, solidArr, doorAr
     for (const be of cg.beList) beMap.set(be.x + "," + be.y + "," + be.z, be.nbt)
   }
   const wx0 = gcx0 * 16, wz0 = gcz0 * 16
-  const own = [], ctx = [], doors = []
+  const own = [], ctx = [], doors = [], dynamics = [], nbts = []
   for (let ly = 0; ly < H; ly++) {
     for (let lz = 0; lz < W; lz++) {
       const row = (ly * W + lz) * W
@@ -823,17 +823,22 @@ export function assembleTile({ chunkGrids, maps, globalPalette, solidArr, doorAr
         const wx = wx0 + lx, wy = yMin + ly, wz = wz0 + lz
         const pos = [wx - origin[0], wy - origin[1], wz - origin[2]]
         const isOwn = ownTest(lx, lz)
+        const nb = isOwn && beMap.size ? beMap.get(wx + "," + wy + "," + wz) : undefined
+        if (isOwn && nb) nbts.push({ pos, nbt: nb })
         if (isOwn && doorArr[gi]) {
           doors.push({ pos, id: e.id, properties: e.properties ?? undefined })
+          continue
+        }
+        if (isOwn && dynArr?.[gi]) {
+          const d = { pos, id: e.id, properties: e.properties ?? undefined }
+          if (nb) d.nbt = nb
+          dynamics.push(d)
           continue
         }
         const entry = { id: e.id, pos }
         if (e.properties) entry.properties = e.properties
         if (isOwn) {
-          if (beMap.size) {
-            const nb = beMap.get(wx + "," + wy + "," + wz)
-            if (nb) entry.nbt = nb
-          }
+          if (nb) entry.nbt = nb
           own.push(entry)
         } else {
           entry.context = true
@@ -846,7 +851,7 @@ export function assembleTile({ chunkGrids, maps, globalPalette, solidArr, doorAr
     const lx = x + origin[0] - wx0, ly = y + origin[1] - yMin, lz = z + origin[2] - wz0
     return lx >= 0 && ly >= 0 && lz >= 0 && lx < W && ly < H && lz < W && !!solidArr[tile[(ly * W + lz) * W + lx]]
   }
-  return { input: own.concat(ctx), tileCount: own.length, doors, occludes, tile, W, H }
+  return { input: own.concat(ctx), tileCount: own.length, doors, dynamics, nbts, occludes, tile, W, H }
 }
 
 export const GRID = 1024

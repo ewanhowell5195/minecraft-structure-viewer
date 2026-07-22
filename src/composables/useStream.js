@@ -7,7 +7,9 @@ import { usePacks } from "./usePacks.js"
 import { loadLibrary } from "../lib.js"
 import { chunkGrid, mergeTilePalettes, assembleTile } from "../world.js"
 import { attachTileDoors, importDoorTemplates, doorShape, rayBoxT, OPENABLE } from "./useStreamDoors.js"
-import { softFor, solidFor, templateBoxes } from "../streamShared.js"
+import { softFor, solidFor, templateBoxes, DYNAMIC_BLOCKS } from "../streamShared.js"
+import { attachTileDynamics } from "./useStreamDynamics.js"
+import { isInspectable } from "../loot.js"
 
 // world streaming: TILE x TILE chunks per tile, each tile its own createScene
 // build bordered with a chunk ring of context blocks so culling, fluid shaping
@@ -245,8 +247,9 @@ async function buildTileWorker(tx, tz, gen) {
   }
   const boxes = new Map(Object.entries(msg.boxes).map(([ti, arr]) => [Number(ti), arr]))
   const tile = { handle: revived, group: revived.group, cellData: cd, grid, ox, oy, oz, gw, gh, palette: msg.palette, softs: msg.softs, boxes, buried: msg.buried ?? null }
-  if (msg.doors?.length) {
-    let lightMat = null, baseMat = null
+  if (msg.nbts?.length) tile.nbtMap = new Map(msg.nbts.map(n => [n.pos.join(","), n.nbt]))
+  let lightMat = null, baseMat = null
+  if (msg.doors?.length || msg.dynamics?.length) {
     revived.group.traverse(o => {
       if (!o.isMesh) return
       for (const m of [].concat(o.material)) {
@@ -254,8 +257,18 @@ async function buildTileWorker(tx, tz, gen) {
         if (!baseMat && m?.uniforms?.worldShade) baseMat = m
       }
     })
+  }
+  if (msg.doors?.length) {
     if (msg.doorPack) importDoorTemplates(msg.doorPack, lightMat ?? baseMat)
     tile.doors = await attachTileDoors({ lib, assets, doors: msg.doors, group: revived.group, lightMat, onToggle: () => onTilesChanged?.() })
+  }
+  if (msg.dynamics?.length) {
+    tile.dyn = await attachTileDynamics({ lib, assets, blocks: msg.dynamics, lightMat, sharedAtlas, dimension, daytime, lightOff })
+    if (gen !== queueGen) { tile.dyn?.dispose(); revived.dispose(); return }
+    if (tile.dyn) {
+      root.add(tile.dyn.group)
+      if (tile.dyn.animator) sceneApi2().animators.add(tile.dyn.animator)
+    }
   }
   try { await sceneApi2().renderer.compileAsync(revived.group, sceneApi2().perspCam, sceneApi2().scene) } catch {}
   if (gen !== queueGen) { revived.dispose(); return }
@@ -296,14 +309,16 @@ async function buildTileMain(tx, tz, gen) {
   const { globalPalette, maps } = mergeTilePalettes(chunkGrids)
   const solidArr = new Uint8Array(globalPalette.length + 1)
   const doorArr = new Uint8Array(globalPalette.length + 1)
+  const dynArr = new Uint8Array(globalPalette.length + 1)
   for (let i = 0; i < globalPalette.length; i++) {
     const e = globalPalette[i]
     doorArr[i + 1] = e.properties && "open" in e.properties && OPENABLE.test(e.id) ? 1 : 0
+    dynArr[i + 1] = DYNAMIC_BLOCKS.test(e.id) ? 1 : 0
     solidArr[i + 1] = (await solidFor(lib, assets, e.id, e.properties)) ? 1 : 0
   }
   if (gen !== queueGen) return
   const at = assembleTile({
-    chunkGrids, maps, globalPalette, solidArr, doorArr, gcx0: x0 - 1, gcz0: z0 - 1,
+    chunkGrids, maps, globalPalette, solidArr, doorArr, dynArr, gcx0: x0 - 1, gcz0: z0 - 1,
     chunksAcross: TILE + 2, yMin: yRange.yMin, yMax: yRange.yMax, origin,
     ownTest: (lx, lz) => lx >= 16 && lz >= 16 && lx < (TILE + 1) * 16 && lz < (TILE + 1) * 16
   })
@@ -361,13 +376,24 @@ async function buildTileMain(tx, tz, gen) {
   }
   const palette = handle.palette.map(p => ({ id: p.id, properties: p.properties ?? null }))
   const tile = { handle, group: handle.group, cellData: cd, grid, ox, oy, oz, gw, gh, palette, softs, boxes: new Map(), buried }
-  if (doors.length) {
-    let lightMat = null
+  if (at.nbts.length) tile.nbtMap = new Map(at.nbts.map(n => [n.pos.join(","), n.nbt]))
+  let lightMat = null
+  if (doors.length || at.dynamics.length) {
     handle.group.traverse(o => {
       if (lightMat || !o.isMesh) return
       for (const m of [].concat(o.material)) if (m?.uniforms?.lightVol) { lightMat = m; break }
     })
+  }
+  if (doors.length) {
     tile.doors = await attachTileDoors({ lib, assets, doors, group: handle.group, lightMat, onToggle: () => onTilesChanged?.() })
+  }
+  if (at.dynamics.length) {
+    tile.dyn = await attachTileDynamics({ lib, assets, blocks: at.dynamics, lightMat, sharedAtlas, dimension, daytime, lightOff })
+    if (gen !== queueGen) { tile.dyn?.dispose(); try { handle.dispose?.() } catch {} return }
+    if (tile.dyn) {
+      root.add(tile.dyn.group)
+      if (tile.dyn.animator) sceneApi2().animators.add(tile.dyn.animator)
+    }
   }
   try { await sceneApi2().renderer.compileAsync(handle.group, sceneApi2().perspCam, sceneApi2().scene) } catch {}
   if (gen !== queueGen) { try { handle.dispose?.() } catch {} return }
@@ -384,6 +410,10 @@ function disposeTile(k) {
   if (!t) return
   tiles.delete(k)
   t.doors?.dispose()
+  if (t.dyn) {
+    if (t.dyn.animator) sceneApi2().animators.delete(t.dyn.animator)
+    t.dyn.dispose()
+  }
   if (t.handle) {
     t.group?.removeFromParent()
     try { t.handle.dispose?.() } catch {}
@@ -487,20 +517,37 @@ const provider = {
     const t = tiles.get(tkeyAt(gx, gz))
     const cell = cellAt(t, gx, gy, gz)
     if (cell) return { Name: cell.entry.id, Properties: cell.entry.properties ?? undefined }
-    const reg = t?.doors?.regs.get(gx + "," + gy + "," + gz)
-    return reg ? { Name: reg.id, Properties: reg.props } : null
+    const key = gx + "," + gy + "," + gz
+    const reg = t?.doors?.regs.get(key)
+    if (reg) return { Name: reg.id, Properties: reg.props }
+    const dyn = t?.dyn?.regs.get(key)
+    return dyn ? { Name: dyn.id, Properties: dyn.properties } : null
   },
   blockEntryAt(wx, wy, wz) {
     const gx = Math.round(wx / 16), gy = Math.round(wy / 16), gz = Math.round(wz / 16)
     const t = tiles.get(tkeyAt(gx, gz))
     const cell = cellAt(t, gx, gy, gz)
-    if (cell) return { tile: t, cell }
-    const reg = t?.doors?.regs.get(gx + "," + gy + "," + gz)
-    return reg ? { tile: t, cell: { pos: [gx, gy, gz], door: reg, entry: { id: reg.id, properties: reg.props } } } : null
+    const key = gx + "," + gy + "," + gz
+    if (cell) {
+      const nb = t.nbtMap?.get(key)
+      if (nb && !cell.entry.nbt) cell.entry.nbt = nb
+      return { tile: t, cell }
+    }
+    const reg = t?.doors?.regs.get(key)
+    if (reg) return { tile: t, cell: { pos: [gx, gy, gz], door: reg, entry: { id: reg.id, properties: reg.props } } }
+    const dyn = t?.dyn?.regs.get(key)
+    return dyn ? { tile: t, cell: { pos: [gx, gy, gz], dyn, entry: { id: dyn.id, properties: dyn.properties, nbt: dyn.nbt } } } : null
   },
   blockBoxes(b) {
     const { tile, cell } = b
     const out = []
+    if (cell.dyn) {
+      const ox = cell.pos[0] * 16, oy = cell.pos[1] * 16, oz = cell.pos[2] * 16
+      for (const l of tile.dyn.boxesFor(cell.dyn)) {
+        out.push({ nx: l[0] + ox, ny: l[1] + oy, nz: l[2] + oz, px: l[3] + ox, py: l[4] + oy, pz: l[5] + oz })
+      }
+      return out
+    }
     if (cell.door) {
       if (/fence_gate$/.test(cell.door.id.replace(/^minecraft:/, "")) && cell.door.props.open === "true") return out
       const ox = cell.pos[0] * 16, oy = cell.pos[1] * 16, oz = cell.pos[2] * 16
@@ -534,8 +581,24 @@ const provider = {
   },
   interact(ox, oy, oz, dx, dy, dz) {
     const h = marchDoor(ox, oy, oz, dx, dy, dz)
-    if (!h) return false
-    return { toggled: h.tile.doors.toggle(h.reg) }
+    if (h) return { toggled: h.tile.doors.toggle(h.reg) }
+    let last = ""
+    for (let t = 0; t <= 80; t += 2) {
+      const gx = Math.round((ox + dx * t) / 16), gy = Math.round((oy + dy * t) / 16), gz = Math.round((oz + dz * t) / 16)
+      const key = gx + "," + gy + "," + gz
+      if (key === last) continue
+      last = key
+      const e = provider.blockEntryAt(gx * 16, gy * 16, gz * 16)
+      if (!e) continue
+      const name = e.cell.entry.id
+      const nbt = e.cell.entry.nbt
+      if (isInspectable(name) || nbt?.LootTable || /(^|[:_])spawner$/.test(name)) {
+        return { pos: e.cell.pos, entry: { Name: name, Properties: e.cell.entry.properties }, nbt }
+      }
+      if (e.cell.buried) return false
+      if (!e.cell.door && !e.cell.dyn && !(FLUID_BLOCK.test(name) || e.tile.softs?.[e.cell.ti])) return false
+    }
+    return false
   }
 }
 

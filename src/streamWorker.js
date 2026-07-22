@@ -5,7 +5,7 @@
 import { readWorldZip, switchDimension, chunkGrid, mergeTilePalettes, assembleTile } from "./world.js"
 import { loadLibrary } from "./lib.js"
 import { OPENABLE, packDoorTemplates } from "./composables/useStreamDoors.js"
-import { softFor, solidFor, templateBoxes } from "./streamShared.js"
+import { softFor, solidFor, templateBoxes, DYNAMIC_BLOCKS } from "./streamShared.js"
 
 let world = null
 let range = null
@@ -48,13 +48,15 @@ async function buildTile(m) {
   const { globalPalette, maps } = mergeTilePalettes(chunkGrids)
   const solidArr = new Uint8Array(globalPalette.length + 1)
   const doorArr = new Uint8Array(globalPalette.length + 1)
+  const dynArr = new Uint8Array(globalPalette.length + 1)
   for (let i = 0; i < globalPalette.length; i++) {
     const e = globalPalette[i]
     doorArr[i + 1] = e.properties && "open" in e.properties && OPENABLE.test(e.id) ? 1 : 0
+    dynArr[i + 1] = DYNAMIC_BLOCKS.test(e.id) ? 1 : 0
     solidArr[i + 1] = (await solidFor(lib, assets, e.id, e.properties)) ? 1 : 0
   }
   const at = assembleTile({
-    chunkGrids, maps, globalPalette, solidArr, doorArr, gcx0, gcz0,
+    chunkGrids, maps, globalPalette, solidArr, doorArr, dynArr, gcx0, gcz0,
     chunksAcross: TILE + 2, yMin: range.yMin, yMax: range.yMax, origin,
     ownTest: (lx, lz) => lx >= 16 && lz >= 16 && lx < (TILE + 1) * 16 && lz < (TILE + 1) * 16
   })
@@ -117,7 +119,7 @@ async function buildTile(m) {
     } catch {}
   }
   self.postMessage(
-    { type: "tile", id: m.id, payload: packed.payload, atlas: { deltas: atlas.deltas, serial: atlas.serial, size: atlas.size }, cells, palette, softs, boxes, buried, doors, doorPack },
+    { type: "tile", id: m.id, payload: packed.payload, atlas: { deltas: atlas.deltas, serial: atlas.serial, size: atlas.size }, cells, palette, softs, boxes, buried, doors, doorPack, dynamics: at.dynamics, nbts: at.nbts },
     [cells.buffer, ...(buried ? [buried.buffer] : []), ...packed.transfers, ...atlas.transfers, ...doorTransfers]
   )
 }
