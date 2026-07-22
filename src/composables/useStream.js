@@ -32,8 +32,7 @@ let dimension = "overworld"
 let daytime = 6000
 let lightOff = false
 let chunkMap = null           // "cx,cz" -> chunk descriptor
-let worker = null
-let workerReady = false
+let workers = []              // { worker, ready, inflight }
 let workerSeq = 0
 const workerJobs = new Map()
 const blockCache = new Map()  // "cx,cz" -> Promise<blocks in world coords>
@@ -51,37 +50,55 @@ function chunkOf(worldBlockX, worldBlockZ) {
   return [Math.floor(worldBlockX / 16), Math.floor(worldBlockZ / 16)]
 }
 
-// the worker owns parsing once its own zip scan lands; before that (and if it
-// ever fails) the main thread parses so the first tile never waits on the scan
-function startWorker(file, dimension) {
-  try {
-    worker = new Worker(new URL("../streamWorker.js", import.meta.url), { type: "module" })
-  } catch { worker = null; return }
-  worker.onmessage = e => {
-    const m = e.data
-    if (m.type === "ready") { workerReady = true; return }
-    const job = workerJobs.get(m.id)
-    if (!job) return
-    workerJobs.delete(m.id)
-    if (m.type === "chunk") job.resolve(m.blocks)
-    else job.reject(new Error(m.error))
+// a small pool of parse workers; each owns its own zip scan, so parsing goes
+// wide once they land. Before that (and if a worker fails) the main thread
+// parses so the first tile never waits on the scans
+function startWorkers(file, dimension) {
+  const count = Math.min(4, Math.max(1, (navigator.hardwareConcurrency || 4) - 2))
+  workers = []
+  for (let i = 0; i < count; i++) {
+    let w
+    try {
+      w = new Worker(new URL("../streamWorker.js", import.meta.url), { type: "module" })
+    } catch { break }
+    const slot = { worker: w, ready: false, inflight: 0 }
+    w.onmessage = e => {
+      const m = e.data
+      if (m.type === "ready") { slot.ready = true; return }
+      const job = workerJobs.get(m.id)
+      if (!job) return
+      workerJobs.delete(m.id)
+      slot.inflight--
+      if (m.type === "chunk") job.resolve(m.blocks)
+      else job.reject(new Error(m.error))
+    }
+    w.onerror = () => { slot.ready = false }
+    w.postMessage({ type: "init", id: 0, file, dimension, yMin: yRange.yMin, yMax: yRange.yMax })
+    workers.push(slot)
   }
-  worker.onerror = () => { workerReady = false }
-  worker.postMessage({ type: "init", id: 0, file, dimension, yMin: yRange.yMin, yMax: yRange.yMax })
 }
 
-function stopWorker() {
-  worker?.terminate()
-  worker = null
-  workerReady = false
+function stopWorkers() {
+  for (const s of workers) s.worker.terminate()
+  workers = []
   workerJobs.clear()
 }
 
-function workerChunk(cx, cz) {
+function idleWorker() {
+  let best = null
+  for (const s of workers) {
+    if (!s.ready) continue
+    if (!best || s.inflight < best.inflight) best = s
+  }
+  return best
+}
+
+function workerChunk(slot, cx, cz) {
   return new Promise((resolve, reject) => {
     const id = ++workerSeq
     workerJobs.set(id, { resolve, reject })
-    worker.postMessage({ type: "chunk", id, cx, cz })
+    slot.inflight++
+    slot.worker.postMessage({ type: "chunk", id, cx, cz })
   })
 }
 
@@ -90,8 +107,9 @@ function cachedBlocks(cx, cz) {
   let p = blockCache.get(k)
   if (!p) {
     const c = chunkMap.get(k)
+    const slot = c && idleWorker()
     if (!c) p = Promise.resolve([])
-    else if (workerReady) p = workerChunk(cx, cz).catch(() => chunkBlocks(world, c, yRange)).catch(() => [])
+    else if (slot) p = workerChunk(slot, cx, cz).catch(() => chunkBlocks(world, c, yRange)).catch(() => [])
     else p = chunkBlocks(world, c, yRange).catch(() => [])
     blockCache.set(k, p)
   }
@@ -155,9 +173,11 @@ async function buildTile(cx, cz, gen) {
     input.push({ ...b, pos: [b.pos[0] - origin[0], b.pos[1] - origin[1], b.pos[2] - origin[2]] })
   }
   const tileCount = input.length
+  const fetches = []
   for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) {
-    if (!dx && !dz) continue
-    const nb = await cachedBlocks(cx + dx, cz + dz)
+    if (dx || dz) fetches.push(cachedBlocks(cx + dx, cz + dz))
+  }
+  for (const nb of await Promise.all(fetches)) {
     if (gen !== queueGen) return
     for (const b of nb) {
       input.push({ id: b.id, properties: b.properties, pos: [b.pos[0] - origin[0], b.pos[1] - origin[1], b.pos[2] - origin[2]], context: true })
@@ -235,6 +255,7 @@ async function pump() {
       const want = desired(playerChunk[0], playerChunk[1])
       state.pending = want.length
       if (!want.length) break
+      for (const [pcx, pcz] of want.slice(1, 6)) cachedBlocks(pcx, pcz)
       await buildTile(want[0][0], want[0][1], gen)
       await new Promise(r => setTimeout(r))
     }
@@ -342,7 +363,7 @@ async function enter() {
   state.on = true
   queueGen++
   const wfile = w.getWorldFile()
-  if (wfile) startWorker(wfile, ws.dimension)
+  if (wfile) startWorkers(wfile, ws.dimension)
   root = new THREE.Group()
   sceneApi2().scene.add(root)
   sceneApi2().contentRoots.add(root)
@@ -376,7 +397,7 @@ async function exit() {
   state.on = false
   queueGen++
   playerChunk = null
-  stopWorker()
+  stopWorkers()
   for (const k of Array.from(tiles.keys())) disposeTile(k)
   blockCache.clear()
   if (root) sceneApi2().contentRoots.delete(root)

@@ -422,8 +422,10 @@ function closeWorld() {
   setWorldParams(false)
 }
 
+const FORCE = typeof location !== "undefined" && new URLSearchParams(location.search).has("force")
+
 function loadForecast() {
-  if (!selected.size) return false
+  if (FORCE || !selected.size) return false
   const est = selected.size * 256 * (state.yMax - state.yMin + 1) * 120
   const mem = performance.memory
   const ios = /iPhone|iPad/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)

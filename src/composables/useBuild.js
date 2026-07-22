@@ -173,8 +173,12 @@ function savePerf(b, o) {
   try { localStorage.setItem(PERF_KEY, JSON.stringify({ b: mix(prev?.b, b), o: mix(prev?.o, o) })) } catch {}
 }
 
+// ?force skips every size and duration warning dialog
+const FORCE = typeof location !== "undefined" && new URLSearchParams(location.search).has("force")
+
 let warnResolve = null
 function askWarn(ms) {
+  if (FORCE) return Promise.resolve(true)
   state.warn = { seconds: Math.max(Math.round(ms / 1000), 1) }
   return new Promise(r => { warnResolve = r })
 }
@@ -186,7 +190,7 @@ function setRestoreGate(on) {
   if (on) restoreGateAsked = false
 }
 async function restoreGateCheck(blocks, selection = false, approx = false) {
-  if (!restoreGate || restoreGateAsked || blocks <= RESTORE_BLOCKS) return true
+  if (FORCE || !restoreGate || restoreGateAsked || blocks <= RESTORE_BLOCKS) return true
   restoreGateAsked = true
   state.warn = { blocks, selection, approx }
   return new Promise(r => { warnResolve = r })
