@@ -5,12 +5,13 @@ import { useBuild } from "./useBuild.js"
 const sceneApi = useScene()
 
 let lids = new Map()
-let books = []
 let rangeDefault = 16
 
 function setRange(blocks) {
   rangeDefault = blocks
-  for (const o of books) o.userData.range = blocks
+  sceneApi.scene.traverse(o => {
+    if (o.userData?.dynamic === "enchanting_book") o.userData.range = blocks
+  })
 }
 
 function setLid(pos, on) {
@@ -24,7 +25,6 @@ const _v = new THREE.Vector3()
 
 function refresh() {
   lids = new Map()
-  books = []
   const root = useBuild().getRoot()
   sceneApi.scene.updateMatrixWorld(true)
   sceneApi.scene.traverse(o => {
@@ -32,7 +32,6 @@ function refresh() {
     if (!kind) return
     if (kind === "enchanting_book") {
       o.userData.range = rangeDefault
-      books.push(o)
     } else if ((kind === "chest" || kind === "shulker_box") && root) {
       o.getWorldPosition(_v)
       const key = [
