@@ -7,11 +7,12 @@ import { usePacks } from "./usePacks.js"
 import { loadLibrary } from "../lib.js"
 import { chunkBlocks } from "../world.js"
 
-// v1 world streaming: one chunk per tile, each tile its own createScene build
-// bordered with full neighbor-chunk context blocks so culling, fluid shaping
+// world streaming: TILE x TILE chunks per tile, each tile its own createScene
+// build bordered with a chunk ring of context blocks so culling, fluid shaping
 // and the light volume come out seamless. Entered from walk mode; the orbit
 // build is torn down on entry and rebuilt from the loaded selection on exit.
-const RENDER_DIST = 4
+const TILE = 2
+const RENDER_DIST = 2
 const DISPOSE_DIST = RENDER_DIST + 1
 
 // resolved lazily: instantiating these at module init closes an import cycle
@@ -33,6 +34,7 @@ let dimension = "overworld"
 let daytime = 6000
 let lightOff = false
 let chunkMap = null           // "cx,cz" -> chunk descriptor
+let tileSet = null            // "tx,tz" tile keys with at least one chunk
 let workers = []              // { worker, ready, inflight }
 let workerSeq = 0
 const workerJobs = new Map()
@@ -40,7 +42,7 @@ const blockCache = new Map()  // "cx,cz" -> Promise<blocks in world coords>
 const tiles = new Map()       // "cx,cz" -> { handle, group, cells, softs, boxes }
 let queueGen = 0
 let building = false
-let playerChunk = null
+let playerTile = null
 let onTilesChanged = null
 
 const EMPTY = { size: [1, 1, 1], palette: [], blocks: [], entities: [] }
@@ -49,6 +51,12 @@ const ckey = (cx, cz) => cx + "," + cz
 
 function chunkOf(worldBlockX, worldBlockZ) {
   return [Math.floor(worldBlockX / 16), Math.floor(worldBlockZ / 16)]
+}
+
+// scene-space block coords -> owning tile key
+function tkeyAt(gx, gz) {
+  const cx = Math.floor((gx + origin[0]) / 16), cz = Math.floor((gz + origin[2]) / 16)
+  return ckey(Math.floor(cx / TILE), Math.floor(cz / TILE))
 }
 
 // a small pool of parse workers; each owns its own zip scan, so parsing goes
@@ -166,26 +174,29 @@ function templateBoxes(tmpl) {
   return arr
 }
 
-async function buildTile(cx, cz, gen) {
-  const own = await cachedBlocks(cx, cz)
-  if (gen !== queueGen) return
+async function buildTile(tx, tz, gen) {
+  const x0 = tx * TILE, z0 = tz * TILE
+  const ownFetches = [], ctxFetches = []
+  for (let dx = -1; dx <= TILE; dx++) for (let dz = -1; dz <= TILE; dz++) {
+    const own = dx >= 0 && dx < TILE && dz >= 0 && dz < TILE
+    ;(own ? ownFetches : ctxFetches).push(cachedBlocks(x0 + dx, z0 + dz))
+  }
   const input = []
-  for (const b of own) {
-    input.push({ ...b, pos: [b.pos[0] - origin[0], b.pos[1] - origin[1], b.pos[2] - origin[2]] })
+  for (const own of await Promise.all(ownFetches)) {
+    if (gen !== queueGen) return
+    for (const b of own) {
+      input.push({ ...b, pos: [b.pos[0] - origin[0], b.pos[1] - origin[1], b.pos[2] - origin[2]] })
+    }
   }
   const tileCount = input.length
-  const fetches = []
-  for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) {
-    if (dx || dz) fetches.push(cachedBlocks(cx + dx, cz + dz))
-  }
-  for (const nb of await Promise.all(fetches)) {
+  for (const nb of await Promise.all(ctxFetches)) {
     if (gen !== queueGen) return
     for (const b of nb) {
       input.push({ id: b.id, properties: b.properties, pos: [b.pos[0] - origin[0], b.pos[1] - origin[1], b.pos[2] - origin[2]], context: true })
     }
   }
   if (!tileCount) {
-    tiles.set(ckey(cx, cz), { handle: null, group: null, cells: null, softs: null, boxes: null })
+    tiles.set(ckey(tx, tz), { handle: null, group: null, cells: null, softs: null, boxes: null })
     return
   }
   const handle = await lib.createScene(assets, input, {
@@ -214,7 +225,7 @@ async function buildTile(cx, cz, gen) {
   for (let i = 0; i < softs.length; i++) if (softs[i]) softs[i] = await softs[i]
   const tile = { handle, group: handle.group, cells, softs, boxes: new Map() }
   root.add(handle.group)
-  tiles.set(ckey(cx, cz), tile)
+  tiles.set(ckey(tx, tz), tile)
   state.tiles = tiles.size
   onTilesChanged?.()
 }
@@ -231,12 +242,12 @@ function disposeTile(k) {
   onTilesChanged?.()
 }
 
-function desired(cx, cz) {
+function desired(tx, tz) {
   const out = []
   for (let dx = -RENDER_DIST; dx <= RENDER_DIST; dx++) {
     for (let dz = -RENDER_DIST; dz <= RENDER_DIST; dz++) {
-      const k = ckey(cx + dx, cz + dz)
-      if (chunkMap.has(k) && !tiles.has(k)) out.push([cx + dx, cz + dz, Math.max(Math.abs(dx), Math.abs(dz))])
+      const k = ckey(tx + dx, tz + dz)
+      if (tileSet.has(k) && !tiles.has(k)) out.push([tx + dx, tz + dz, Math.max(Math.abs(dx), Math.abs(dz))])
     }
   }
   out.sort((a, b) => a[2] - b[2])
@@ -249,15 +260,17 @@ async function pump() {
   const gen = queueGen
   try {
     while (state.on && gen === queueGen) {
-      if (!playerChunk) break
+      if (!playerTile) break
       for (const k of Array.from(tiles.keys())) {
-        const [tcx, tcz] = k.split(",").map(Number)
-        if (Math.max(Math.abs(tcx - playerChunk[0]), Math.abs(tcz - playerChunk[1])) > DISPOSE_DIST) disposeTile(k)
+        const [ttx, ttz] = k.split(",").map(Number)
+        if (Math.max(Math.abs(ttx - playerTile[0]), Math.abs(ttz - playerTile[1])) > DISPOSE_DIST) disposeTile(k)
       }
-      const want = desired(playerChunk[0], playerChunk[1])
+      const want = desired(playerTile[0], playerTile[1])
       state.pending = want.length
       if (!want.length) break
-      for (const [pcx, pcz] of want.slice(1, 6)) cachedBlocks(pcx, pcz)
+      for (const [ptx, ptz] of want.slice(1, 4)) {
+        for (let dx = 0; dx < TILE; dx++) for (let dz = 0; dz < TILE; dz++) cachedBlocks(ptx * TILE + dx, ptz * TILE + dz)
+      }
       await buildTile(want[0][0], want[0][1], gen)
       await new Promise(r => setTimeout(r))
     }
@@ -272,8 +285,7 @@ const provider = {
   getRoot: () => root,
   blockAt(wx, wy, wz) {
     const gx = Math.round(wx / 16), gy = Math.round(wy / 16), gz = Math.round(wz / 16)
-    const [cx, cz] = chunkOf(gx + origin[0], gz + origin[2])
-    const t = tiles.get(ckey(cx, cz))
+    const t = tiles.get(tkeyAt(gx, gz))
     const cell = t?.cells?.get(gx + "," + gy + "," + gz)
     if (!cell) return null
     const e = cell.entry
@@ -281,8 +293,7 @@ const provider = {
   },
   blockEntryAt(wx, wy, wz) {
     const gx = Math.round(wx / 16), gy = Math.round(wy / 16), gz = Math.round(wz / 16)
-    const [cx, cz] = chunkOf(gx + origin[0], gz + origin[2])
-    const t = tiles.get(ckey(cx, cz))
+    const t = tiles.get(tkeyAt(gx, gz))
     const cell = t?.cells?.get(gx + "," + gy + "," + gz)
     return cell ? { tile: t, cell } : null
   },
@@ -306,8 +317,7 @@ const provider = {
 
 // scene-space column -> highest solid block top, for the spawn point
 async function surfaceAt(gx, gz) {
-  const [cx, cz] = chunkOf(gx + origin[0], gz + origin[2])
-  const t = tiles.get(ckey(cx, cz))
+  const t = tiles.get(tkeyAt(gx, gz))
   if (!t?.cells) return null
   let top = null
   for (const cell of t.cells.values()) {
@@ -329,6 +339,8 @@ async function enter() {
 
   // the chunk under the orbit focus, mapped back through the selection layout
   chunkMap = new Map(w.getChunks().map(c => [ckey(c.cx, c.cz), c]))
+  tileSet = new Set()
+  for (const c of chunkMap.values()) tileSet.add(ckey(Math.floor(c.cx / TILE), Math.floor(c.cz / TILE)))
   const sel = w.getLastSelection()
   const target = sceneApi2().controls?.target ?? new THREE.Vector3()
   const rootPos = buildApi2().getRoot()?.position ?? { x: 0, y: 0, z: 0 }
@@ -373,8 +385,8 @@ async function enter() {
   await buildApi2().build(EMPTY, false)
   sceneApi2().setGrids([])
 
-  playerChunk = [scx, scz]
-  await buildTile(scx, scz, queueGen)
+  playerTile = [Math.floor(scx / TILE), Math.floor(scz / TILE)]
+  await buildTile(playerTile[0], playerTile[1], queueGen)
   const top = await surfaceAt((scx * 16 + 8) - origin[0], (scz * 16 + 8) - origin[2]) ?? await surfaceAt(8, 8)
   const spawnY = top !== null ? top * 16 + 8 : (yRange.yMax - origin[1]) * 16
   const cam = sceneApi2().perspCam
@@ -389,8 +401,9 @@ function tick(pos) {
   if (!state.on) return
   const gx = Math.round(pos.x / 16), gz = Math.round(pos.z / 16)
   const [cx, cz] = chunkOf(gx + origin[0], gz + origin[2])
-  if (!playerChunk || playerChunk[0] !== cx || playerChunk[1] !== cz) {
-    playerChunk = [cx, cz]
+  const tx = Math.floor(cx / TILE), tz = Math.floor(cz / TILE)
+  if (!playerTile || playerTile[0] !== tx || playerTile[1] !== tz) {
+    playerTile = [tx, tz]
     pump()
   }
 }
@@ -399,7 +412,7 @@ async function exit() {
   if (!state.on) return
   state.on = false
   queueGen++
-  playerChunk = null
+  playerTile = null
   stopWorkers()
   sharedAtlas?.dispose()
   sharedAtlas = null
