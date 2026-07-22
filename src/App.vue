@@ -8,6 +8,7 @@ import { useBuild } from "./composables/useBuild.js"
 import { useScene } from "./composables/useScene.js"
 import { useLock } from "./composables/useLock.js"
 import { useWalk } from "./composables/useWalk.js"
+import { useStream } from "./composables/useStream.js"
 import { useWorld } from "./composables/useWorld.js"
 import { restoreFile } from "./userCache.js"
 import { useContainer } from "./composables/useContainer.js"
@@ -41,6 +42,16 @@ const { state: current, structure, loadVanilla, loadDefault, loadMany, loadFile,
 const { state: buildState, cancel: cancelBuild } = useBuild()
 const sceneApi = useScene()
 const walk = useWalk()
+const stream = useStream()
+const walkMenu = ref(false)
+async function walkClick() {
+  if (!worldState.active) return walk.enter()
+  walkMenu.value = !walkMenu.value
+}
+async function walkStream() {
+  walkMenu.value = false
+  if (await stream.enter()) walk.enter()
+}
 const walkState = walk.state
 const { locked } = useLock()
 const { state: containerState } = useContainer()
@@ -230,10 +241,20 @@ onMounted(async () => {
           <span class="material-symbols-outlined">close</span>
           Cancel
         </button>
-        <button v-if="!minimal" class="walk-btn" :disabled="locked || !buildState.info" @click="walk.enter()">
+        <button v-if="!minimal" class="walk-btn" :disabled="locked || !buildState.info" @click="walkClick()">
           <span class="material-symbols-outlined">directions_walk</span>
           Walk Around
         </button>
+        <div v-if="walkMenu" class="walk-menu">
+          <button @click="walkMenu = false; walk.enter()">
+            <span class="material-symbols-outlined">deployed_code</span>
+            Explore this scene
+          </button>
+          <button @click="walkStream()">
+            <span class="material-symbols-outlined">public</span>
+            Stream the world
+          </button>
+        </div>
         <button v-if="buildState.info && (buildState.info.blocks || structure?.entities?.length)" class="used-btn" :disabled="locked" @click="usedModal?.open()">
           <span class="material-symbols-outlined">list_alt</span>
           {{ usedLabel }}
@@ -372,6 +393,29 @@ onMounted(async () => {
 }
 
 .walk-btn .material-symbols-outlined { font-size: 18px; }
+
+.walk-menu {
+  position: absolute;
+  left: 14px;
+  bottom: 52px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  background: #222227;
+  border: 1px solid #333338;
+  border-radius: 8px;
+  z-index: 5;
+}
+
+.walk-menu button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: flex-start;
+}
+
+.walk-menu .material-symbols-outlined { font-size: 18px; }
 
 .used-btn {
   position: absolute;

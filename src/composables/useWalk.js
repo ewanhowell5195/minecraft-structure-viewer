@@ -5,10 +5,14 @@ import { useBuild } from "./useBuild.js"
 import { useContainer } from "./useContainer.js"
 import { useBooks } from "./useBooks.js"
 import { useLock } from "./useLock.js"
+import { useStream } from "./useStream.js"
 
 // movement numbers are the vanilla ones throughout; world units: 16 = one block
 const sceneApi = useScene()
 const buildApi = useBuild()
+const streamApi = useStream()
+// streaming swaps the world queries (blocks, collision, aiming) to the tile provider
+const wapi = () => streamApi.state.on ? streamApi.provider : buildApi
 const containerApi = useContainer()
 const { locked } = useLock()
 
@@ -71,16 +75,16 @@ function cellBoxes(ci, cj, ck) {
   let a = collCells.get(k)
   if (a) return a
   a = []
-  const p = buildApi.getRoot()?.position
+  const p = wapi().getRoot()?.position
   if (p) {
     const lo = (c, o) => Math.floor((c * 16 - o - 8) / 16)
     const hi = (c, o) => Math.ceil(((c + 1) * 16 - o + 8) / 16)
     for (let gx = lo(ci, p.x); gx <= hi(ci, p.x); gx++)
       for (let gy = lo(cj, p.y); gy <= hi(cj, p.y); gy++)
         for (let gz = lo(ck, p.z); gz <= hi(ck, p.z); gz++) {
-          const b = buildApi.blockEntryAt(p.x + gx * 16, p.y + gy * 16, p.z + gz * 16)
+          const b = wapi().blockEntryAt(p.x + gx * 16, p.y + gy * 16, p.z + gz * 16)
           if (!b) continue
-          for (const box of buildApi.blockBoxes(b)) {
+          for (const box of wapi().blockBoxes(b)) {
             if (box.px > ci * 16 && box.nx < ci * 16 + 16 &&
               box.py > cj * 16 && box.ny < cj * 16 + 16 &&
               box.pz > ck * 16 && box.nz < ck * 16 + 16) a.push(box)
@@ -92,7 +96,7 @@ function cellBoxes(ci, cj, ck) {
 }
 
 function updateCollision(blocks) {
-  const p = buildApi.getRoot()?.position
+  const p = wapi().getRoot()?.position
   if (!p) return
   const fc = v => Math.floor(v / 16)
   for (const b of blocks) {
@@ -232,14 +236,14 @@ function fluidOf(b) {
 // fluid surface above the feet in blocks (source = 8/9, falling/waterlogged = full)
 function fluidState() {
   const fy = walk.pos.y + 0.1
-  const b = buildApi.blockAt(walk.pos.x, fy, walk.pos.z)
+  const b = wapi().blockAt(walk.pos.x, fy, walk.pos.z)
   const type = fluidOf(b)
   if (!type) return null
-  const p = buildApi.getRoot()?.position
+  const p = wapi().getRoot()?.position
   if (!p) return null
   const bottom = p.y + Math.round((fy - p.y) / 16) * 16 - 8
   let top
-  if (fluidOf(buildApi.blockAt(walk.pos.x, bottom + 24, walk.pos.z)) === type) {
+  if (fluidOf(wapi().blockAt(walk.pos.x, bottom + 24, walk.pos.z)) === type) {
     top = bottom + 32
   } else {
     const level = /(^|:)(water|lava)$/.test(b.Name || "") ? Number(b.Properties?.level ?? 0) : 0
@@ -260,7 +264,7 @@ function canClimbOut(vx, vz) {
 // the low sample sits just above the feet so you keep climbing until they clear the top block
 function onClimbable() {
   for (const y of [walk.pos.y + 1, walk.pos.y + walk.h * 0.5]) {
-    const b = buildApi.blockAt(walk.pos.x, y, walk.pos.z)
+    const b = wapi().blockAt(walk.pos.x, y, walk.pos.z)
     if (b && CLIMB.test(b.Name || "")) return true
   }
   return false
@@ -365,7 +369,7 @@ function tickSim() {
     // the look direction, diving freely but only pulling upward while submerged
     if (water && fwdKey) {
       const lookY = Math.sin(walk.pitch)
-      const submerged = fluidOf(buildApi.blockAt(walk.pos.x, walk.pos.y + 14.4, walk.pos.z)) === "water"
+      const submerged = fluidOf(wapi().blockAt(walk.pos.x, walk.pos.y + 14.4, walk.pos.z)) === "water"
       if (lookY <= 0 || keys.has("Space") || submerged) {
         walk.vel.y += (lookY * 16 - walk.vel.y) * (lookY < -0.2 ? 0.085 : 0.06)
       }
@@ -424,7 +428,7 @@ function tickSim() {
       walk.vel.x = Math.max(-2.4, Math.min(2.4, walk.vel.x))
       walk.vel.z = Math.max(-2.4, Math.min(2.4, walk.vel.z))
       walk.vel.y = Math.max(walk.vel.y, -2.4)
-      if (walk.crouched && walk.vel.y < 0 && !/scaffolding$/.test(buildApi.blockAt(walk.pos.x, walk.pos.y + 1, walk.pos.z)?.Name || "")) walk.vel.y = 0
+      if (walk.crouched && walk.vel.y < 0 && !/scaffolding$/.test(wapi().blockAt(walk.pos.x, walk.pos.y + 1, walk.pos.z)?.Name || "")) walk.vel.y = 0
     }
     walk.onGround = false
     // guard within a step of ground, not only grounded: stair-step falls must not slip off edges
@@ -441,7 +445,7 @@ function tickSim() {
         // carpets on slime still bounce but slabs mask it), only above one
         // gravity tick of fall speed, suppressed by sneaking; the formula
         // pre-compensates for the gravity and drag the travel step applies next
-        const below = buildApi.blockAt(walk.pos.x, walk.pos.y - 3.2, walk.pos.z)
+        const below = wapi().blockAt(walk.pos.x, walk.pos.y - 3.2, walk.pos.z)
         const name = (below?.Name || "").replace(/^minecraft:/, "")
         const restitution = name === "slime_block" ? 1 : /_bed$/.test(name) ? 0.75 : 0
         if (restitution > 0 && !sneakKey && -walk.vel.y > GRAVITY) {
@@ -479,6 +483,7 @@ const _look = new THREE.Vector3()
 const lerp = (a, b, t) => a + (b - a) * t
 
 function updateWalk(dt) {
+  if (streamApi.state.on) streamApi.tick(walk.pos)
   acc += Math.min(dt, 0.25)
   let n = 0
   while (acc >= TICK && n++ < 10) {
@@ -511,7 +516,7 @@ function updateWalk(dt) {
     perspCam.updateProjectionMatrix()
   }
   perspCam.getWorldDirection(_look)
-  const aim = state.suspended ? null : buildApi.aimDoor(perspCam.position.x, perspCam.position.y, perspCam.position.z, _look.x, _look.y, _look.z)
+  const aim = state.suspended ? null : wapi().aimDoor(perspCam.position.x, perspCam.position.y, perspCam.position.z, _look.x, _look.y, _look.z)
   if (aim) outline.show(aim)
   else outline.hide()
 }
@@ -530,7 +535,7 @@ const unloadGuard = e => {
 }
 
 function enter() {
-  if (state.on || locked.value || !buildApi.getRoot()) return
+  if (state.on || locked.value || !wapi().getRoot()) return
   const canvas = sceneApi.canvas
   if (!canvas) return
   ensureOutline()
@@ -611,6 +616,7 @@ function resume() {
 
 function exit() {
   if (!state.on) return
+  const streaming = streamApi.state.on
   removeEventListener("beforeunload", unloadGuard)
   const perspCam = sceneApi.perspCam
   state.on = false
@@ -641,7 +647,10 @@ function exit() {
   sceneApi.updateProjection()
   sceneApi.controls.update()
   outline?.hide()
+  if (streaming) streamApi.exit()
 }
+
+streamApi.setTilesChanged(() => { collCells = new Map() })
 
 sceneApi.setWalkUpdate(dt => {
   if (!state.on) return false
@@ -727,7 +736,7 @@ addEventListener("mousedown", e => {
   const perspCam = sceneApi.perspCam
   const d = new THREE.Vector3()
   perspCam.getWorldDirection(d)
-  const r = buildApi.interact(perspCam.position.x, perspCam.position.y, perspCam.position.z, d.x, d.y, d.z)
+  const r = wapi().interact(perspCam.position.x, perspCam.position.y, perspCam.position.z, d.x, d.y, d.z)
   if (r?.toggled) updateCollision(r.toggled)
   else if (r?.entity) {
     suspend()

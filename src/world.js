@@ -646,12 +646,13 @@ export async function buildSelection(world, selected, { yMin = -Infinity, yMax =
       const psize = [b.x1 - b.x0, relTop + 1, b.z1 - b.z0]
       mx = Math.max(mx, off[0] + psize[0])
       mz = Math.max(mz, off[2] + psize[2])
-      return { off, size: psize }
+      return { off, size: psize, world: [b.x0, b.z0] }
     })
     size = [mx, relTop + 1, mz]
   }
 
   const out = {
+    worldOrigin: [x0, y0, z0],
     size,
     palette,
     blocks,
@@ -664,6 +665,54 @@ export async function buildSelection(world, selected, { yMin = -Infinity, yMax =
   }
   if (partsOut) out.__parts = partsOut
   return out
+}
+
+// one chunk's blocks in createScene entry form, world block coordinates, for
+// the streaming tiles; block entity nbt rides along so banners/shelves render
+export async function chunkBlocks(world, c, { yMin = -Infinity, yMax = Infinity } = {}) {
+  const nbt = await readChunk(world, c)
+  const blocks = []
+  if (!nbt.sections) return blocks
+  const beMap = new Map()
+  for (const be of nbt.block_entities ?? []) {
+    if (typeof be?.x !== "number") continue
+    const { x, y, z, keepPacked, ...rest } = be
+    beMap.set(`${x},${y},${z}`, plain(rest))
+  }
+  const bx = c.cx * 16, bz = c.cz * 16
+  for (const s of nbt.sections) {
+    const bs = s.block_states
+    const pal = bs?.palette
+    if (!pal || s.Y * 16 + 15 < yMin || s.Y * 16 > yMax) continue
+    const sy = s.Y * 16
+    const entries = pal.map(e => AIR.test(e.Name) ? null : e)
+    const put = (i, e) => {
+      const y = sy + (i >> 8)
+      if (y < yMin || y > yMax) return
+      const pos = [bx + (i & 15), y, bz + ((i >> 4) & 15)]
+      const b = { id: e.Name, pos }
+      if (e.Properties) b.properties = e.Properties
+      const nb = beMap.get(pos.join(","))
+      if (nb) b.nbt = nb
+      blocks.push(b)
+    }
+    if (pal.length === 1) {
+      if (!entries[0]) continue
+      for (let i = 0; i < 4096; i++) put(i, entries[0])
+      continue
+    }
+    const data = bs.data ?? []
+    const bits = Math.max(4, 32 - Math.clz32(pal.length - 1))
+    const vpl = Math.floor(64 / bits)
+    const bigBits = BigInt(bits), mask = (1n << bigBits) - 1n
+    for (let i = 0; i < 4096; i++) {
+      const l = data[(i / vpl) | 0]
+      if (l === undefined) break
+      const e = entries[Number(BigInt.asUintN(64, l) >> (BigInt(i % vpl) * bigBits) & mask)]
+      if (e) put(i, e)
+    }
+  }
+  return blocks
 }
 
 export const GRID = 1024

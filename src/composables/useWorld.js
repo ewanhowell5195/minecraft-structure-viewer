@@ -6,6 +6,8 @@ import { useBuild } from "./useBuild.js"
 import { useStructures } from "./useStructures.js"
 import { cacheFile, uncache } from "../userCache.js"
 
+let lastSelection = null
+let worldFile = null
 const state = reactive({
   active: false,
   name: "",
@@ -158,6 +160,7 @@ async function openWorld(file, cacheIt = true) {
   state.error = ""
   state.busy = true
   state.active = true
+  worldFile = file
   state.name = file.name.replace(/\.(zip|mca)$/i, "")
   state.loading = { done: 0, total: 0 }
   state.rangeWarn = false
@@ -376,6 +379,7 @@ async function loadSelected() {
   const sApi = useStructure()
   sApi.setReading({ done: 0, total: 0, label: "reading chunks" })
   try {
+    lastSelection = null
     const s = await buildSelection(world, selected, { yMin: state.yMin, yMax: state.yMax, budget: ios ? 0.6e9 : 1.6e9 },
       (done, total) => {
         sApi.setReading({ done, total, label: "reading chunks" })
@@ -383,6 +387,7 @@ async function loadSelected() {
       })
     sApi.setReading(null)
     s.dimension = state.dimension
+    lastSelection = { worldOrigin: s.worldOrigin, parts: s.__parts ?? null }
     const n = s.truncated ? s.chunksLoaded : selected.size
     await sApi.loadObject(s, `${state.name} · ${n} chunk${n === 1 ? "" : "s"}`, true)
     if (s.truncated) state.stopped = { loaded: s.chunksLoaded, total: s.chunksTotal }
@@ -474,6 +479,9 @@ export function useWorld() {
     state: readonly(state), openWorld, toggleChunk, isSelected, clearSelection, selectRect, rectHasSelected, selectionBounds, loadSelected, closeWorld,
     hasStructure, readStructureBytes, readMap, hasMap, setYRange, applySuggestedRange,
     getChunks: () => world?.chunks ?? [],
+    getWorld: () => world,
+    getWorldFile: () => worldFile,
+    getLastSelection: () => lastSelection,
     setScanFocus, fillGridWindow, loadForecast, answerMemWarn, restoreLoad, setDimension,
     dismissStopped: () => { state.stopped = null },
     dismissOldWorld: () => { state.oldWorld = false }
