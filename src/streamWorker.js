@@ -116,7 +116,8 @@ async function buildTile(m) {
     for (const b of nb) input.push({ id: b.id, properties: b.properties, pos: [b.pos[0] - origin[0], b.pos[1] - origin[1], b.pos[2] - origin[2]], context: true })
   }
   if (!rawOwn) { self.postMessage({ type: "tile", id: m.id, empty: true }); return }
-  input = dropEnclosed(input, await solidFlags(input))
+  const de = dropEnclosed(input, await solidFlags(input))
+  input = de.blocks
   let tileCount = input.length
   for (let i = 0; i < input.length; i++) if (input[i].context) { tileCount = i; break }
   if (!tileCount) { self.postMessage({ type: "tile", id: m.id, empty: true }); return }
@@ -128,7 +129,8 @@ async function buildTile(m) {
     animate: false,
     sliceMs: 10000,
     batchDynamics: false,
-    sharedAtlas
+    sharedAtlas,
+    externalOcclusion: de.occludes
   })
   if (!handle) { self.postMessage({ type: "tile", id: m.id, empty: true }); return }
   const cellData = new Int32Array(tileCount * 5)

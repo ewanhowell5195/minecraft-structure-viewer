@@ -350,8 +350,11 @@ async function buildTileMain(tx, tz, gen) {
       input.push({ id: b.id, properties: b.properties, pos: [b.pos[0] - origin[0], b.pos[1] - origin[1], b.pos[2] - origin[2]], context: true })
     }
   }
+  let extOcc = null
   if (rawOwn) {
-    input = dropEnclosed(input, await solidFlags(input))
+    const de = dropEnclosed(input, await solidFlags(input))
+    input = de.blocks
+    extOcc = de.occludes
     if (gen !== queueGen) return
   }
   let tileCount = input.length
@@ -368,6 +371,7 @@ async function buildTileMain(tx, tz, gen) {
     animate: false,
     sliceMs: 8,
     sharedAtlas,
+    externalOcclusion: extOcc,
     shouldCancel: () => gen !== queueGen
   })
   if (!handle || gen !== queueGen) {

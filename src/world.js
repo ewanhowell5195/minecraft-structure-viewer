@@ -677,9 +677,9 @@ export async function buildSelection(world, selected, { yMin = -Infinity, yMax =
 }
 
 // drop blocks buried under fully-occluding neighbors on every side. flags[i]
-// marks block i as a full opaque cube. A one-block lining of enclosed blocks
-// stays so the faces of every kept block still find their culling neighbor;
-// the lining's own inward faces render but sit sealed inside the solid mass.
+// marks block i as a full opaque cube. Returns the kept blocks plus an
+// occludes(x,y,z) lookup over the solid mask, which createScene consults
+// (externalOcclusion) so faces against dropped blocks still cull.
 export function dropEnclosed(blocks, flags) {
   let minX = Infinity, minY = Infinity, minZ = Infinity, maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity
   for (const b of blocks) {
@@ -692,7 +692,7 @@ export function dropEnclosed(blocks, flags) {
     if (p[2] > maxZ) maxZ = p[2]
   }
   const w = maxX - minX + 1, h = maxY - minY + 1, d = maxZ - minZ + 1
-  if (!blocks.length || w * h * d > 50_000_000) return blocks
+  if (!blocks.length || w * h * d > 50_000_000) return { blocks, occludes: null }
   const solid = new Uint8Array(w * h * d)
   const at = (x, y, z) => (z * h + y) * w + x
   for (let i = 0; i < blocks.length; i++) {
@@ -708,14 +708,14 @@ export function dropEnclosed(blocks, flags) {
   const out = []
   for (let i = 0; i < blocks.length; i++) {
     const p = blocks[i].pos
-    const x = p[0] - minX, y = p[1] - minY, z = p[2] - minZ
-    if (enc(x, y, z) &&
-        enc(x - 1, y, z) && enc(x + 1, y, z) &&
-        enc(x, y - 1, z) && enc(x, y + 1, z) &&
-        enc(x, y, z - 1) && enc(x, y, z + 1)) continue
+    if (enc(p[0] - minX, p[1] - minY, p[2] - minZ)) continue
     out.push(blocks[i])
   }
-  return out
+  const occludes = (x, y, z) => {
+    const lx = x - minX, ly = y - minY, lz = z - minZ
+    return lx >= 0 && ly >= 0 && lz >= 0 && lx < w && ly < h && lz < d && !!solid[at(lx, ly, lz)]
+  }
+  return { blocks: out, occludes }
 }
 
 // one chunk's blocks in createScene entry form, world block coordinates, for

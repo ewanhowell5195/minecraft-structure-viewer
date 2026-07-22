@@ -1468,6 +1468,7 @@ async function build(structure = source, refit = true, slice = false) {
     // drop blocks buried under fully-occluding neighbors on every side, same as
     // streaming does; buried cells read as absent afterwards (no template, no
     // collision), which only ever affects blocks nothing can reach or see
+    let buriedOcclusion = null
     if (lib.fullyOccludes && inputBlocks.length > 20000) {
       const solidByState = new Map()
       for (const si of new Set(entryState)) {
@@ -1479,15 +1480,16 @@ async function build(structure = source, refit = true, slice = false) {
       if (cancelBuild) return abort()
       const flags = new Uint8Array(inputBlocks.length)
       for (let k = 0; k < entryState.length; k++) flags[k] = solidByState.get(entryState[k]) ? 1 : 0
-      const kept = dropEnclosed(inputBlocks, flags)
-      if (kept.length !== inputBlocks.length) {
+      const de = dropEnclosed(inputBlocks, flags)
+      buriedOcclusion = de.occludes
+      if (de.blocks.length !== inputBlocks.length) {
         const keptIdx = new Map()
-        for (let k = 0; k < kept.length; k++) keptIdx.set(kept[k], k)
+        for (let k = 0; k < de.blocks.length; k++) keptIdx.set(de.blocks[k], k)
         for (let i = 0; i < inputIdx.length; i++) {
           const ii = inputIdx[i]
           if (ii >= 0) inputIdx[i] = keptIdx.get(inputBlocks[ii]) ?? -1
         }
-        inputBlocks = kept
+        inputBlocks = de.blocks
       }
     }
     // frame models ride the main scene mesh as blocks (facing blockstates are a
@@ -1540,6 +1542,7 @@ async function build(structure = source, refit = true, slice = false) {
       ignoreAtlases: true,
       technical: true,
       animate: false,
+      externalOcclusion: buriedOcclusion,
       onProgress: (stage, done, tot) => {
         if (stage.name === "optimize") {
           tOpt ??= performance.now()
