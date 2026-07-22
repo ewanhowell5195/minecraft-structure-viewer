@@ -618,13 +618,16 @@ export async function buildSelection(world, selected, { yMin = -Infinity, yMax =
       if (!pal) continue
       const sy = s.Y * 16 - y0
       const map = pal.map(e => AIR.test(e.Name) ? -1 : stateFor(e))
+      const hasBE = beMap.size > 0
       const put = (i, st) => {
         const y = sy + (i >> 8)
         if (y < 0 || y > relTop) return
         const pos = [bx + (i & 15), y, bz + ((i >> 4) & 15)]
         const b = { state: st, pos }
-        const nb = beMap.get(pos.join(","))
-        if (nb) b.nbt = nb
+        if (hasBE) {
+          const nb = beMap.get(pos.join(","))
+          if (nb) b.nbt = nb
+        }
         blocks.push(b)
       }
       if (pal.length === 1) {
@@ -636,12 +639,21 @@ export async function buildSelection(world, selected, { yMin = -Infinity, yMax =
       const data = bs.data ?? []
       const bits = Math.max(4, 32 - Math.clz32(pal.length - 1))
       const vpl = Math.floor(64 / bits)
-      const bigBits = BigInt(bits), mask = (1n << bigBits) - 1n
-      for (let i = 0; i < 4096; i++) {
-        const l = data[(i / vpl) | 0]
-        if (l === undefined) break
-        const st = map[Number(BigInt.asUintN(64, l) >> (BigInt(i % vpl) * bigBits) & mask)]
-        if (st !== -1 && st !== undefined) put(i, st)
+      const maskN = (1 << bits) - 1
+      const M32 = 0xFFFFFFFFn
+      let i = 0
+      for (let li = 0; li < data.length && i < 4096; li++) {
+        const l = data[li]
+        const lo = Number(l & M32), hi = Number((l >> 32n) & M32)
+        for (let j = 0; j < vpl && i < 4096; j++, i++) {
+          const off = j * bits
+          let v
+          if (off + bits <= 32) v = (lo >>> off) & maskN
+          else if (off >= 32) v = (hi >>> (off - 32)) & maskN
+          else v = ((lo >>> off) | (hi << (32 - off))) & maskN
+          const st = map[v]
+          if (st !== -1 && st !== undefined) put(i, st)
+        }
       }
     }
   }

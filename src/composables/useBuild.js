@@ -1445,20 +1445,35 @@ async function build(structure = source, refit = true, slice = false) {
     let inputBlocks = []
     const entryState = []
     const inputIdx = new Int32Array(structure.blocks.length).fill(-1)
+    const stateCache = new Map()
     for (let i = 0; i < structure.blocks.length; i++) {
       const b = structure.blocks[i]
-      const e = structure.palette[b.state]
-      if (!e?.Name || AIR.test(e.Name) || isOpenable(e) || e.__loaderKey) continue
-      const name = legacyNames.get(e.Name) ?? e.Name
-      const props = fixLegacyProps(name.replace("minecraft:", ""), e.Properties)
-      const entry = { id: name, pos: b.pos }
-      if (props) entry.properties = props
-      if (e.__biome) entry.biome = e.__biome
-      if (b.nbt?.Items && /(^|_)shelf$/.test(name.replace(/^minecraft:/, ""))) {
+      let sc = stateCache.get(b.state)
+      if (sc === undefined) {
+        const e = structure.palette[b.state]
+        if (!e?.Name || AIR.test(e.Name) || isOpenable(e) || e.__loaderKey) sc = null
+        else {
+          const name = legacyNames.get(e.Name) ?? e.Name
+          const short = name.replace(/^minecraft:/, "")
+          sc = {
+            name,
+            props: fixLegacyProps(short, e.Properties),
+            biome: e.__biome,
+            isShelf: /(^|_)shelf$/.test(short),
+            isBanner: /(^|_)banner$/.test(short)
+          }
+        }
+        stateCache.set(b.state, sc)
+      }
+      if (!sc) continue
+      const entry = { id: sc.name, pos: b.pos }
+      if (sc.props) entry.properties = sc.props
+      if (sc.biome) entry.biome = sc.biome
+      if (b.nbt?.Items && sc.isShelf) {
         const items = b.nbt.Items.filter(it => typeof it?.id === "string" && !LIVE_ITEM.test(it.id))
         if (items.length) entry.nbt = { Items: items, align_items_to_bottom: b.nbt.align_items_to_bottom }
       }
-      if ((b.nbt?.patterns || b.nbt?.Patterns) && /(^|_)banner$/.test(name.replace(/^minecraft:/, ""))) {
+      if ((b.nbt?.patterns || b.nbt?.Patterns) && sc.isBanner) {
         entry.nbt = { patterns: b.nbt.patterns ?? b.nbt.Patterns }
       }
       inputIdx[i] = inputBlocks.length
