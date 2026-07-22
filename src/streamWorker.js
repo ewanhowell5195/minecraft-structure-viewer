@@ -3,7 +3,7 @@
 // stealing main-thread frames. The build worker owns the shared atlas; the
 // main thread mirrors its pages from the deltas each tile ships back.
 import * as THREE from "three"
-import { readWorldZip, switchDimension, chunkBlocks, dropEnclosed } from "./world.js"
+import { readWorldZip, switchDimension, chunkBlocks, chunkGrid, mergeTilePalettes, assembleTile } from "./world.js"
 import { loadLibrary } from "./lib.js"
 import { OPENABLE } from "./composables/useStreamDoors.js"
 
@@ -19,12 +19,12 @@ const blockCache = new Map()
 
 const ckey = (cx, cz) => cx + "," + cz
 
-function cachedBlocks(cx, cz) {
+function cachedGrid(cx, cz) {
   const k = ckey(cx, cz)
   let p = blockCache.get(k)
   if (!p) {
     const c = chunkMap.get(k)
-    p = c ? chunkBlocks(world, c, range).catch(() => []) : Promise.resolve([])
+    p = c ? chunkGrid(world, c, range).catch(() => null) : Promise.resolve(null)
     blockCache.set(k, p)
     if (blockCache.size > 48) blockCache.delete(blockCache.keys().next().value)
   } else {
@@ -34,22 +34,15 @@ function cachedBlocks(cx, cz) {
   return p
 }
 
-// full-opaque-cube flags per block, cached by palette identity (chunkBlocks
-// shares each palette entry's Properties object across its blocks)
 const solidByKey = new Map()
-async function solidFlags(blocks) {
-  const flags = new Uint8Array(blocks.length)
-  for (let i = 0; i < blocks.length; i++) {
-    const b = blocks[i]
-    const key = b.properties ?? b.id
-    let v = solidByKey.get(key)
-    if (v === undefined) {
-      v = await lib.fullyOccludes({ id: b.id, properties: b.properties, assets }).catch(() => false)
-      solidByKey.set(key, v)
-    }
-    flags[i] = v ? 1 : 0
+async function entrySolid(e) {
+  const key = e.id + "|" + (e.properties ? JSON.stringify(e.properties) : "")
+  let v = solidByKey.get(key)
+  if (v === undefined) {
+    v = await lib.fullyOccludes({ id: e.id, properties: e.properties ?? undefined, assets }).catch(() => false)
+    solidByKey.set(key, v)
   }
-  return flags
+  return v
 }
 
 const isPlane = el => el?.from && (el.from[0] === el.to[0] || el.from[1] === el.to[1] || el.from[2] === el.to[2])
@@ -103,35 +96,28 @@ function templateBoxes(tmpl) {
 async function buildTile(m) {
   const TILE = cfg.tile, origin = cfg.origin
   const x0 = m.tx * TILE, z0 = m.tz * TILE
-  const ownF = [], ctxF = []
-  for (let dx = -1; dx <= TILE; dx++) for (let dz = -1; dz <= TILE; dz++) {
-    const own = dx >= 0 && dx < TILE && dz >= 0 && dz < TILE
-    ;(own ? ownF : ctxF).push(cachedBlocks(x0 + dx, z0 + dz))
+  const gcx0 = x0 - 1, gcz0 = z0 - 1
+  const fetches = []
+  for (let dz = -1; dz <= TILE; dz++) for (let dx = -1; dx <= TILE; dx++) fetches.push(cachedGrid(x0 + dx, z0 + dz))
+  const chunkGrids = (await Promise.all(fetches)).filter(cg => cg && !cg.empty)
+  const anyOwn = chunkGrids.some(cg => cg.cx >= x0 && cg.cx < x0 + TILE && cg.cz >= z0 && cg.cz < z0 + TILE)
+  if (!anyOwn) { self.postMessage({ type: "tile", id: m.id, empty: true }); return }
+  const { globalPalette, maps } = mergeTilePalettes(chunkGrids)
+  const solidArr = new Uint8Array(globalPalette.length + 1)
+  const doorArr = new Uint8Array(globalPalette.length + 1)
+  for (let i = 0; i < globalPalette.length; i++) {
+    const e = globalPalette[i]
+    doorArr[i + 1] = e.properties && "open" in e.properties && OPENABLE.test(e.id) ? 1 : 0
+    solidArr[i + 1] = (await entrySolid(e)) ? 1 : 0
   }
-  let input = []
-  for (const own of await Promise.all(ownF)) {
-    for (const b of own) input.push({ ...b, pos: [b.pos[0] - origin[0], b.pos[1] - origin[1], b.pos[2] - origin[2]] })
-  }
-  const rawOwn = input.length
-  for (const nb of await Promise.all(ctxF)) {
-    for (const b of nb) input.push({ id: b.id, properties: b.properties, pos: [b.pos[0] - origin[0], b.pos[1] - origin[1], b.pos[2] - origin[2]], context: true })
-  }
-  if (!rawOwn) { self.postMessage({ type: "tile", id: m.id, empty: true }); return }
-  const doors = []
-  const undoored = []
-  for (let i = 0; i < input.length; i++) {
-    const b = input[i]
-    if (i < rawOwn && b.properties && "open" in b.properties && OPENABLE.test(b.id)) {
-      doors.push({ pos: b.pos, id: b.id, properties: b.properties })
-      continue
-    }
-    undoored.push(b)
-  }
-  input = undoored
-  const de = dropEnclosed(input, await solidFlags(input))
-  input = de.blocks
-  let tileCount = input.length
-  for (let i = 0; i < input.length; i++) if (input[i].context) { tileCount = i; break }
+  const at = assembleTile({
+    chunkGrids, maps, globalPalette, solidArr, doorArr, gcx0, gcz0,
+    chunksAcross: TILE + 2, yMin: range.yMin, yMax: range.yMax, origin,
+    ownTest: (lx, lz) => lx >= 16 && lz >= 16 && lx < (TILE + 1) * 16 && lz < (TILE + 1) * 16
+  })
+  const input = at.input
+  const tileCount = at.tileCount
+  const doors = at.doors
   if (!tileCount) { self.postMessage({ type: "tile", id: m.id, empty: true }); return }
   const handle = await lib.createScene(assets, input, {
     lighting: cfg.lightOff ? { dimension: cfg.dimension, daytime: cfg.daytime, light: false } : { dimension: cfg.dimension, daytime: cfg.daytime },
@@ -142,7 +128,7 @@ async function buildTile(m) {
     sliceMs: 10000,
     batchDynamics: false,
     sharedAtlas,
-    externalOcclusion: de.occludes
+    externalOcclusion: at.occludes
   })
   if (!handle) { self.postMessage({ type: "tile", id: m.id, empty: true }); return }
   const cellData = new Int32Array(tileCount * 5)
@@ -168,16 +154,12 @@ async function buildTile(m) {
   for (const ti of Object.keys(softs)) softs[ti] = await softs[ti]
   const cells = cellData.slice(0, cn)
   const palette = handle.palette.map(p => ({ id: p.id, properties: p.properties ?? null }))
-  let buried = null
-  if (de.occludes) {
-    const ox = x0 * 16 - origin[0], oz = z0 * 16 - origin[2], oy = range.yMin
-    const gw = TILE * 16, gh = range.yMax - range.yMin + 1
-    buried = new Uint8Array(Math.ceil(gw * gw * gh / 8))
-    for (let ly = 0; ly < gh; ly++) for (let lz = 0; lz < gw; lz++) for (let lx = 0; lx < gw; lx++) {
-      if (de.occludes(ox + lx, oy + ly, oz + lz)) {
-        const bi = (ly * gw + lz) * gw + lx
-        buried[bi >> 3] |= 1 << (bi & 7)
-      }
+  const gw = TILE * 16, gh = at.H, W = at.W
+  const buried = new Uint8Array(Math.ceil(gw * gw * gh / 8))
+  for (let ly = 0; ly < gh; ly++) for (let lz = 0; lz < gw; lz++) for (let lx = 0; lx < gw; lx++) {
+    if (solidArr[at.tile[(ly * W + lz + 16) * W + lx + 16]]) {
+      const bi = (ly * gw + lz) * gw + lx
+      buried[bi >> 3] |= 1 << (bi & 7)
     }
   }
   const packed = await lib.packScene(handle, { sharedAtlas })

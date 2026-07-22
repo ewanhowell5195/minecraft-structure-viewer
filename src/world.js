@@ -789,6 +789,167 @@ export async function chunkBlocks(world, c, { yMin = -Infinity, yMax = Infinity 
   return blocks
 }
 
+// dense columnar chunk for streaming: palette plus a Uint16Array grid of
+// palette index + 1 (0 = air), laid out y-major then (z*16 + x). No per-block
+// objects; entries materialize later, only for cells that survive filtering
+export async function chunkGrid(world, c, { yMin, yMax }) {
+  const nbt = await readChunk(world, c)
+  const h = yMax - yMin + 1
+  const grid = new Uint16Array(256 * h)
+  const palette = []
+  const palKey = new Map()
+  const beList = []
+  let any = false
+  if (nbt.sections) {
+    for (const be of nbt.block_entities ?? []) {
+      if (typeof be?.x !== "number" || be.y < yMin || be.y > yMax) continue
+      const { x, y, z, keepPacked, ...rest } = be
+      beList.push({ x, y, z, nbt: plain(rest) })
+    }
+    for (const s of nbt.sections) {
+      const bs = s.block_states
+      const pal = bs?.palette
+      if (!pal || s.Y * 16 + 15 < yMin || s.Y * 16 > yMax) continue
+      const sy = s.Y * 16
+      const map = pal.map(e => {
+        if (AIR.test(e.Name)) return 0
+        const k = e.Name + "|" + (e.Properties ? JSON.stringify(e.Properties) : "")
+        let gi = palKey.get(k)
+        if (gi === undefined) {
+          gi = palette.length + 1
+          palKey.set(k, gi)
+          palette.push({ id: e.Name, properties: e.Properties ?? null })
+        }
+        return gi
+      })
+      const yLo = Math.max(0, yMin - sy), yHi = Math.min(15, yMax - sy)
+      if (pal.length === 1) {
+        if (!map[0]) continue
+        for (let y = yLo; y <= yHi; y++) grid.fill(map[0], (sy + y - yMin) * 256, (sy + y - yMin) * 256 + 256)
+        any = true
+        continue
+      }
+      const data = bs.data ?? []
+      const bits = Math.max(4, 32 - Math.clz32(pal.length - 1))
+      const vpl = Math.floor(64 / bits)
+      const maskN = (1 << bits) - 1
+      const longs = data.length >> 1
+      let i = 0
+      for (let li = 0; li < longs && i < 4096; li++) {
+        const lo = data[li * 2], hi = data[li * 2 + 1]
+        for (let j = 0; j < vpl && i < 4096; j++, i++) {
+          const off = j * bits
+          let v
+          if (off + bits <= 32) v = (lo >>> off) & maskN
+          else if (off >= 32) v = (hi >>> (off - 32)) & maskN
+          else v = ((lo >>> off) | (hi << (32 - off))) & maskN
+          const gi = map[v]
+          if (!gi) continue
+          const y = i >> 8
+          if (y < yLo || y > yHi) continue
+          grid[(sy + y - yMin) * 256 + (i & 255)] = gi
+          any = true
+        }
+      }
+    }
+  }
+  return { cx: c.cx, cz: c.cz, palette, grid, h, yMin, beList, empty: !any }
+}
+
+// merge chunk palettes into one tile palette; returns per-chunk local->global maps
+export function mergeTilePalettes(chunkGrids) {
+  const globalPalette = []
+  const key = new Map()
+  const maps = chunkGrids.map(cg => {
+    const m = new Int32Array(cg.palette.length + 1)
+    for (let i = 0; i < cg.palette.length; i++) {
+      const e = cg.palette[i]
+      const k = e.id + "|" + (e.properties ? JSON.stringify(e.properties) : "")
+      let gi = key.get(k)
+      if (gi === undefined) {
+        gi = globalPalette.length + 1
+        key.set(k, gi)
+        globalPalette.push(e)
+      }
+      m[i + 1] = gi
+    }
+    return m
+  })
+  return { globalPalette, maps }
+}
+
+// combines own + ring chunk grids into one volume, drops buried cells, and
+// materializes createScene entries only for survivors (own entries first).
+// solidArr/doorArr are per global-palette-index (+1) flags
+export function assembleTile({ chunkGrids, maps, globalPalette, solidArr, doorArr, gcx0, gcz0, chunksAcross, yMin, yMax, origin, ownTest }) {
+  const W = chunksAcross * 16
+  const H = yMax - yMin + 1
+  const tile = new Uint16Array(W * H * W)
+  for (let n = 0; n < chunkGrids.length; n++) {
+    const cg = chunkGrids[n]
+    if (cg.empty) continue
+    const m = maps[n]
+    const bx = (cg.cx - gcx0) * 16, bz = (cg.cz - gcz0) * 16
+    for (let ly = 0; ly < H; ly++) {
+      const src = ly * 256
+      const dst = (ly * W + bz) * W + bx
+      for (let z = 0; z < 16; z++) {
+        const s = src + z * 16, d = dst + z * W
+        for (let x = 0; x < 16; x++) {
+          const gi = cg.grid[s + x]
+          if (gi) tile[d + x] = m[gi]
+        }
+      }
+    }
+  }
+  const solidAt = i => solidArr[tile[i]]
+  const enc = (lx, ly, lz) =>
+    lx > 0 && ly > 0 && lz > 0 && lx < W - 1 && ly < H - 1 && lz < W - 1 &&
+    solidAt(((ly * W) + lz) * W + lx - 1) && solidAt(((ly * W) + lz) * W + lx + 1) &&
+    solidAt((((ly - 1) * W) + lz) * W + lx) && solidAt((((ly + 1) * W) + lz) * W + lx) &&
+    solidAt(((ly * W) + lz - 1) * W + lx) && solidAt(((ly * W) + lz + 1) * W + lx)
+  const beMap = new Map()
+  for (const cg of chunkGrids) {
+    for (const be of cg.beList) beMap.set(be.x + "," + be.y + "," + be.z, be.nbt)
+  }
+  const wx0 = gcx0 * 16, wz0 = gcz0 * 16
+  const own = [], ctx = [], doors = []
+  for (let ly = 0; ly < H; ly++) {
+    for (let lz = 0; lz < W; lz++) {
+      const row = (ly * W + lz) * W
+      for (let lx = 0; lx < W; lx++) {
+        const gi = tile[row + lx]
+        if (!gi || enc(lx, ly, lz)) continue
+        const e = globalPalette[gi - 1]
+        const wx = wx0 + lx, wy = yMin + ly, wz = wz0 + lz
+        const pos = [wx - origin[0], wy - origin[1], wz - origin[2]]
+        const isOwn = ownTest(lx, lz)
+        if (isOwn && doorArr[gi]) {
+          doors.push({ pos, id: e.id, properties: e.properties ?? undefined })
+          continue
+        }
+        const entry = { id: e.id, pos }
+        if (e.properties) entry.properties = e.properties
+        if (isOwn) {
+          if (beMap.size) {
+            const nb = beMap.get(wx + "," + wy + "," + wz)
+            if (nb) entry.nbt = nb
+          }
+          own.push(entry)
+        } else {
+          entry.context = true
+          ctx.push(entry)
+        }
+      }
+    }
+  }
+  const occludes = (x, y, z) => {
+    const lx = x + origin[0] - wx0, ly = y + origin[1] - yMin, lz = z + origin[2] - wz0
+    return lx >= 0 && ly >= 0 && lz >= 0 && lx < W && ly < H && lz < W && !!solidArr[tile[(ly * W + lz) * W + lx]]
+  }
+  return { input: own.concat(ctx), tileCount: own.length, doors, occludes, tile, W, H }
+}
+
 export const GRID = 1024
 
 const VERT = `#version 300 es
