@@ -220,10 +220,32 @@ async function restoreCachedPacks() {
 
 const allSources = () => state.packs.map(p => bytesById.get(p.id)).concat(baseBytes, builtinBytes, featureBytes).filter(Boolean)
 
+// stable identity of the loaded source set, for keying persisted per-state
+// caches; full content hashes, memoized per byte buffer
+const fnvMemo = new WeakMap()
+function fnvHash(bytes) {
+  if (!bytes) return "0"
+  let h = fnvMemo.get(bytes)
+  if (h === undefined) {
+    let v = 2166136261
+    for (let i = 0; i < bytes.length; i++) { v ^= bytes[i]; v = Math.imul(v, 16777619) }
+    h = (v >>> 0).toString(36) + "-" + bytes.length
+    fnvMemo.set(bytes, h)
+  }
+  return h
+}
+const sourcesIdentity = () => [
+  "v1",
+  state.baseId || "nobase",
+  ...state.packs.map(p => p.name + "~" + fnvHash(bytesById.get(p.id))),
+  "b:" + fnvHash(builtinBytes),
+  "f:" + fnvHash(featureBytes)
+].join("|")
+
 // the vanilla jar is excluded on purpose: minecraft features list only from
 // the bundle, so anything the tools removed stays gone on snapshot jars too
 const featureSources = () => state.packs.map(p => bytesById.get(p.id)).concat(builtinBytes, featureBytes).filter(Boolean)
 
 export function usePacks() {
-  return { state: readonly(state), assets, loadBase, setChannel, addPacks, addUrlPacks, removePack, movePack, restoreCachedPacks, allSources, featureSources, setSwapHandler }
+  return { state: readonly(state), assets, loadBase, setChannel, addPacks, addUrlPacks, removePack, movePack, restoreCachedPacks, allSources, featureSources, sourcesIdentity, setSwapHandler }
 }

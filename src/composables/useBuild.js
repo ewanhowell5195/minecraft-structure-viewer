@@ -15,6 +15,7 @@ import { drawFakeMap, prepareFakeMapArea, randomiseFakeMapWorld } from "../mapge
 import { useWorld } from "./useWorld.js"
 import { useBooks } from "./useBooks.js"
 import { minimal } from "../minimal.js"
+import { loadStateCache, saveStateCache } from "../stateCache.js"
 
 const packs = usePacks()
 const sceneApi = useScene()
@@ -1349,6 +1350,42 @@ function cancel() {
   state.status = "cancelling…"
 }
 
+// persisted occlusion masks: import once per assets instance before the first
+// build, save back (debounced) when a build grew the cache
+const occState = new WeakMap()
+async function ensureOcclusionCache(lib, assets) {
+  if (!lib.importOcclusionCache) return
+  let st = occState.get(assets)
+  if (st) return st.ready
+  st = {}
+  occState.set(assets, st)
+  st.ready = (async () => {
+    try {
+      st.key = packs.sourcesIdentity()
+      const entries = await loadStateCache(st.key)
+      if (entries) await lib.importOcclusionCache(assets, entries)
+      st.saved = entries?.length ?? 0
+    } catch {}
+  })()
+  return st.ready
+}
+let occSaveTimer = null
+function scheduleOcclusionSave(lib, assets) {
+  const st = occState.get(assets)
+  if (!st?.key || !lib.exportOcclusionCache) return
+  clearTimeout(occSaveTimer)
+  occSaveTimer = setTimeout(async () => {
+    try {
+      if (packs.assets.value !== assets) return
+      const entries = await lib.exportOcclusionCache(assets)
+      if (entries.length > (st.saved ?? 0) + 8) {
+        await saveStateCache(st.key, entries)
+        st.saved = entries.length
+      }
+    } catch {}
+  }, 2500)
+}
+
 // true when a build landed, false when cancelled
 async function build(structure = source, refit = true, slice = false) {
   const assets = packs.assets.value
@@ -1388,6 +1425,7 @@ async function build(structure = source, refit = true, slice = false) {
     state.dimension = buildDim
     await resolveLegacyNames(structure, lib, assets)
     await precomputeMapArt(structure, lib, assets)
+    await ensureOcclusionCache(lib, assets)
 
     // flood filled over what actually builds, so a slice relights; oversized scenes skip it
     if (state.lighting === "world" && !state.fullbright && lib.computeSceneLight && (sx + 2) * (sy + 2) * (sz + 2) <= 48000000) {
@@ -1797,6 +1835,7 @@ async function build(structure = source, refit = true, slice = false) {
     }
     applyTechnicalVisibility()
     useBooks().refresh()
+    scheduleOcclusionSave(lib, assets)
     state.status = ""
     // a new source (or a full build of the same one) invalidates the kept full build
     if (prevSource !== source || !slicedApplied) discardFull()

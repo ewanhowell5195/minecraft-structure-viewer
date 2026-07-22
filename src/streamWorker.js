@@ -184,6 +184,7 @@ self.onmessage = async e => {
     } else if (m.type === "initBuild") {
       lib = await loadLibrary()
       assets = await lib.prepareAssets(m.sources, { cache: true })
+      if (m.occl) await lib.importOcclusionCache?.(assets, m.occl).catch(() => {})
       sharedAtlas = lib.createSharedAtlas()
       cfg = m.cfg
       self.postMessage({ type: "buildReady", id: m.id })

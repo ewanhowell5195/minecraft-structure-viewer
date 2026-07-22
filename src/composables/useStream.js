@@ -28,6 +28,7 @@ let root = null
 let lib = null
 let assets = null
 let sharedAtlas = null
+let occlSeed = null
 let world = null
 let origin = null            // [blockX, blockY, blockZ] of the spawn chunk corner
 let yRange = null
@@ -144,6 +145,7 @@ function startBuildWorkers(file, dim, count = Math.min(3, Math.max(1, Math.floor
         w.postMessage({
           type: "initBuild", id: 0,
           sources: packs2().allSources(),
+          occl: occlSeed,
           cfg: { origin, tile: TILE, dimension, daytime, lightOff }
         })
         return
@@ -725,6 +727,7 @@ async function enter() {
   state.on = true
   state.preparing = true
   queueGen++
+  occlSeed = await lib.exportOcclusionCache?.(assets).catch(() => null) ?? null
   const wfile = w.getWorldFile()
   if (wfile) {
     startWorkers(wfile, ws.dimension)
