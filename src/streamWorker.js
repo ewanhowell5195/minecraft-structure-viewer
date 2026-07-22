@@ -100,7 +100,7 @@ async function buildTile(m) {
     ignoreAtlases: true,
     technical: false,
     animate: false,
-    sliceMs: 50,
+    sliceMs: 10000,
     batchDynamics: false,
     sharedAtlas
   })
