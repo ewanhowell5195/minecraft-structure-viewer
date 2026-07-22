@@ -22,7 +22,7 @@ const sceneApi2 = () => _scene ??= useScene()
 const buildApi2 = () => _build ??= useBuild()
 const packs2 = () => _packs ??= usePacks()
 
-const state = reactive({ on: false, tiles: 0, pending: 0 })
+const state = reactive({ on: false, tiles: 0, pending: 0, preparing: false })
 
 let root = null
 let lib = null
@@ -353,6 +353,9 @@ async function buildTileWorker(tx, tz, gen) {
   try { await sceneApi2().renderer.compileAsync(revived.group, sceneApi2().perspCam, sceneApi2().scene) } catch {}
   if (gen !== queueGen) { revived.dispose(); return }
   root.add(revived.group)
+  // tiles never move, so drop their subtree from three's per-frame matrix walk
+  revived.group.updateWorldMatrix(true, true)
+  revived.group.matrixWorldAutoUpdate = false
   tiles.set(ckey(tx, tz), tile)
   state.tiles = tiles.size
   onTilesChanged?.()
@@ -438,6 +441,8 @@ async function buildTileMain(tx, tz, gen) {
   try { await sceneApi2().renderer.compileAsync(handle.group, sceneApi2().perspCam, sceneApi2().scene) } catch {}
   if (gen !== queueGen) { try { handle.dispose?.() } catch {} return }
   root.add(handle.group)
+  handle.group.updateWorldMatrix(true, true)
+  handle.group.matrixWorldAutoUpdate = false
   tiles.set(ckey(tx, tz), tile)
   state.tiles = tiles.size
   onTilesChanged?.()
@@ -704,6 +709,7 @@ async function enter() {
   origin = [scx * 16, 0, scz * 16]
 
   state.on = true
+  state.preparing = true
   queueGen++
   const wfile = w.getWorldFile()
   if (wfile) {
@@ -720,7 +726,11 @@ async function enter() {
 
   spawned = false
   playerTile = [Math.floor(scx / TILE), Math.floor(scz / TILE)]
-  await buildTile(playerTile[0], playerTile[1], queueGen)
+  try {
+    await buildTile(playerTile[0], playerTile[1], queueGen)
+  } finally {
+    state.preparing = false
+  }
   spawned = true
   const sgx = Math.min(scx * 16 + 15, Math.max(scx * 16, Math.floor(wxb))) - origin[0]
   const sgz = Math.min(scz * 16 + 15, Math.max(scz * 16, Math.floor(wzb))) - origin[2]
@@ -748,6 +758,7 @@ function tick(pos) {
 async function exit() {
   if (!state.on) return
   state.on = false
+  state.preparing = false
   queueGen++
   playerTile = null
   stopWorkers()
