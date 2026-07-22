@@ -432,6 +432,60 @@ function plain(v) {
   return v
 }
 
+// disconnected chunk islands load like separate structures: each keeps its own
+// grid, and the empty space between them collapses to the multi-structure
+// spacing while every island keeps its compass direction from the others
+function chunkIslands(chunks) {
+  const byKey = new Map(chunks.map(c => [c.cx + "," + c.cz, c]))
+  const seen = new Set()
+  const islands = []
+  for (const c of chunks) {
+    const k0 = c.cx + "," + c.cz
+    if (seen.has(k0)) continue
+    seen.add(k0)
+    const island = []
+    const stack = [c]
+    while (stack.length) {
+      const cur = stack.pop()
+      island.push(cur)
+      for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) {
+        if (!dx && !dz) continue
+        const k = (cur.cx + dx) + "," + (cur.cz + dz)
+        const n = byKey.get(k)
+        if (n && !seen.has(k)) { seen.add(k); stack.push(n) }
+      }
+    }
+    islands.push(island)
+  }
+  return islands
+}
+
+// collapse the unoccupied runs of an axis to the packing gap, monotonically so
+// relative order (and so direction) between islands is preserved
+function axisCollapse(intervals, gap) {
+  const merged = []
+  for (const iv of [...intervals].sort((a, b) => a[0] - b[0])) {
+    const last = merged[merged.length - 1]
+    if (last && iv[0] <= last[1]) last[1] = Math.max(last[1], iv[1])
+    else merged.push([...iv])
+  }
+  const runs = []
+  let shift = 0, prevEnd = null
+  for (const [start, end] of merged) {
+    if (prevEnd !== null) shift += start - prevEnd - gap
+    runs.push([start, shift])
+    prevEnd = end
+  }
+  return x => {
+    let out = 0
+    for (const [start, sh] of runs) {
+      if (x >= start) out = sh
+      else break
+    }
+    return out
+  }
+}
+
 export async function buildSelection(world, selected, { yMin = -Infinity, yMax = Infinity, budget = Infinity, cap = Infinity } = {}, onProgress) {
   const chunks = world.chunks.filter(c => selected.has(c.cx + "," + c.cz))
   if (!chunks.length) throw new Error("no chunks selected")
@@ -440,6 +494,30 @@ export async function buildSelection(world, selected, { yMin = -Infinity, yMax =
   for (const c of chunks) {
     minCx = Math.min(minCx, c.cx); maxCx = Math.max(maxCx, c.cx)
     minCz = Math.min(minCz, c.cz); maxCz = Math.max(maxCz, c.cz)
+  }
+
+  const islands = chunkIslands(chunks)
+  const chunkShift = new Map()
+  let parts = null
+  if (islands.length > 1) {
+    const GAPB = 9
+    const bounds = islands.map(island => {
+      let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity
+      for (const c of island) {
+        x0 = Math.min(x0, c.cx); x1 = Math.max(x1, c.cx)
+        z0 = Math.min(z0, c.cz); z1 = Math.max(z1, c.cz)
+      }
+      return { x0: x0 * 16, x1: (x1 + 1) * 16, z0: z0 * 16, z1: (z1 + 1) * 16 }
+    })
+    const shiftX = axisCollapse(bounds.map(b => [b.x0, b.x1]), GAPB)
+    const shiftZ = axisCollapse(bounds.map(b => [b.z0, b.z1]), GAPB)
+    parts = []
+    for (let i = 0; i < islands.length; i++) {
+      const b = bounds[i]
+      const sx = shiftX(b.x0), sz = shiftZ(b.z0)
+      for (const c of islands[i]) chunkShift.set(c.cx + "," + c.cz, [sx, sz])
+      parts.push({ b, sx, sz })
+    }
   }
   const inRange = s => s.Y * 16 + 15 >= yMin && s.Y * 16 <= yMax
   // two passes re-reading each chunk so only one parsed NBT lives at a time:
@@ -511,17 +589,19 @@ export async function buildSelection(world, selected, { yMin = -Infinity, yMax =
         // the user's y range, not the terrain's: flying entities sit above the
         // highest block and would vanish under the derived top
         if (!Array.isArray(p) || p[1] < yMin || p[1] > yMax + 1) continue
-        entities.push({ pos: [p[0] - x0, p[1] - y0, p[2] - z0], nbt: plain(e) })
+        const [esx, esz] = chunkShift.get(c.cx + "," + c.cz) ?? [0, 0]
+        entities.push({ pos: [p[0] - x0 - esx, p[1] - y0, p[2] - z0 - esz], nbt: plain(e) })
       }
     }
     const nbt = await readChunk(world, c)
+    const [csx, csz] = chunkShift.get(c.cx + "," + c.cz) ?? [0, 0]
     const beMap = new Map()
     for (const be of nbt.block_entities ?? []) {
       if (typeof be?.x !== "number") continue
       const { x, y, z, keepPacked, ...rest } = be
-      beMap.set(`${x - x0},${y - y0},${z - z0}`, plain(rest))
+      beMap.set(`${x - x0 - csx},${y - y0},${z - z0 - csz}`, plain(rest))
     }
-    const bx = c.cx * 16 - x0, bz = c.cz * 16 - z0
+    const bx = c.cx * 16 - x0 - csx, bz = c.cz * 16 - z0 - csz
     for (const s of nbt.sections ?? []) {
       if (s.Y < minSec || s.Y > maxSec || !inRange(s)) continue
       const bs = s.block_states
@@ -557,8 +637,22 @@ export async function buildSelection(world, selected, { yMin = -Infinity, yMax =
     }
   }
 
-  return {
-    size: [(maxCx - minCx + 1) * 16, relTop + 1, (maxCz - minCz + 1) * 16],
+  let size = [(maxCx - minCx + 1) * 16, relTop + 1, (maxCz - minCz + 1) * 16]
+  let partsOut
+  if (parts) {
+    let mx = 0, mz = 0
+    partsOut = parts.map(({ b, sx, sz }) => {
+      const off = [b.x0 - x0 - sx, 0, b.z0 - z0 - sz]
+      const psize = [b.x1 - b.x0, relTop + 1, b.z1 - b.z0]
+      mx = Math.max(mx, off[0] + psize[0])
+      mz = Math.max(mz, off[2] + psize[2])
+      return { off, size: psize }
+    })
+    size = [mx, relTop + 1, mz]
+  }
+
+  const out = {
+    size,
     palette,
     blocks,
     entities,
@@ -568,6 +662,8 @@ export async function buildSelection(world, selected, { yMin = -Infinity, yMax =
     chunksLoaded: loaded,
     chunksTotal: chunks.length
   }
+  if (partsOut) out.__parts = partsOut
+  return out
 }
 
 export const GRID = 1024
