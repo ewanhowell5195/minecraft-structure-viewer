@@ -384,12 +384,34 @@ function disposeTile(k) {
   onTilesChanged?.()
 }
 
+// in-frustum tiles build first (nearest-first middle-out within each group);
+// the rest wait until the visible set is done. Re-evaluated every pump loop,
+// so turning re-prioritizes what loads next
+const _frustum = new THREE.Frustum()
+const _frustumM = new THREE.Matrix4()
+const _tileBox = new THREE.Box3()
 function desired(tx, tz) {
+  const cam = sceneApi2().perspCam
+  let fr = null
+  if (cam) {
+    cam.updateMatrixWorld(true)
+    _frustum.setFromProjectionMatrix(_frustumM.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse))
+    fr = _frustum
+  }
   const out = []
   for (let dx = -RENDER_DIST; dx <= RENDER_DIST; dx++) {
     for (let dz = -RENDER_DIST; dz <= RENDER_DIST; dz++) {
       const k = ckey(tx + dx, tz + dz)
-      if (tileSet.has(k) && !tiles.has(k)) out.push([tx + dx, tz + dz, dx * dx + dz * dz])
+      if (!tileSet.has(k) || tiles.has(k)) continue
+      let vis = 0
+      if (fr) {
+        const bx = ((tx + dx) * TILE * 16 - origin[0]) * 16
+        const bz = ((tz + dz) * TILE * 16 - origin[2]) * 16
+        _tileBox.min.set(bx, yRange.yMin * 16, bz)
+        _tileBox.max.set(bx + TILE * 256, (yRange.yMax + 1) * 16, bz + TILE * 256)
+        vis = fr.intersectsBox(_tileBox) ? 0 : 1
+      }
+      out.push([tx + dx, tz + dz, vis * 1000 + dx * dx + dz * dz])
     }
   }
   out.sort((a, b) => a[2] - b[2])
