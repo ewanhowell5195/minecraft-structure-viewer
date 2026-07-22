@@ -59,7 +59,13 @@ const EMPTY = { size: [1, 1, 1], palette: [], blocks: [], entities: [] }
 const streamAnimator = {
   schedules: [],
   version: -1,
+  lastTick: -1,
   update() {
+    // animations run at game tick rates; evaluating at display refresh burns
+    // main-thread time for identical frames, so cap evaluation at ~60Hz
+    const tick = Math.floor(performance.now() / 16)
+    if (tick === this.lastTick) return
+    this.lastTick = tick
     let v = sharedAtlas?.serial ?? 0
     for (const b of buildWorkers) v += b.mirror?.regionsVersion ?? 0
     if (v !== this.version) {
