@@ -311,7 +311,7 @@ function syncAspect() {
 }
 
 // also check the buffer itself: browsers can shrink or drop a hidden tab's backing store
-let sizeW = 0, sizeH = 0
+let sizeW = 0, sizeH = 0, needResize = true
 function resize() {
   const w = canvas.clientWidth, h = canvas.clientHeight
   const ratio = Math.min(window.devicePixelRatio * 2, 4)
@@ -324,17 +324,27 @@ function resize() {
     syncAspect()
   }
 }
+// clientWidth reads force layout, so the per-frame path avoids them: the
+// observer flags real size changes and the buffer check runs on cached sizes
+function resizeIfNeeded() {
+  const ratio = Math.min(window.devicePixelRatio * 2, 4)
+  if (needResize || renderer.getPixelRatio() !== ratio || canvas.width !== Math.floor(sizeW * ratio)) {
+    needResize = false
+    resize()
+  }
+}
 
 function init(canvasEl) {
   canvas = canvasEl
   renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: false })
+  renderer.debug.checkShaderErrors = false
   renderer.setPixelRatio(Math.min(window.devicePixelRatio * 2, 4))
   renderer.localClippingEnabled = true
   controls = new OrbitControls(camera, canvas)
   controls.enableDamping = true
   controls.addEventListener("start", () => { if (camera === orthoCam && !orthoManual) setOrtho(false) })
   setGrids([{ x: -128, z: -128, y: -8.01, w: 16, d: 16 }])
-  new ResizeObserver(resize).observe(canvas)
+  new ResizeObserver(() => { needResize = true }).observe(canvas)
 
   watch(() => view.wireframe, () => {
     if (gridGroup) gridGroup.visible = gridVisible()
@@ -347,7 +357,7 @@ function init(canvasEl) {
     const now = performance.now()
     const dt = (now - lastT) / 1000
     lastT = now
-    resize()
+    resizeIfNeeded()
     if (!walkUpdate?.(dt)) controls.update()
     updateClips()
     updateGridLabels()
