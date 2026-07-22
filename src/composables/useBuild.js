@@ -1038,11 +1038,16 @@ function rayBoxT(ox, oy, oz, dx, dy, dz, x0, y0, z0, x1, y1, z1) {
 let collBoxCache = new Map()
 let aimBoxCache = new Map()
 const _cb = new THREE.Box3()
-function templateBoxes(tmpl, arr) {
+function templateBoxes(tmpl, arr, skipFluid = false) {
+  const inFluid = o => {
+    for (let p = o; p && p !== tmpl; p = p.parent) if (p.userData?.model?.fluid) return true
+    return false
+  }
   tmpl.updateMatrixWorld(true)
   tmpl.traverse(o => {
     const coll = o.userData.collision
     if (coll) {
+      if (skipFluid && inFluid(o)) return
       for (const c of coll) {
         _cb.min.set(c[0], c[1], c[2])
         _cb.max.set(c[3], c[4], c[5])
@@ -1052,6 +1057,7 @@ function templateBoxes(tmpl, arr) {
       return
     }
     if (!o.isMesh || o.parent?.userData.collision) return
+    if (skipFluid && inFluid(o)) return
     _cb.setFromObject(o)
     if (!_cb.isEmpty()) arr.push([_cb.min.x, _cb.min.y, _cb.min.z, _cb.max.x, _cb.max.y, _cb.max.z])
   })
@@ -1078,7 +1084,7 @@ function collisionBoxesFor(i, stateIdx) {
   let arr = collBoxCache.get(t.key)
   if (arr) return arr
   arr = []
-  if (!t.soft) templateBoxes(t.tmpl, arr)
+  if (!t.soft) templateBoxes(t.tmpl, arr, true)
   collBoxCache.set(t.key, arr)
   return arr
 }
@@ -1099,6 +1105,9 @@ function aimBoxesFor(i, stateIdx) {
 // open fence gates have no collision in game: you walk through the cell
 const GATE = /_fence_gate$/
 const gateOpen = e => !!(e?.Name && GATE.test(e.Name) && e.Properties?.open === "true")
+// fluids collide as fluids in walk mode, never as solid boxes
+const FLUID_BLOCK = /(^|:)(water|flowing_water|lava|flowing_lava|bubble_column)$/
+const isFluidBlock = e => !!(e?.Name && FLUID_BLOCK.test(e.Name))
 
 
 // returns { door }, { container }, { entity } or a plain { block }; blocked by
@@ -1230,7 +1239,8 @@ function blockBoxes(b) {
   const structure = current.value
   const out = []
   if (!structure || !root) return out
-  if (gateOpen(structure.palette[b.state])) return out
+  const entry = structure.palette[b.state]
+  if (gateOpen(entry) || isFluidBlock(entry)) return out
   const i = cellIndex().get(b.pos.join(","))
   const p = root.position
   const ox = p.x + b.pos[0] * 16, oy = p.y + b.pos[1] * 16, oz = p.z + b.pos[2] * 16
@@ -1414,6 +1424,7 @@ async function build(structure = source, refit = true, slice = false) {
         for (const model of await lib.parseBlockstate(assets, name, { data: props ?? {}, ignoreAtlases: true, ...biome })) {
           const data = await lib.resolveModelData(assets, model)
           await lib.loadModel(g, assets, data, { display: {}, lighting: lightingOpt(newLight), animate: false, block, neighbors: block.neighbors })
+          if (data?.fluid) continue
           for (const el of data?.elements ?? []) { any = true; if (!isPlane(el)) allPlanes = false }
         }
         if (any && allPlanes) nonSolid.add(stateIdx)
@@ -1531,6 +1542,7 @@ async function build(structure = source, refit = true, slice = false) {
       try {
         let any = false, allPlanes = true
         for (const model of handle.palette[pi].models) {
+          if (model?.fluid) continue
           const data = await lib.resolveModelData(assets, model)
           for (const el of data?.elements ?? []) { any = true; if (!isPlane(el)) allPlanes = false }
         }

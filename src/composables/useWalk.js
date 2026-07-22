@@ -218,6 +218,45 @@ function supported() {
   return false
 }
 
+const WATER_FLUID = /(^|:)(water|bubble_column|kelp|kelp_plant|seagrass|tall_seagrass)$/
+const LAVA_FLUID = /(^|:)lava$/
+function fluidOf(b) {
+  if (!b) return null
+  const name = b.Name || ""
+  if (LAVA_FLUID.test(name)) return "lava"
+  if (WATER_FLUID.test(name) || b.Properties?.waterlogged === "true") return "water"
+  return null
+}
+
+// vanilla picks the travel branch from the fluid in the feet block; height is the
+// fluid surface above the feet in blocks (source = 8/9, falling/waterlogged = full)
+function fluidState() {
+  const fy = walk.pos.y + 0.1
+  const b = buildApi.blockAt(walk.pos.x, fy, walk.pos.z)
+  const type = fluidOf(b)
+  if (!type) return null
+  const p = buildApi.getRoot()?.position
+  if (!p) return null
+  const bottom = p.y + Math.round((fy - p.y) / 16) * 16 - 8
+  let top
+  if (fluidOf(buildApi.blockAt(walk.pos.x, bottom + 24, walk.pos.z)) === type) {
+    top = bottom + 32
+  } else {
+    const level = /(^|:)(water|lava)$/.test(b.Name || "") ? Number(b.Properties?.level ?? 0) : 0
+    top = bottom + (level === 0 ? 8 / 9 : level >= 8 ? 1 : (8 - level) / 9) * 16
+  }
+  if (top <= walk.pos.y) return null
+  return { type, height: (top - walk.pos.y) / 16 }
+}
+
+// clearance for the climb-out hop: the box lifted 0.6 blocks toward the move
+function canClimbOut(vx, vz) {
+  const a = paabb()
+  const b = { nx: a.nx + vx, px: a.px + vx, ny: a.ny + 9.6, py: a.py + 9.6, nz: a.nz + vz, pz: a.pz + vz }
+  for (const o of nearby(b)) if (overlaps(b, o)) return false
+  return true
+}
+
 // the low sample sits just above the feet so you keep climbing until they clear the top block
 function onClimbable() {
   for (const y of [walk.pos.y + 1, walk.pos.y + walk.h * 0.5]) {
@@ -272,6 +311,7 @@ function tickSim() {
   walk.eye += ((walk.crouched ? EYE_SNEAK : EYE_STAND) - walk.eye) * 0.5
 
   const sprint = sprintKey && fwdKey && !walk.crouched
+  const fluidNow = flying ? null : fluidState()
 
   const fwd = new THREE.Vector3(-Math.sin(walk.yaw), 0, -Math.cos(walk.yaw))
   const rgt = new THREE.Vector3(Math.cos(walk.yaw), 0, -Math.sin(walk.yaw))
@@ -304,12 +344,68 @@ function tickSim() {
     walk.vel.y = origY * FLY_VERT_DRAG
     // vanilla: descending into the ground lands you and turns flight off
     if (fly.on && !noclip && walk.onGround) stopFlying()
-  } else {
-    const grounded = walk.onGround // pre-move contact drives accel, drag and step-up, like vanilla
-    const climbing = onClimbable() && !(keys.has("Space") && grounded)
+  } else if (fluidNow) {
+    // vanilla travelInFluid: 0.02 accel; water drags 0.8 (0.9 sprinting) with
+    // gravity/16, lava 0.5 (all axes when deep) plus gravity/4; space rises 0.04
+    // in deep fluid but jumps for real when grounded in a shallow one; sneak
+    // sinks in water only; hitting a wall with clearance hops out at 0.3
+    const water = fluidNow.type === "water"
+    const grounded = walk.onGround
+    const shallow = fluidNow.height <= 0.4
     if (jumpDelay > 0) jumpDelay--
     if (!keys.has("Space")) jumpDelay = 0
-    else if (grounded && !climbing && jumpDelay === 0) {
+    else if (!(grounded && shallow)) {
+      walk.vel.y += 0.04 * 16
+    } else if ((grounded || (water && shallow)) && jumpDelay === 0) {
+      walk.vel.y = Math.max(JUMP, walk.vel.y)
+      jumpDelay = 10
+    }
+    if (water && sneakKey) walk.vel.y -= 0.04 * 16
+    // vanilla swim-pitch (aiStep): moving forward pulls vertical velocity toward
+    // the look direction, diving freely but only pulling upward while submerged
+    if (water && fwdKey) {
+      const lookY = Math.sin(walk.pitch)
+      const submerged = fluidOf(buildApi.blockAt(walk.pos.x, walk.pos.y + 14.4, walk.pos.z)) === "water"
+      if (lookY <= 0 || keys.has("Space") || submerged) {
+        walk.vel.y += (lookY * 16 - walk.vel.y) * (lookY < -0.2 ? 0.085 : 0.06)
+      }
+    }
+    const a = 16 * 0.02
+    walk.vel.x += inX * a
+    walk.vel.z += inZ * a
+    walk.onGround = false
+    const hitX = moveGround("x", walk.vel.x, grounded, false)
+    const hitZ = moveGround("z", walk.vel.z, grounded, false)
+    if (hitX) walk.vel.x = 0
+    if (hitZ) walk.vel.z = 0
+    if (collideAxis("y", walk.vel.y)) {
+      if (walk.vel.y < 0) walk.onGround = true
+      walk.vel.y = 0
+    }
+    if ((hitX || hitZ) && onClimbable()) walk.vel.y = 0.2 * 16
+    if (water) {
+      const slow = sprint ? 0.9 : 0.8
+      walk.vel.x *= slow
+      walk.vel.z *= slow
+      walk.vel.y *= 0.8
+      if (!sprint) walk.vel.y -= GRAVITY / 16
+    } else if (shallow) {
+      walk.vel.x *= 0.5
+      walk.vel.z *= 0.5
+      walk.vel.y *= 0.8
+      if (!sprint) walk.vel.y -= GRAVITY / 16
+      walk.vel.y -= GRAVITY / 4
+    } else {
+      walk.vel.multiplyScalar(0.5)
+      walk.vel.y -= GRAVITY / 4
+    }
+    if ((hitX || hitZ) && canClimbOut(walk.vel.x, walk.vel.z)) walk.vel.y = 0.3 * 16
+  } else {
+    const grounded = walk.onGround // pre-move contact drives accel, drag and step-up, like vanilla
+    const climbing = onClimbable()
+    if (jumpDelay > 0) jumpDelay--
+    if (!keys.has("Space")) jumpDelay = 0
+    else if (grounded && jumpDelay === 0) {
       walk.vel.y = Math.max(JUMP, walk.vel.y)
       if (sprint) {
         walk.vel.x += fwd.x * SPRINT_JUMP_BOOST
@@ -317,27 +413,54 @@ function tickSim() {
       }
       jumpDelay = 10
     }
-    // divergence: ladders get full ground accel for playability
+    // divergence: ladders get full ground accel for playability; the vanilla
+    // handleOnClimbable clamp keeps the resulting speeds accurate anyway
     const a = 16 * (grounded || climbing
       ? WALK_SPEED * (sprint ? SPRINT_MOD : 1)
       : sprint ? AIR_ACCEL_SPRINT : AIR_ACCEL)
     walk.vel.x += inX * a
     walk.vel.z += inZ * a
-    if (climbing) walk.vel.y = walk.crouched ? 0 : fwdKey ? 2.4 : keys.has("KeyS") ? -2.4 : -0.9
+    if (climbing) {
+      walk.vel.x = Math.max(-2.4, Math.min(2.4, walk.vel.x))
+      walk.vel.z = Math.max(-2.4, Math.min(2.4, walk.vel.z))
+      walk.vel.y = Math.max(walk.vel.y, -2.4)
+      if (walk.crouched && walk.vel.y < 0 && !/scaffolding$/.test(buildApi.blockAt(walk.pos.x, walk.pos.y + 1, walk.pos.z)?.Name || "")) walk.vel.y = 0
+    }
     walk.onGround = false
     // guard within a step of ground, not only grounded: stair-step falls must not slip off edges
     const edgeGuard = sneakKey && walk.vel.y <= 0 && (grounded || supported())
-    if (moveGround("x", walk.vel.x, grounded, edgeGuard)) walk.vel.x = 0
-    if (moveGround("z", walk.vel.z, grounded, edgeGuard)) walk.vel.z = 0
+    const hitX = moveGround("x", walk.vel.x, grounded, edgeGuard)
+    const hitZ = moveGround("z", walk.vel.z, grounded, edgeGuard)
+    if (hitX) walk.vel.x = 0
+    if (hitZ) walk.vel.z = 0
+    const yBefore = walk.pos.y
     if (collideAxis("y", walk.vel.y)) {
-      if (walk.vel.y < 0) walk.onGround = true
-      walk.vel.y = 0
+      if (walk.vel.y < 0) {
+        walk.onGround = true
+        // vanilla restitution: the getOnPosLegacy block 0.2 below the feet (so
+        // carpets on slime still bounce but slabs mask it), only above one
+        // gravity tick of fall speed, suppressed by sneaking; the formula
+        // pre-compensates for the gravity and drag the travel step applies next
+        const below = buildApi.blockAt(walk.pos.x, walk.pos.y - 3.2, walk.pos.z)
+        const name = (below?.Name || "").replace(/^minecraft:/, "")
+        const restitution = name === "slime_block" ? 1 : /_bed$/.test(name) ? 0.75 : 0
+        if (restitution > 0 && !sneakKey && -walk.vel.y > GRAVITY) {
+          const portion = Math.min(Math.max((yBefore - walk.pos.y) / -walk.vel.y, 0), 1)
+          walk.vel.y = (portion * GRAVITY - walk.vel.y) * (1 + portion * (VERT_DRAG - 1)) * restitution
+        } else {
+          walk.vel.y = 0
+        }
+      } else {
+        walk.vel.y = 0
+      }
     }
+    // vanilla: pushing into the ladder or holding jump climbs at 0.2
+    if ((hitX || hitZ || keys.has("Space")) && climbing) walk.vel.y = 0.2 * 16
     // vanilla travelInAir order; ladders get ground drag to pair with their ground accel
     const drag = grounded || climbing ? GROUND_DRAG : AIR_DRAG
     walk.vel.x *= drag
     walk.vel.z *= drag
-    if (!climbing) walk.vel.y = (walk.vel.y - GRAVITY) * VERT_DRAG
+    walk.vel.y = (walk.vel.y - GRAVITY) * VERT_DRAG
   }
 
   // eased 0.5/tick and clamped like vanilla's Camera.tickFov
@@ -391,6 +514,19 @@ function updateWalk(dt) {
   const aim = state.suspended ? null : buildApi.aimDoor(perspCam.position.x, perspCam.position.y, perspCam.position.z, _look.x, _look.y, _look.z)
   if (aim) outline.show(aim)
   else outline.hide()
+}
+
+// ctrl+W (sprint + forward) instantly closes the tab otherwise; browsers reserve
+// the shortcut, so a leave-confirmation prompt is the only available guard. The
+// pointer must be released or the dialog can't be clicked; if the user cancels,
+// the page keeps running and the retry relocks (or the next canvas click does)
+const unloadGuard = e => {
+  e.preventDefault()
+  e.returnValue = ""
+  if (document.pointerLockElement === sceneApi.canvas) {
+    suspend()
+    setTimeout(() => resume(), 250)
+  }
 }
 
 function enter() {
@@ -454,6 +590,7 @@ function enter() {
     const c = sceneApi.sceneBounds().getCenter(new THREE.Vector3())
     walk.yaw = Math.atan2(-(c.x - perspCam.position.x), -(c.z - perspCam.position.z))
   }
+  addEventListener("beforeunload", unloadGuard)
   canvas.requestPointerLock()?.catch?.(() => {})
 }
 
@@ -474,6 +611,7 @@ function resume() {
 
 function exit() {
   if (!state.on) return
+  removeEventListener("beforeunload", unloadGuard)
   const perspCam = sceneApi.perspCam
   state.on = false
   state.suspended = false
