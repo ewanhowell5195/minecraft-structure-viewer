@@ -77,12 +77,13 @@ const poolLeaf = label => label.startsWith(state.poolId + "/") ? label.slice(sta
 const facts = computed(() => (state.dataRows ?? []).filter(r => !r.wide))
 const wides = computed(() => (state.dataRows ?? []).filter(r => r.wide))
 
-addEventListener("keydown", e => {
+// close on keyup: acting on keydown lets the same held press repeat into the
+// walk handlers, and relocking mid-press reads to the browser as an exit gesture
+addEventListener("keyup", e => {
   if (e.key === "Escape" && state.open) {
     if (state.item) return container.itemBack()
-    // relock on keyup: relocking mid-press lets the browser treat the same Esc as the exit gesture
     container.close()
-    addEventListener("keyup", () => walk.resume(), { once: true })
+    walk.resume()
   }
 })
 

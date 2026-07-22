@@ -3,10 +3,13 @@ import { ref, watch } from "vue"
 import * as THREE from "three"
 import { useScene } from "../composables/useScene.js"
 import { useWalk } from "../composables/useWalk.js"
+import { useContainer } from "../composables/useContainer.js"
 
 const sceneApi = useScene()
 const { state } = useWalk()
+const { state: containerState } = useContainer()
 const pos = ref({ left: "50%", top: "50%" })
+const rect = ref(null)
 const arrow = ref(null)
 
 // camera forward is the CANVAS centre, not the viewport centre (the sidebar offsets the canvas)
@@ -15,8 +18,10 @@ function place() {
   if (!c) return
   const r = c.getBoundingClientRect()
   pos.value = { left: r.left + r.width / 2 + "px", top: r.top + r.height / 2 + "px" }
+  rect.value = { left: r.left + "px", top: r.top + "px", width: r.width + "px", height: r.height + "px" }
 }
 watch(() => state.on, on => { if (on) place() })
+watch(() => state.suspended, s => { if (s) place() })
 addEventListener("resize", () => { if (state.on) place() })
 
 const _frustum = new THREE.Frustum(), _m = new THREE.Matrix4(), _v = new THREE.Vector3(), _look = new THREE.Vector3()
@@ -80,6 +85,9 @@ requestAnimationFrame(tick)
       <b>N</b> noclip · <b>scroll</b> fly speed · <b>shift</b> down/sneak · <b>ctrl/Q/2×W</b> sprint · <b>esc</b> exit
     </div>
   </template>
+  <div v-if="state.on && state.suspended && !containerState.open" class="paused" :style="rect">
+    Click to resume
+  </div>
 </template>
 
 <style scoped>
@@ -121,4 +129,16 @@ requestAnimationFrame(tick)
 }
 
 .hint b { color: #6fd487; }
+
+.paused {
+  position: fixed;
+  z-index: 9;
+  background: #00000080;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  color: #eee;
+  font-size: 15px;
+}
 </style>

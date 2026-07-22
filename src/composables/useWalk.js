@@ -59,6 +59,7 @@ const fovMod = { cur: 1, old: 1 }
 let stepSmooth = 0
 let acc = 0
 const keys = new Set()
+const pendingKeys = new Set()
 let collCells = new Map(), floorY = 0
 
 let outline = null
@@ -604,6 +605,7 @@ function suspend() {
   if (!state.on || state.suspended) return
   state.suspended = true
   keys.clear()
+  pendingKeys.clear()
   sprintW = false
   if (document.pointerLockElement === sceneApi.canvas) document.exitPointerLock()
 }
@@ -628,6 +630,7 @@ function exit() {
   stopFlying()
   sceneApi.controls.enabled = true
   keys.clear()
+  pendingKeys.clear()
   if (document.pointerLockElement === sceneApi.canvas) document.exitPointerLock()
   perspCam.fov = sceneApi.FOV
   perspCam.updateProjectionMatrix()
@@ -660,10 +663,23 @@ sceneApi.setWalkUpdate(dt => {
   return true
 })
 
+let lockAt = 0
 document.addEventListener("pointerlockchange", () => {
   if (!state.on) return
-  if (document.pointerLockElement === sceneApi.canvas) state.suspended = false
-  else if (!state.suspended) exit()
+  if (document.pointerLockElement === sceneApi.canvas) {
+    state.suspended = false
+    lockAt = performance.now()
+    for (const c of pendingKeys) keys.add(c)
+    pendingKeys.clear()
+  } else if (!state.suspended) {
+    // a lock Chrome grants on the modal's Esc relock and instantly revokes is
+    // not an exit gesture: fall back to suspended and let the next input relock
+    if (performance.now() - lockAt < 400) {
+      state.suspended = true
+      keys.clear()
+      sprintW = false
+    } else exit()
+  }
 })
 document.addEventListener("mousemove", e => {
   if (!state.on || document.pointerLockElement !== sceneApi.canvas) return
@@ -671,7 +687,22 @@ document.addEventListener("mousemove", e => {
   walk.pitch = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, walk.pitch - e.movementY * 0.0024))
 })
 addEventListener("keydown", e => {
-  if (!state.on || state.suspended) return
+  if (!state.on) return
+  if (state.suspended) {
+    if (containerApi.state.open) return
+    // suspended with the modal closed (Esc just closed it): any key relocks,
+    // except Esc again, which leaves walk mode like it does while walking
+    if (e.key === "Escape") return exit()
+    if (document.pointerLockElement !== sceneApi.canvas) {
+      e.preventDefault()
+      resume()
+      // held into the set only once the lock lands: a denied relock must not
+      // leave a live movement key behind while the cursor is free
+      if (state.suspended) pendingKeys.add(e.code)
+      else keys.add(e.code)
+    }
+    return
+  }
   // without pointer lock the browser never sees Esc, so exit directly or the mode is inescapable
   if (e.key === "Escape" && document.pointerLockElement !== sceneApi.canvas) {
     exit()
@@ -708,10 +739,11 @@ addEventListener("keydown", e => {
   keys.add(e.code)
 }, { passive: false })
 addEventListener("keyup", e => {
-  if (!state.on || state.suspended) return
-  e.preventDefault()
+  if (!state.on) return
   if (e.code === "KeyW") sprintW = false
   keys.delete(e.code)
+  pendingKeys.delete(e.code)
+  if (!state.suspended) e.preventDefault()
 }, { passive: false })
 // fly speed scroll, exactly spectator mode's: 0.005 a notch, clamped 0..0.2
 addEventListener("wheel", e => {
@@ -725,9 +757,12 @@ addEventListener("contextmenu", e => {
 })
 addEventListener("mousedown", e => {
   if (!state.on) return
-  // suspended with the modal closed (Esc denied the relock): a click retries
+  // suspended with the modal closed (Esc denied the relock): a click on the
+  // viewport retries, a click anywhere else leaves walk mode
   if (state.suspended) {
-    if (!containerApi.state.open && document.pointerLockElement !== sceneApi.canvas) resume()
+    if (containerApi.state.open || document.pointerLockElement === sceneApi.canvas) return
+    if (e.target === sceneApi.canvas) resume()
+    else exit()
     return
   }
   if (!NOLOCK && document.pointerLockElement !== sceneApi.canvas) {
