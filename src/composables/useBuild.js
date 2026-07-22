@@ -1399,7 +1399,9 @@ async function build(structure = source, refit = true, slice = false) {
         newLight = await lib.computeSceneLight(lightBlocks, {
           assets,
           dimension: buildDim,
-          onProgress: (done, total) => { state.progress = { phase: "light", done, total } }
+          onProgress: (done, total) => {
+            if (state.progress?.phase !== "light" || done === total || done - state.progress.done > total / 50) state.progress = { phase: "light", done, total }
+          }
         })
         if (cancelBuild) return abort()
         state.status = "building…"
@@ -1561,6 +1563,16 @@ async function build(structure = source, refit = true, slice = false) {
     const tBuild = performance.now()
     let tOpt = null
 
+    // reactive progress writes re-render the status bar, so cap them at ~25/s
+    let progT = 0
+    const setProgress = (status, progress) => {
+      const now = performance.now()
+      if (now - progT < 40 && progress.phase === state.progress?.phase) return
+      progT = now
+      state.status = status
+      state.progress = progress
+    }
+
     const handle = await lib.createScene(assets, inputBlocks, {
       mapArt: async (id, info) => {
         const colors = id != null ? await useWorld().readMap(id) : null
@@ -1576,15 +1588,12 @@ async function build(structure = source, refit = true, slice = false) {
       onProgress: (stage, done, tot) => {
         if (stage.name === "optimize") {
           tOpt ??= performance.now()
-          state.status = `optimising… ${Math.round(done / tot * 100)}%`
-          state.progress = { phase: "optimise", done, total: tot }
+          setProgress(`optimising… ${Math.round(done / tot * 100)}%`, { phase: "optimise", done, total: tot })
         } else if (stage.name === "light") {
-          state.status = "lighting…"
-          state.progress = { phase: "light", done, total: tot }
+          setProgress("lighting…", { phase: "light", done, total: tot })
         } else {
           const f = stage.name === "parse" ? done / tot * 0.15 : 0.15 + done / tot * 0.85
-          state.status = `building… ${Math.round(f * 100)}%`
-          state.progress = { phase: "build", done: Math.round(f * 10000), total: 10000 }
+          setProgress(`building… ${Math.round(f * 100)}%`, { phase: "build", done: Math.round(f * 10000), total: 10000 })
         }
         // uncalibrated runs project from live progress; declining the dialog cancels the build
         if (!warnedOnce && !perfCal && stage.name !== "optimize") {
