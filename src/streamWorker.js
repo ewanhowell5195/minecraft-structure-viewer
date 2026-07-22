@@ -5,6 +5,7 @@
 import * as THREE from "three"
 import { readWorldZip, switchDimension, chunkBlocks, dropEnclosed } from "./world.js"
 import { loadLibrary } from "./lib.js"
+import { OPENABLE } from "./composables/useStreamDoors.js"
 
 let world = null
 let range = null
@@ -116,6 +117,17 @@ async function buildTile(m) {
     for (const b of nb) input.push({ id: b.id, properties: b.properties, pos: [b.pos[0] - origin[0], b.pos[1] - origin[1], b.pos[2] - origin[2]], context: true })
   }
   if (!rawOwn) { self.postMessage({ type: "tile", id: m.id, empty: true }); return }
+  const doors = []
+  const undoored = []
+  for (let i = 0; i < input.length; i++) {
+    const b = input[i]
+    if (i < rawOwn && b.properties && "open" in b.properties && OPENABLE.test(b.id)) {
+      doors.push({ pos: b.pos, id: b.id, properties: b.properties })
+      continue
+    }
+    undoored.push(b)
+  }
+  input = undoored
   const de = dropEnclosed(input, await solidFlags(input))
   input = de.blocks
   let tileCount = input.length
@@ -173,7 +185,7 @@ async function buildTile(m) {
   atlasSerial = atlas.serial
   try { handle.dispose?.() } catch {}
   self.postMessage(
-    { type: "tile", id: m.id, payload: packed.payload, atlas: { deltas: atlas.deltas, serial: atlas.serial, size: atlas.size }, cells, palette, softs, boxes, buried },
+    { type: "tile", id: m.id, payload: packed.payload, atlas: { deltas: atlas.deltas, serial: atlas.serial, size: atlas.size }, cells, palette, softs, boxes, buried, doors },
     [cells.buffer, ...(buried ? [buried.buffer] : []), ...packed.transfers, ...atlas.transfers]
   )
 }

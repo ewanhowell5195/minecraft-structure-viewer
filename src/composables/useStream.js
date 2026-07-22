@@ -6,6 +6,7 @@ import { useWorld } from "./useWorld.js"
 import { usePacks } from "./usePacks.js"
 import { loadLibrary } from "../lib.js"
 import { chunkBlocks, dropEnclosed } from "../world.js"
+import { attachTileDoors, doorShape, rayBoxT, OPENABLE } from "./useStreamDoors.js"
 
 // world streaming: TILE x TILE chunks per tile, each tile its own createScene
 // build bordered with a chunk ring of context blocks so culling, fluid shaping
@@ -321,6 +322,14 @@ async function buildTileWorker(tx, tz, gen) {
   }
   const boxes = new Map(Object.entries(msg.boxes).map(([ti, arr]) => [Number(ti), arr]))
   const tile = { handle: revived, group: revived.group, cellData: cd, grid, ox, oy, oz, gw, gh, palette: msg.palette, softs: msg.softs, boxes, buried: msg.buried ?? null }
+  if (msg.doors?.length) {
+    let lightMat = null
+    revived.group.traverse(o => {
+      if (lightMat || !o.isMesh) return
+      for (const m of [].concat(o.material)) if (m?.uniforms?.lightVol) { lightMat = m; break }
+    })
+    tile.doors = await attachTileDoors({ lib, assets, doors: msg.doors, group: revived.group, lightMat, onToggle: () => onTilesChanged?.() })
+  }
   try { await sceneApi2().renderer.compileAsync(revived.group, sceneApi2().perspCam, sceneApi2().scene) } catch {}
   if (gen !== queueGen) { revived.dispose(); return }
   root.add(revived.group)
@@ -344,6 +353,15 @@ async function buildTileMain(tx, tz, gen) {
     }
   }
   const rawOwn = input.length
+  const mainDoors = []
+  if (rawOwn) {
+    const undoored = []
+    for (const b of input) {
+      if (b.properties && "open" in b.properties && OPENABLE.test(b.id)) { mainDoors.push({ pos: b.pos, id: b.id, properties: b.properties }); continue }
+      undoored.push(b)
+    }
+    input = undoored
+  }
   for (const nb of await Promise.all(ctxFetches)) {
     if (gen !== queueGen) return
     for (const b of nb) {
@@ -389,6 +407,14 @@ async function buildTileMain(tx, tz, gen) {
   }
   for (let i = 0; i < softs.length; i++) if (softs[i]) softs[i] = await softs[i]
   const tile = { handle, group: handle.group, cells, softs, boxes: new Map(), buriedFn: extOcc }
+  if (mainDoors.length) {
+    let lightMat = null
+    handle.group.traverse(o => {
+      if (lightMat || !o.isMesh) return
+      for (const m of [].concat(o.material)) if (m?.uniforms?.lightVol) { lightMat = m; break }
+    })
+    tile.doors = await attachTileDoors({ lib, assets, doors: mainDoors, group: handle.group, lightMat, onToggle: () => onTilesChanged?.() })
+  }
   try { await sceneApi2().renderer.compileAsync(handle.group, sceneApi2().perspCam, sceneApi2().scene) } catch {}
   if (gen !== queueGen) { try { handle.dispose?.() } catch {} return }
   root.add(handle.group)
@@ -401,6 +427,7 @@ function disposeTile(k) {
   const t = tiles.get(k)
   if (!t) return
   tiles.delete(k)
+  t.doors?.dispose()
   if (t.handle) {
     t.group?.removeFromParent()
     try { t.handle.dispose?.() } catch {}
@@ -508,20 +535,31 @@ const provider = {
   getRoot: () => root,
   blockAt(wx, wy, wz) {
     const gx = Math.round(wx / 16), gy = Math.round(wy / 16), gz = Math.round(wz / 16)
-    const cell = cellAt(tiles.get(tkeyAt(gx, gz)), gx, gy, gz)
-    if (!cell) return null
-    const e = cell.entry
-    return { Name: e.id, Properties: e.properties ?? undefined }
+    const t = tiles.get(tkeyAt(gx, gz))
+    const cell = cellAt(t, gx, gy, gz)
+    if (cell) return { Name: cell.entry.id, Properties: cell.entry.properties ?? undefined }
+    const reg = t?.doors?.regs.get(gx + "," + gy + "," + gz)
+    return reg ? { Name: reg.id, Properties: reg.props } : null
   },
   blockEntryAt(wx, wy, wz) {
     const gx = Math.round(wx / 16), gy = Math.round(wy / 16), gz = Math.round(wz / 16)
     const t = tiles.get(tkeyAt(gx, gz))
     const cell = cellAt(t, gx, gy, gz)
-    return cell ? { tile: t, cell } : null
+    if (cell) return { tile: t, cell }
+    const reg = t?.doors?.regs.get(gx + "," + gy + "," + gz)
+    return reg ? { tile: t, cell: { pos: [gx, gy, gz], door: reg, entry: { id: reg.id, properties: reg.props } } } : null
   },
   blockBoxes(b) {
     const { tile, cell } = b
     const out = []
+    if (cell.door) {
+      if (/fence_gate$/.test(cell.door.id.replace(/^minecraft:/, "")) && cell.door.props.open === "true") return out
+      const ox = cell.pos[0] * 16, oy = cell.pos[1] * 16, oz = cell.pos[2] * 16
+      for (const l of tile.doors.boxesFor(cell.door)) {
+        out.push({ nx: l[0] + ox, ny: l[1] + oy, nz: l[2] + oz, px: l[3] + ox, py: l[4] + oy, pz: l[5] + oz })
+      }
+      return out
+    }
     if (cell.buried) {
       const ox = cell.pos[0] * 16, oy = cell.pos[1] * 16, oz = cell.pos[2] * 16
       out.push({ nx: ox, ny: oy, nz: oz, px: ox + 16, py: oy + 16, pz: oz + 16 })
@@ -538,8 +576,36 @@ const provider = {
     for (const l of boxes) out.push({ nx: l[0] + ox, ny: l[1] + oy, nz: l[2] + oz, px: l[3] + ox, py: l[4] + oy, pz: l[5] + oz })
     return out
   },
-  aimDoor: () => null,
-  interact: () => null
+  aimDoor(ox, oy, oz, dx, dy, dz) {
+    const h = marchDoor(ox, oy, oz, dx, dy, dz)
+    if (!h) return null
+    return new THREE.Box3(
+      new THREE.Vector3(h.bx + h.shape[0], h.by + h.shape[1], h.bz + h.shape[2]),
+      new THREE.Vector3(h.bx + h.shape[3], h.by + h.shape[4], h.bz + h.shape[5]))
+  },
+  interact(ox, oy, oz, dx, dy, dz) {
+    const h = marchDoor(ox, oy, oz, dx, dy, dz)
+    if (!h) return false
+    return { toggled: h.tile.doors.toggle(h.reg) }
+  }
+}
+
+function marchDoor(ox, oy, oz, dx, dy, dz) {
+  let last = ""
+  for (let t = 0; t <= 80; t += 2) {
+    const gx = Math.round((ox + dx * t) / 16), gy = Math.round((oy + dy * t) / 16), gz = Math.round((oz + dz * t) / 16)
+    const key = gx + "," + gy + "," + gz
+    if (key === last) continue
+    last = key
+    const tl = tiles.get(tkeyAt(gx, gz))
+    const reg = tl?.doors?.regs.get(key)
+    if (!reg) continue
+    const s = doorShape(reg.id, reg.props)
+    const bx = gx * 16 - 8, by = gy * 16 - 8, bz = gz * 16 - 8
+    const th = rayBoxT(ox, oy, oz, dx, dy, dz, bx + s[0], by + s[1], bz + s[2], bx + s[3], by + s[4], bz + s[5])
+    if (th != null && th <= 80) return { tile: tl, reg, shape: s, bx, by, bz }
+  }
+  return null
 }
 
 // scene-space column -> highest solid block top, for the spawn point
