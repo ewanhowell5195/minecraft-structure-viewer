@@ -158,7 +158,15 @@ async function ensureState(lib, assets, id, props) {
 
 function cloneMaterialFor(mat, lightMat) {
   const out = (Array.isArray(mat) ? mat : [mat]).map(m => {
+    const u = m.uniforms
+    if (u) m.uniforms = {}
     const c = m.clone()
+    if (u) {
+      m.uniforms = u
+      // share entries: three's clone would deep-copy uniform textures,
+      // uploading duplicates per tile
+      c.uniforms = { ...u }
+    }
     if (c.uniforms && lightMat?.uniforms) {
       for (const k of ["daytime", "lightVol", "lightVolOrigin", "lightVolSize", "lightVolTex", "lightVolCols"]) {
         if (lightMat.uniforms[k]) c.uniforms[k] = lightMat.uniforms[k]

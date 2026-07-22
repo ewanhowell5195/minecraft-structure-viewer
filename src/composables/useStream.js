@@ -299,6 +299,24 @@ async function buildTile(tx, tz, gen) {
   return buildTileMain(tx, tz, gen)
 }
 
+// workers can finish several tiles in the same tick; reviving and uploading
+// them all in one frame causes visible hitches, so integrations are spaced
+// out to one per frame
+const integrateQueue = []
+let integrateArmed = false
+function pumpIntegrate() {
+  if (integrateArmed || !integrateQueue.length) return
+  integrateArmed = true
+  const fire = () => {
+    integrateArmed = false
+    integrateQueue.shift()?.()
+    pumpIntegrate()
+  }
+  if (typeof document !== "undefined" && document.hidden) setTimeout(fire, 30)
+  else requestAnimationFrame(fire)
+}
+const integrateSlot = () => new Promise(res => { integrateQueue.push(res); pumpIntegrate() })
+
 async function buildTileWorker(tx, tz, gen) {
   const res = await workerTile(tx, tz)
   if (gen !== queueGen) return
@@ -308,6 +326,8 @@ async function buildTileWorker(tx, tz, gen) {
     tiles.set(ckey(tx, tz), { handle: null, group: null, cells: null, softs: null, boxes: null })
     return
   }
+  await integrateSlot()
+  if (gen !== queueGen) return
   slot.mirror.apply(msg.atlas)
   const revived = lib.reviveScene(msg.payload, { atlas: slot.mirror, releaseArrays: true })
   const ox = tx * TILE * 16 - origin[0], oz = tz * TILE * 16 - origin[2]

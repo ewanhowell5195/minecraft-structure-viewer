@@ -480,8 +480,12 @@ function attachDoors(entries) {
       }
     }
     if (parts.length) {
-      const material = parts[0].srcMat.clone()
-      material.uniforms.map.value = atlasTex
+      const src = parts[0].srcMat
+      const material = src.clone()
+      // three's clone deep-copies uniform textures (a duplicate light volume
+      // uploaded per build); share the source entries and swap only the map
+      if (material.uniforms) material.uniforms = { ...src.uniforms, map: { value: atlasTex } }
+      else material.map = atlasTex
       const bm = new THREE.BatchedMesh(instances, vertCount, indexCount, material)
       bm.frustumCulled = false
       bm.perObjectFrustumCulled = false
