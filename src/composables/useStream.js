@@ -320,7 +320,7 @@ async function buildTileWorker(tx, tz, gen) {
     grid[(ly * gw + lz) * gw + lx] = (i / 5) + 1
   }
   const boxes = new Map(Object.entries(msg.boxes).map(([ti, arr]) => [Number(ti), arr]))
-  const tile = { handle: revived, group: revived.group, cellData: cd, grid, ox, oy, oz, gw, gh, palette: msg.palette, softs: msg.softs, boxes }
+  const tile = { handle: revived, group: revived.group, cellData: cd, grid, ox, oy, oz, gw, gh, palette: msg.palette, softs: msg.softs, boxes, buried: msg.buried ?? null }
   try { await sceneApi2().renderer.compileAsync(revived.group, sceneApi2().perspCam, sceneApi2().scene) } catch {}
   if (gen !== queueGen) { revived.dispose(); return }
   root.add(revived.group)
@@ -388,7 +388,7 @@ async function buildTileMain(tx, tz, gen) {
     if (softs[ti] === undefined) softs[ti] = softFor(handle.palette[handle.blockPalette[i]])
   }
   for (let i = 0; i < softs.length; i++) if (softs[i]) softs[i] = await softs[i]
-  const tile = { handle, group: handle.group, cells, softs, boxes: new Map() }
+  const tile = { handle, group: handle.group, cells, softs, boxes: new Map(), buriedFn: extOcc }
   try { await sceneApi2().renderer.compileAsync(handle.group, sceneApi2().perspCam, sceneApi2().scene) } catch {}
   if (gen !== queueGen) { try { handle.dispose?.() } catch {} return }
   root.add(handle.group)
@@ -480,12 +480,23 @@ async function pump() {
 // a cells Map. cellAt bridges both for the walk provider
 function cellAt(t, gx, gy, gz) {
   if (!t) return null
-  if (t.cells) return t.cells.get(gx + "," + gy + "," + gz) ?? null
+  if (t.cells) {
+    const c = t.cells.get(gx + "," + gy + "," + gz)
+    if (c) return c
+    if (t.buriedFn?.(gx, gy, gz)) return { pos: [gx, gy, gz], ti: -1, pi: -1, buried: true, entry: { id: "minecraft:stone" } }
+    return null
+  }
   if (!t.grid) return null
   const lx = gx - t.ox, ly = gy - t.oy, lz = gz - t.oz
   if (lx < 0 || lz < 0 || ly < 0 || lx >= t.gw || lz >= t.gw || ly >= t.gh) return null
   const idx = t.grid[(ly * t.gw + lz) * t.gw + lx]
-  if (!idx) return null
+  if (!idx) {
+    if (t.buried) {
+      const bi = (ly * t.gw + lz) * t.gw + lx
+      if (t.buried[bi >> 3] & (1 << (bi & 7))) return { pos: [gx, gy, gz], ti: -1, pi: -1, buried: true, entry: { id: "minecraft:stone" } }
+    }
+    return null
+  }
   const i = (idx - 1) * 5
   const cd = t.cellData
   const p = t.palette[cd[i + 4]]
@@ -511,6 +522,11 @@ const provider = {
   blockBoxes(b) {
     const { tile, cell } = b
     const out = []
+    if (cell.buried) {
+      const ox = cell.pos[0] * 16, oy = cell.pos[1] * 16, oz = cell.pos[2] * 16
+      out.push({ nx: ox, ny: oy, nz: oz, px: ox + 16, py: oy + 16, pz: oz + 16 })
+      return out
+    }
     if (FLUID_BLOCK.test(cell.entry.id) || tile.softs[cell.ti]) return out
     let boxes = tile.boxes.get(cell.ti)
     if (!boxes) {

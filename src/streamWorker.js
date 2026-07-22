@@ -156,13 +156,25 @@ async function buildTile(m) {
   for (const ti of Object.keys(softs)) softs[ti] = await softs[ti]
   const cells = cellData.slice(0, cn)
   const palette = handle.palette.map(p => ({ id: p.id, properties: p.properties ?? null }))
+  let buried = null
+  if (de.occludes) {
+    const ox = x0 * 16 - origin[0], oz = z0 * 16 - origin[2], oy = range.yMin
+    const gw = TILE * 16, gh = range.yMax - range.yMin + 1
+    buried = new Uint8Array(Math.ceil(gw * gw * gh / 8))
+    for (let ly = 0; ly < gh; ly++) for (let lz = 0; lz < gw; lz++) for (let lx = 0; lx < gw; lx++) {
+      if (de.occludes(ox + lx, oy + ly, oz + lz)) {
+        const bi = (ly * gw + lz) * gw + lx
+        buried[bi >> 3] |= 1 << (bi & 7)
+      }
+    }
+  }
   const packed = await lib.packScene(handle, { sharedAtlas })
   const atlas = await lib.packAtlasDelta(sharedAtlas, atlasSerial)
   atlasSerial = atlas.serial
   try { handle.dispose?.() } catch {}
   self.postMessage(
-    { type: "tile", id: m.id, payload: packed.payload, atlas: { deltas: atlas.deltas, serial: atlas.serial, size: atlas.size }, cells, palette, softs, boxes },
-    [cells.buffer, ...packed.transfers, ...atlas.transfers]
+    { type: "tile", id: m.id, payload: packed.payload, atlas: { deltas: atlas.deltas, serial: atlas.serial, size: atlas.size }, cells, palette, softs, boxes, buried },
+    [cells.buffer, ...(buried ? [buried.buffer] : []), ...packed.transfers, ...atlas.transfers]
   )
 }
 
