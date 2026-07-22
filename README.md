@@ -25,6 +25,13 @@ a standalone Vue 3 + Vite app.
 - Walk mode: pointer-locked first person with Minecraft physics: collision,
   step-up, sprint, crouch with edge guard, ladders, fly, noclip, view bobbing,
   and doors that open when you click them.
+- World mode: open a world save, browse its map, and build any chunk selection;
+  Explore World streams the open world around you in walk mode (tiles build in
+  workers as you move, docs/STREAMING.md), and exiting leaves you orbiting the
+  loaded chunks with the session resumable where you left off.
+- Interactions: containers open their loot modal in orbit and walk mode alike
+  (chest lids pose, decorated pots wobble and show their held item or roll their
+  loot table), enchanting books track you, and bells ring where you whack them.
 
 ## Dev
 
@@ -50,3 +57,12 @@ in for the CDN; it must send CORS headers). Override the URL with
   structure-blocks menu, or progress bars; the splash stays up with loading
   status until the structure finishes loading, and the info chip drops its
   draw/tri counts
+
+Debug and testing:
+
+- `?nolock` walk mode never grabs the pointer, so synthetic input works in test
+  harnesses
+- `?mainbuild` stream tiles all build on the main thread instead of workers
+- `?force` skip the world-size confirmation dialogs
+- `?debug=<scene>` generated debug scenes (`dynamic` has one of each dynamic
+  model, see src/debug.js for the rest)
