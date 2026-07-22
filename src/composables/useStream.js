@@ -37,6 +37,8 @@ let chunkMap = null           // "cx,cz" -> chunk descriptor
 let tileSet = null            // "tx,tz" tile keys with at least one chunk
 let workers = []              // { worker, ready, inflight }
 let workerSeq = 0
+let anyWorkerReady = null     // resolves when the first worker finishes its zip scan
+let spawned = false
 const workerJobs = new Map()
 const blockCache = new Map()  // "cx,cz" -> Promise<blocks in world coords>
 const tiles = new Map()       // "cx,cz" -> { handle, group, cells, softs, boxes }
@@ -65,6 +67,8 @@ function tkeyAt(gx, gz) {
 function startWorkers(file, dimension) {
   const count = Math.min(4, Math.max(1, (navigator.hardwareConcurrency || 4) - 2))
   workers = []
+  let readyResolve = null
+  anyWorkerReady = new Promise(r => { readyResolve = r })
   for (let i = 0; i < count; i++) {
     let w
     try {
@@ -73,7 +77,7 @@ function startWorkers(file, dimension) {
     const slot = { worker: w, ready: false, inflight: 0 }
     w.onmessage = e => {
       const m = e.data
-      if (m.type === "ready") { slot.ready = true; return }
+      if (m.type === "ready") { slot.ready = true; readyResolve?.(); return }
       const job = workerJobs.get(m.id)
       if (!job) return
       workerJobs.delete(m.id)
@@ -119,6 +123,14 @@ function cachedBlocks(cx, cz) {
     const slot = c && idleWorker()
     if (!c) p = Promise.resolve([])
     else if (slot) p = workerChunk(slot, cx, cz).catch(() => chunkBlocks(world, c, yRange)).catch(() => [])
+    else if (spawned && workers.length) {
+      p = Promise.race([anyWorkerReady, new Promise(r => setTimeout(r, 15000))])
+        .then(() => {
+          const s = idleWorker()
+          return s ? workerChunk(s, cx, cz) : chunkBlocks(world, c, yRange)
+        })
+        .catch(() => chunkBlocks(world, c, yRange)).catch(() => [])
+    }
     else p = chunkBlocks(world, c, yRange).catch(() => [])
     blockCache.set(k, p)
   }
@@ -387,8 +399,10 @@ async function enter() {
   await buildApi2().build(EMPTY, false)
   sceneApi2().setGrids([])
 
+  spawned = false
   playerTile = [Math.floor(scx / TILE), Math.floor(scz / TILE)]
   await buildTile(playerTile[0], playerTile[1], queueGen)
+  spawned = true
   const top = await surfaceAt((scx * 16 + 8) - origin[0], (scz * 16 + 8) - origin[2]) ?? await surfaceAt(8, 8)
   const spawnY = top !== null ? top * 16 + 8 : (yRange.yMax - origin[1]) * 16
   const cam = sceneApi2().perspCam
