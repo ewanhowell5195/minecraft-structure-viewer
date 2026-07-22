@@ -574,32 +574,62 @@ const provider = {
   },
   aimDoor(ox, oy, oz, dx, dy, dz) {
     const h = marchDoor(ox, oy, oz, dx, dy, dz)
-    if (!h) return null
-    return new THREE.Box3(
+    if (h) return new THREE.Box3(
       new THREE.Vector3(h.bx + h.shape[0], h.by + h.shape[1], h.bz + h.shape[2]),
       new THREE.Vector3(h.bx + h.shape[3], h.by + h.shape[4], h.bz + h.shape[5]))
+    const c = marchContainer(ox, oy, oz, dx, dy, dz)
+    if (!c) return null
+    const s = containerShape(c.entry.id, c.entry.properties ?? {})
+    const bx = c.gx * 16 - 8, by = c.gy * 16 - 8, bz = c.gz * 16 - 8
+    return new THREE.Box3(
+      new THREE.Vector3(bx + s[0], by + s[1], bz + s[2]),
+      new THREE.Vector3(bx + s[3], by + s[4], bz + s[5]))
   },
   interact(ox, oy, oz, dx, dy, dz) {
     const h = marchDoor(ox, oy, oz, dx, dy, dz)
     if (h) return { toggled: h.tile.doors.toggle(h.reg) }
-    let last = ""
-    for (let t = 0; t <= 80; t += 2) {
-      const gx = Math.round((ox + dx * t) / 16), gy = Math.round((oy + dy * t) / 16), gz = Math.round((oz + dz * t) / 16)
-      const key = gx + "," + gy + "," + gz
-      if (key === last) continue
-      last = key
-      const e = provider.blockEntryAt(gx * 16, gy * 16, gz * 16)
-      if (!e) continue
-      const name = e.cell.entry.id
-      const nbt = e.cell.entry.nbt
-      if (isInspectable(name) || nbt?.LootTable || /(^|[:_])spawner$/.test(name)) {
-        return { pos: e.cell.pos, entry: { Name: name, Properties: e.cell.entry.properties }, nbt }
-      }
-      if (e.cell.buried) return false
-      if (!e.cell.door && !e.cell.dyn && !(FLUID_BLOCK.test(name) || e.tile.softs?.[e.cell.ti])) return false
-    }
-    return false
+    const c = marchContainer(ox, oy, oz, dx, dy, dz)
+    if (!c) return false
+    return { pos: c.cell.pos, entry: { Name: c.entry.id, Properties: c.entry.properties }, nbt: c.entry.nbt }
   }
+}
+
+// vanilla interaction shapes for aimed containers, matching orbit's shapeFor
+function containerShape(id, p) {
+  const name = (id || "").replace(/^minecraft:/, "")
+  if (/chest$/.test(name)) return [1, 0, 1, 15, 14, 15]
+  if (/(^|_)shelf$/.test(name)) {
+    const f = p.facing ?? "north"
+    return f === "north" ? [0, 0, 11, 16, 16, 16]
+      : f === "south" ? [0, 0, 0, 16, 16, 5]
+      : f === "west" ? [11, 0, 0, 16, 16, 16]
+      : [0, 0, 0, 5, 16, 16]
+  }
+  return [0, 0, 0, 16, 16, 16]
+}
+
+function marchContainer(ox, oy, oz, dx, dy, dz) {
+  let last = ""
+  for (let t = 0; t <= 80; t += 2) {
+    const gx = Math.round((ox + dx * t) / 16), gy = Math.round((oy + dy * t) / 16), gz = Math.round((oz + dz * t) / 16)
+    const key = gx + "," + gy + "," + gz
+    if (key === last) continue
+    last = key
+    const e = provider.blockEntryAt(gx * 16, gy * 16, gz * 16)
+    if (!e) continue
+    const name = e.cell.entry.id
+    const nbt = e.cell.entry.nbt
+    if (isInspectable(name) || nbt?.LootTable || /(^|[:_])spawner$/.test(name)) {
+      return { cell: e.cell, entry: e.cell.entry, gx, gy, gz }
+    }
+    if (e.cell.buried) return null
+    if (!e.cell.door && !e.cell.dyn && !(FLUID_BLOCK.test(name) || e.tile.softs?.[e.cell.ti])) {
+      for (const b of provider.blockBoxes(e)) {
+        if (rayBoxT(ox, oy, oz, dx, dy, dz, b.nx, b.ny, b.nz, b.px, b.py, b.pz) != null) return null
+      }
+    }
+  }
+  return null
 }
 
 function marchDoor(ox, oy, oz, dx, dy, dz) {
