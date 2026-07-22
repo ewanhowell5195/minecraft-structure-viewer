@@ -503,10 +503,12 @@ async function enter() {
   playerTile = [Math.floor(scx / TILE), Math.floor(scz / TILE)]
   await buildTile(playerTile[0], playerTile[1], queueGen)
   spawned = true
-  const top = await surfaceAt((scx * 16 + 8) - origin[0], (scz * 16 + 8) - origin[2]) ?? await surfaceAt(8, 8)
+  const sgx = Math.min(scx * 16 + 15, Math.max(scx * 16, Math.floor(wxb))) - origin[0]
+  const sgz = Math.min(scz * 16 + 15, Math.max(scz * 16, Math.floor(wzb))) - origin[2]
+  const top = await surfaceAt(sgx, sgz) ?? await surfaceAt(8, 8)
   const spawnY = top !== null ? top * 16 + 8 : (yRange.yMax - origin[1]) * 16
   const cam = sceneApi2().perspCam
-  cam.position.set(8 * 16, spawnY + 28, 8 * 16)
+  cam.position.set(sgx * 16 + 8, spawnY + 28, sgz * 16 + 8)
   cam.rotation.set(0, 0, 0)
   cam.updateMatrixWorld(true)
   pump()
