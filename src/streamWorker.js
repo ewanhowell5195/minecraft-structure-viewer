@@ -131,28 +131,36 @@ async function buildTile(m) {
     sharedAtlas
   })
   if (!handle) { self.postMessage({ type: "tile", id: m.id, empty: true }); return }
-  const cells = []
+  const cellData = new Int32Array(tileCount * 5)
+  let cn = 0
   const softs = {}
   const boxes = {}
   for (let i = 0; i < tileCount; i++) {
     const ti = handle.blockTemplate[i]
     if (ti === 0xFFFFFFFF) continue
     const b = input[i]
-    cells.push({ pos: b.pos, ti, pi: handle.blockPalette[i], id: b.id, properties: b.properties ?? null })
+    const pi = handle.blockPalette[i]
+    cellData[cn++] = b.pos[0]
+    cellData[cn++] = b.pos[1]
+    cellData[cn++] = b.pos[2]
+    cellData[cn++] = ti
+    cellData[cn++] = pi
     if (softs[ti] === undefined) {
-      softs[ti] = softFor(handle.palette[handle.blockPalette[i]])
+      softs[ti] = softFor(handle.palette[pi])
       const tmpl = handle.templates?.[ti]
       boxes[ti] = tmpl?.group ? templateBoxes(tmpl.group) : []
     }
   }
   for (const ti of Object.keys(softs)) softs[ti] = await softs[ti]
+  const cells = cellData.slice(0, cn)
+  const palette = handle.palette.map(p => ({ id: p.id, properties: p.properties ?? null }))
   const packed = await lib.packScene(handle, { sharedAtlas })
   const atlas = await lib.packAtlasDelta(sharedAtlas, atlasSerial)
   atlasSerial = atlas.serial
   try { handle.dispose?.() } catch {}
   self.postMessage(
-    { type: "tile", id: m.id, payload: packed.payload, atlas: { deltas: atlas.deltas, serial: atlas.serial, size: atlas.size }, cells, softs, boxes },
-    [...packed.transfers, ...atlas.transfers]
+    { type: "tile", id: m.id, payload: packed.payload, atlas: { deltas: atlas.deltas, serial: atlas.serial, size: atlas.size }, cells, palette, softs, boxes },
+    [cells.buffer, ...packed.transfers, ...atlas.transfers]
   )
 }
 

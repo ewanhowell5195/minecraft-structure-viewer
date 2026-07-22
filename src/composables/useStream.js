@@ -288,12 +288,18 @@ async function buildTileWorker(tx, tz, gen) {
   }
   slot.mirror.apply(msg.atlas)
   const revived = lib.reviveScene(msg.payload, { atlas: slot.mirror, releaseArrays: true })
-  const cells = new Map()
-  for (const c of msg.cells) {
-    cells.set(c.pos.join(","), { pos: c.pos, ti: c.ti, pi: c.pi, entry: { id: c.id, properties: c.properties ?? undefined } })
+  const ox = tx * TILE * 16 - origin[0], oz = tz * TILE * 16 - origin[2]
+  const oy = yRange.yMin, gh = yRange.yMax - yRange.yMin + 1
+  const gw = TILE * 16
+  const grid = new Int32Array(gw * gw * gh)
+  const cd = msg.cells
+  for (let i = 0; i < cd.length; i += 5) {
+    const lx = cd[i] - ox, ly = cd[i + 1] - oy, lz = cd[i + 2] - oz
+    if (lx < 0 || lz < 0 || ly < 0 || lx >= gw || lz >= gw || ly >= gh) continue
+    grid[(ly * gw + lz) * gw + lx] = (i / 5) + 1
   }
   const boxes = new Map(Object.entries(msg.boxes).map(([ti, arr]) => [Number(ti), arr]))
-  const tile = { handle: revived, group: revived.group, cells, softs: msg.softs, boxes }
+  const tile = { handle: revived, group: revived.group, cellData: cd, grid, ox, oy, oz, gw, gh, palette: msg.palette, softs: msg.softs, boxes }
   try { await sceneApi2().renderer.compileAsync(revived.group, sceneApi2().perspCam, sceneApi2().scene) } catch {}
   if (gen !== queueGen) { revived.dispose(); return }
   root.add(revived.group)
@@ -423,13 +429,28 @@ async function pump() {
   }
 }
 
+// worker tiles carry a flat grid over typed cell data; main-built tiles keep
+// a cells Map. cellAt bridges both for the walk provider
+function cellAt(t, gx, gy, gz) {
+  if (!t) return null
+  if (t.cells) return t.cells.get(gx + "," + gy + "," + gz) ?? null
+  if (!t.grid) return null
+  const lx = gx - t.ox, ly = gy - t.oy, lz = gz - t.oz
+  if (lx < 0 || lz < 0 || ly < 0 || lx >= t.gw || lz >= t.gw || ly >= t.gh) return null
+  const idx = t.grid[(ly * t.gw + lz) * t.gw + lx]
+  if (!idx) return null
+  const i = (idx - 1) * 5
+  const cd = t.cellData
+  const p = t.palette[cd[i + 4]]
+  return { pos: [cd[i], cd[i + 1], cd[i + 2]], ti: cd[i + 3], pi: cd[i + 4], entry: { id: p.id, properties: p.properties ?? undefined } }
+}
+
 // walk-facing provider, the same surface useBuild offers the walk mode
 const provider = {
   getRoot: () => root,
   blockAt(wx, wy, wz) {
     const gx = Math.round(wx / 16), gy = Math.round(wy / 16), gz = Math.round(wz / 16)
-    const t = tiles.get(tkeyAt(gx, gz))
-    const cell = t?.cells?.get(gx + "," + gy + "," + gz)
+    const cell = cellAt(tiles.get(tkeyAt(gx, gz)), gx, gy, gz)
     if (!cell) return null
     const e = cell.entry
     return { Name: e.id, Properties: e.properties ?? undefined }
@@ -437,7 +458,7 @@ const provider = {
   blockEntryAt(wx, wy, wz) {
     const gx = Math.round(wx / 16), gy = Math.round(wy / 16), gz = Math.round(wz / 16)
     const t = tiles.get(tkeyAt(gx, gz))
-    const cell = t?.cells?.get(gx + "," + gy + "," + gz)
+    const cell = cellAt(t, gx, gy, gz)
     return cell ? { tile: t, cell } : null
   },
   blockBoxes(b) {
@@ -461,14 +482,28 @@ const provider = {
 // scene-space column -> highest solid block top, for the spawn point
 async function surfaceAt(gx, gz) {
   const t = tiles.get(tkeyAt(gx, gz))
-  if (!t?.cells) return null
-  let top = null
-  for (const cell of t.cells.values()) {
-    if (cell.pos[0] !== gx || cell.pos[2] !== gz) continue
-    if (FLUID_BLOCK.test(cell.entry.id) || t.softs[cell.ti]) continue
-    if (top === null || cell.pos[1] > top) top = cell.pos[1]
+  if (!t) return null
+  if (t.cells) {
+    let top = null
+    for (const cell of t.cells.values()) {
+      if (cell.pos[0] !== gx || cell.pos[2] !== gz) continue
+      if (FLUID_BLOCK.test(cell.entry.id) || t.softs[cell.ti]) continue
+      if (top === null || cell.pos[1] > top) top = cell.pos[1]
+    }
+    return top
   }
-  return top
+  if (!t.grid) return null
+  const lx = gx - t.ox, lz = gz - t.oz
+  if (lx < 0 || lz < 0 || lx >= t.gw || lz >= t.gw) return null
+  for (let ly = t.gh - 1; ly >= 0; ly--) {
+    const idx = t.grid[(ly * t.gw + lz) * t.gw + lx]
+    if (!idx) continue
+    const i = (idx - 1) * 5
+    const ti = t.cellData[i + 3]
+    if (FLUID_BLOCK.test(t.palette[t.cellData[i + 4]].id) || t.softs[ti]) continue
+    return t.oy + ly
+  }
+  return null
 }
 
 async function enter() {
