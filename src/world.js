@@ -221,6 +221,13 @@ export function readRegionFile(buf, fileName) {
   return { name: "", regionBufs: new Map([[key, bytes]]), entityBufs: new Map(), chunks, structures: new Map(), regionCache: new Map() }
 }
 
+// fields no consumer reads; skipping them halves the NBT work per chunk
+const CHUNK_SKIP = new Set([
+  "Heightmaps", "biomes", "block_light", "sky_light", "BlockLight", "SkyLight",
+  "fluid_ticks", "block_ticks", "PostProcessing", "structures", "blending_data",
+  "CarvingMasks", "Lights", "isLightOn", "TileTicks", "LiquidTicks", "ToBeTicked", "LiquidsToBeTicked"
+])
+
 async function readChunkFrom(bytes, index) {
   const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
   const loc = dv.getUint32(index * 4)
@@ -229,8 +236,8 @@ async function readChunkFrom(bytes, index) {
   const len = dv.getUint32(off)
   const method = bytes[off + 4]
   const payload = bytes.subarray(off + 5, off + 4 + len)
-  if (method === 3) return readNBT(payload)
-  if (method === 1 || method === 2) return readNBT(await inflate(payload, method === 1 ? "gzip" : "deflate"))
+  if (method === 3) return readNBT(payload, { skip: CHUNK_SKIP })
+  if (method === 1 || method === 2) return readNBT(await inflate(payload, method === 1 ? "gzip" : "deflate"), { skip: CHUNK_SKIP })
   throw new Error(`unsupported chunk compression ${method}`)
 }
 
@@ -335,7 +342,6 @@ function manmade(name) {
 }
 
 // scratch for the packed-index halves; palettes cap at 4096 so 820 longs is the most
-const u32Scratch = new Uint32Array(2048)
 
 export async function chunkYExtent(world, chunk) {
   const nbt = await readChunk(world, chunk)
@@ -366,20 +372,14 @@ export async function chunkSurface(world, chunk, yMin = -Infinity, yMax = Infini
     if (!airMask.includes(false)) continue
     const codes = pal.map(e => surfaceCode(e.Name))
     const wts = pal.map(e => manmade(e.Name) ? 3 : 1)
-    // longs become uint32 pairs once, then only unresolved columns get probed:
-    // decoding whole sections through BigInt was most of the scan cost
+    // nbt.js already hands longs over as [lo, hi] uint32 pairs; only
+    // unresolved columns get probed
     let bits = 0, vpl = 0, mask = 0, u32 = null
     if (pal.length > 1) {
-      const data = s.block_states.data ?? []
       bits = Math.max(4, 32 - Math.clz32(pal.length - 1))
       vpl = Math.floor(64 / bits)
       mask = (1 << bits) - 1
-      u32 = u32Scratch
-      for (let i = 0; i < data.length; i++) {
-        const l = BigInt.asUintN(64, data[i])
-        u32[i * 2] = Number(l & 0xffffffffn)
-        u32[i * 2 + 1] = Number(l >> 32n)
-      }
+      u32 = s.block_states.data ?? []
     }
     for (let col = 0; col < 256; col++) {
       if (cols[col]) continue
@@ -635,16 +635,16 @@ export async function buildSelection(world, selected, { yMin = -Infinity, yMax =
         for (let i = 0; i < 4096; i++) put(i, map[0])
         continue
       }
-      // indices are bit-packed low-to-high without spanning longs (1.16+)
+      // indices are bit-packed low-to-high without spanning longs (1.16+);
+      // nbt.js hands the longs over as [lo, hi] uint32 pairs
       const data = bs.data ?? []
       const bits = Math.max(4, 32 - Math.clz32(pal.length - 1))
       const vpl = Math.floor(64 / bits)
       const maskN = (1 << bits) - 1
-      const M32 = 0xFFFFFFFFn
+      const longs = data.length >> 1
       let i = 0
-      for (let li = 0; li < data.length && i < 4096; li++) {
-        const l = data[li]
-        const lo = Number(l & M32), hi = Number((l >> 32n) & M32)
+      for (let li = 0; li < longs && i < 4096; li++) {
+        const lo = data[li * 2], hi = data[li * 2 + 1]
         for (let j = 0; j < vpl && i < 4096; j++, i++) {
           const off = j * bits
           let v
@@ -771,11 +771,10 @@ export async function chunkBlocks(world, c, { yMin = -Infinity, yMax = Infinity 
     const bits = Math.max(4, 32 - Math.clz32(pal.length - 1))
     const vpl = Math.floor(64 / bits)
     const maskN = (1 << bits) - 1
-    const M32 = 0xFFFFFFFFn
+    const longs = data.length >> 1
     let i = 0
-    for (let li = 0; li < data.length && i < 4096; li++) {
-      const l = data[li]
-      const lo = Number(l & M32), hi = Number((l >> 32n) & M32)
+    for (let li = 0; li < longs && i < 4096; li++) {
+      const lo = data[li * 2], hi = data[li * 2 + 1]
       for (let j = 0; j < vpl && i < 4096; j++, i++) {
         const off = j * bits
         let v
