@@ -479,16 +479,15 @@ h2 .icon .material-symbols-outlined,
   justify-content: center;
   gap: 6px;
   width: 100%;
-  margin-bottom: 8px;
   padding: 7px 10px;
-  background: #2b6b3f;
-  color: #eafaf0;
+  background: var(--green);
+  color: #fff;
   border: none;
   border-radius: 8px;
   cursor: pointer;
 }
 
-.explore-btn:hover:not(:disabled) { background: #34804c; }
+.explore-btn:hover:not(:disabled) { filter: brightness(1.1); }
 .explore-btn:disabled { opacity: 0.5; cursor: default; }
 .explore-btn .material-symbols-outlined { font-size: 18px; }
 
