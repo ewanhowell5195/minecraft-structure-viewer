@@ -7,6 +7,7 @@ import { useSlicers } from "./useSlicers.js"
 import { useLock } from "./useLock.js"
 import { yieldTask } from "../yield.js"
 import { exportScene } from "../export.js"
+import { dropEnclosed } from "../world.js"
 import { makeSignTexts, plainText } from "../signs.js"
 import { JIGSAW, parseState } from "../transforms.js"
 import { isInspectable, readTrialSpawnerConfig } from "../loot.js"
@@ -1440,7 +1441,8 @@ async function build(structure = source, refit = true, slice = false) {
     if (lib.ModelLoader) await remapLoaderStates(structure, lib, assets)
     if (cancelBuild) return abort()
 
-    const inputBlocks = []
+    let inputBlocks = []
+    const entryState = []
     const inputIdx = new Int32Array(structure.blocks.length).fill(-1)
     for (let i = 0; i < structure.blocks.length; i++) {
       const b = structure.blocks[i]
@@ -1460,6 +1462,32 @@ async function build(structure = source, refit = true, slice = false) {
       }
       inputIdx[i] = inputBlocks.length
       inputBlocks.push(entry)
+      entryState.push(b.state)
+    }
+    // drop blocks buried under fully-occluding neighbors on every side, same as
+    // streaming does; buried cells read as absent afterwards (no template, no
+    // collision), which only ever affects blocks nothing can reach or see
+    if (lib.fullyOccludes && inputBlocks.length > 20000) {
+      const solidByState = new Map()
+      for (const si of new Set(entryState)) {
+        const e = structure.palette[si]
+        const name = legacyNames.get(e.Name) ?? e.Name
+        const props = fixLegacyProps(name.replace("minecraft:", ""), e.Properties)
+        solidByState.set(si, await lib.fullyOccludes({ id: name, properties: props ?? undefined, assets }).catch(() => false))
+      }
+      if (cancelBuild) return abort()
+      const flags = new Uint8Array(inputBlocks.length)
+      for (let k = 0; k < entryState.length; k++) flags[k] = solidByState.get(entryState[k]) ? 1 : 0
+      const kept = dropEnclosed(inputBlocks, flags)
+      if (kept.length !== inputBlocks.length) {
+        const keptIdx = new Map()
+        for (let k = 0; k < kept.length; k++) keptIdx.set(kept[k], k)
+        for (let i = 0; i < inputIdx.length; i++) {
+          const ii = inputIdx[i]
+          if (ii >= 0) inputIdx[i] = keptIdx.get(inputBlocks[ii]) ?? -1
+        }
+        inputBlocks = kept
+      }
     }
     // frame models ride the main scene mesh as blocks (facing blockstates are a
     // lib override); only the contained item stays an entity attachment
