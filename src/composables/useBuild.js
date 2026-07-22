@@ -1419,6 +1419,9 @@ async function build(structure = source, refit = true, slice = false) {
     current.value = structure
     const lib = await loadLibrary()
     lib.setAnimationRenderer?.(sceneApi.renderer)
+    // a new orbit build replaces a suspended stream session's tiles
+    const streamS = (await import("./useStream.js")).useStream()
+    if (streamS.state.session && !streamS.state.on) streamS.shutdown()
     const [sx, sy, sz] = structure.size
     state.status = "building…"
     buildDim = !state.fullbright && /^(the_nether|the_end)$/.test(unsliced.dimension) ? unsliced.dimension : "overworld"

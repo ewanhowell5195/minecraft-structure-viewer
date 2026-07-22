@@ -25,7 +25,7 @@ const sceneApi2 = () => _scene ??= useScene()
 const buildApi2 = () => _build ??= useBuild()
 const packs2 = () => _packs ??= usePacks()
 
-const state = reactive({ on: false, tiles: 0, pending: 0, preparing: false })
+const state = reactive({ on: false, session: false, tiles: 0, pending: 0 })
 
 let root = null
 let lib = null
@@ -468,6 +468,7 @@ async function pump() {
         const [ttx, ttz] = k.split(",").map(Number)
         if (Math.max(Math.abs(ttx - playerTile[0]), Math.abs(ttz - playerTile[1])) > DISPOSE_DIST) disposeTile(k)
       }
+      if (!state.on) break
       const want = desired(playerTile[0], playerTile[1]).filter(([tx, tz]) => !inflight.has(ckey(tx, tz)))
       state.pending = want.length + inflight.size
       if (!want.length && !inflight.size) break
@@ -667,36 +668,26 @@ async function surfaceAt(gx, gz) {
   return null
 }
 
-async function enter() {
+async function enter(spawn) {
+  if (state.session && !state.on) {
+    state.on = true
+    pump()
+    return true
+  }
   const w = useWorld()
   world = w.getWorld()
-  if (!world || state.on) return false
+  if (!world || state.on || !spawn) return false
   lib = await loadLibrary()
   assets = packs2().assets.value
   if (!assets) return false
   sharedAtlas = lib.createSharedAtlas?.({ renderer: sceneApi2().renderer }) ?? null
   lib.setAnimationRenderer?.(sceneApi2().renderer)
 
-  // the chunk under the orbit focus, mapped back through the selection layout
   chunkMap = new Map(w.getChunks().map(c => [ckey(c.cx, c.cz), c]))
   tileSet = new Set()
   for (const c of chunkMap.values()) tileSet.add(ckey(Math.floor(c.cx / TILE), Math.floor(c.cz / TILE)))
-  const sel = w.getLastSelection()
-  const target = sceneApi2().controls?.target ?? new THREE.Vector3()
-  const rootPos = buildApi2().getRoot()?.position ?? { x: 0, y: 0, z: 0 }
-  const lx = (target.x - rootPos.x) / 16, lz = (target.z - rootPos.z) / 16
-  let wxb = lx, wzb = lz
-  if (sel) {
-    let best = null
-    for (const p of sel.parts ?? [{ off: [0, 0, 0], world: [sel.worldOrigin[0], sel.worldOrigin[2]] }]) {
-      const dx = Math.max(p.off[0] - lx, 0, p.size ? lx - (p.off[0] + p.size[0]) : 0)
-      const dz = Math.max(p.off[2] - lz, 0, p.size ? lz - (p.off[2] + p.size[2]) : 0)
-      const d = dx * dx + dz * dz
-      if (!best || d < best.d) best = { d, p }
-    }
-    wxb = lx - best.p.off[0] + best.p.world[0]
-    wzb = lz - best.p.off[2] + best.p.world[1]
-  }
+  // spawn at the given chunk (the map's centre focus)
+  const wxb = spawn.cx * 16 + 8, wzb = spawn.cz * 16 + 8
   let [scx, scz] = chunkOf(wxb, wzb)
   if (!chunkMap.has(ckey(scx, scz))) {
     let best = null
@@ -716,7 +707,7 @@ async function enter() {
   origin = [scx * 16, 0, scz * 16]
 
   state.on = true
-  state.preparing = true
+  state.session = true
   queueGen++
   occlSeed = await lib.exportOcclusionCache?.(assets).catch(() => null) ?? null
   const wfile = w.getWorldFile()
@@ -730,11 +721,7 @@ async function enter() {
   sceneApi2().setGrids([])
 
   playerTile = [Math.floor(scx / TILE), Math.floor(scz / TILE)]
-  try {
-    await buildTile(playerTile[0], playerTile[1], queueGen)
-  } finally {
-    state.preparing = false
-  }
+  await buildTile(playerTile[0], playerTile[1], queueGen)
   const sgx = Math.min(scx * 16 + 15, Math.max(scx * 16, Math.floor(wxb))) - origin[0]
   const sgz = Math.min(scz * 16 + 15, Math.max(scz * 16, Math.floor(wzb))) - origin[2]
   const top = await surfaceAt(sgx, sgz) ?? await surfaceAt(8, 8)
@@ -758,39 +745,40 @@ function tick(pos) {
   }
 }
 
-async function exit() {
+// leaving walk keeps the streamed tiles as the live scene: streaming pauses,
+// the orbit camera takes over where the player stood, and re-entering walk
+// resumes the same session
+function exit() {
   if (!state.on) return
   state.on = false
-  // the teardown plus orbit rebuild is the roughest stretch of frames in a
-  // session; mask it behind the same overlay entry uses
-  state.preparing = "restore"
+}
+
+// full teardown: before a fresh stream entry or when a new orbit build
+// replaces the scene
+function shutdown() {
+  state.on = false
+  state.session = false
   queueGen++
   playerTile = null
-  try {
-    stopWorkers()
-    sceneApi2().animators.delete(streamAnimator)
-    streamAnimator.schedules = []
-    streamAnimator.perTex = new WeakMap()
-    sharedAtlas?.dispose()
-    sharedAtlas = null
-    for (const k of Array.from(tiles.keys())) disposeTile(k)
-    gridCache.clear()
-    if (root) sceneApi2().contentRoots.delete(root)
-    root?.removeFromParent()
-    root = null
-    occlSeed = null
-    const { useStructure } = await import("./useStructure.js")
-    await useStructure().apply(true)
-  } finally {
-    state.preparing = false
-  }
+  stopWorkers()
+  sceneApi2().animators.delete(streamAnimator)
+  streamAnimator.schedules = []
+  streamAnimator.perTex = new WeakMap()
+  sharedAtlas?.dispose()
+  sharedAtlas = null
+  for (const k of Array.from(tiles.keys())) disposeTile(k)
+  gridCache.clear()
+  if (root) sceneApi2().contentRoots.delete(root)
+  root?.removeFromParent()
+  root = null
+  occlSeed = null
 }
 
 export function useStream() {
   return {
     state: readonly(state),
     provider,
-    enter, exit, tick,
+    enter, exit, shutdown, tick,
     setTilesChanged: fn => { onTilesChanged = fn }
   }
 }

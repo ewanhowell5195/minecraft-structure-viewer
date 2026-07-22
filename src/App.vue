@@ -43,14 +43,12 @@ const { state: buildState, cancel: cancelBuild } = useBuild()
 const sceneApi = useScene()
 const walk = useWalk()
 const stream = useStream()
-const walkMenu = ref(false)
 async function walkClick() {
-  if (!worldState.active) return walk.enter()
-  walkMenu.value = !walkMenu.value
-}
-async function walkStream() {
-  walkMenu.value = false
-  if (await stream.enter()) walk.enter()
+  if (stream.state.session) {
+    if (await stream.enter()) walk.enter()
+    return
+  }
+  walk.enter()
 }
 const walkState = walk.state
 const { locked } = useLock()
@@ -245,29 +243,12 @@ onMounted(async () => {
           <span class="material-symbols-outlined">directions_walk</span>
           Walk Around
         </button>
-        <div v-if="walkMenu" class="walk-menu">
-          <button @click="walkMenu = false; walk.enter()">
-            <span class="material-symbols-outlined">deployed_code</span>
-            Explore this scene
-          </button>
-          <button @click="walkStream()">
-            <span class="material-symbols-outlined">public</span>
-            Stream the world
-          </button>
-        </div>
         <button v-if="buildState.info && (buildState.info.blocks || structure?.entities?.length)" class="used-btn" :disabled="locked" @click="usedModal?.open()">
           <span class="material-symbols-outlined">list_alt</span>
           {{ usedLabel }}
         </button>
       </template>
       <WalkOverlay />
-      <div v-if="stream.state.preparing" class="stream-preparing">
-        <svg class="spinner" viewBox="0 0 24 24" width="30" height="30" aria-label="Loading">
-          <circle cx="12" cy="12" r="10" fill="none" stroke="#ffffff1f" stroke-width="3"/>
-          <path d="M12 2 a 10 10 0 0 1 10 10" fill="none" stroke="#4c8dff" stroke-width="3" stroke-linecap="round"/>
-        </svg>
-        <p>{{ stream.state.preparing === "restore" ? "Restoring scene…" : "Preparing world…" }}</p>
-      </div>
       <FpsCounter v-if="!minimal" />
       <UsedBlocksModal ref="usedModal" />
       <ContainerModal />
@@ -401,29 +382,6 @@ onMounted(async () => {
 
 .walk-btn .material-symbols-outlined { font-size: 18px; }
 
-.walk-menu {
-  position: absolute;
-  left: 14px;
-  bottom: 52px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 6px;
-  background: #222227;
-  border: 1px solid #333338;
-  border-radius: 8px;
-  z-index: 5;
-}
-
-.walk-menu button {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  justify-content: flex-start;
-}
-
-.walk-menu .material-symbols-outlined { font-size: 18px; }
-
 .used-btn {
   position: absolute;
   left: 14px;
@@ -451,26 +409,6 @@ onMounted(async () => {
   text-align: center;
 }
 
-.stream-preparing {
-  position: absolute;
-  inset: 0;
-  z-index: 35;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  background: var(--bg);
-  color: #9a9aa5;
-}
-
-.stream-preparing .spinner {
-  animation: spin 0.9s linear infinite;
-}
-
-.stream-preparing p {
-  margin: 0;
-}
 
 .splash-overlay h1 {
   margin: 0;

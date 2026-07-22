@@ -9,6 +9,8 @@ import { createGridRenderer, GRID } from "../world.js"
 import { numeric } from "../transforms.js"
 import Modal from "./Modal.vue"
 import TreeFolder from "./TreeFolder.vue"
+import { useStream } from "../composables/useStream.js"
+import { useWalk } from "../composables/useWalk.js"
 
 const world = useWorld()
 const { state } = world
@@ -157,6 +159,18 @@ function fitView() {
 }
 
 let R = null, win = null, dataRev = -1
+
+// enter streaming at the chunk under the map's centre
+async function exploreWorld() {
+  const stream = useStream()
+  if (stream.state.session) stream.shutdown()
+  let spawn = { cx: 0, cz: 0 }
+  if (view) {
+    const span = W / view.px
+    spawn = { cx: Math.floor(view.cx0 + span / 2), cz: Math.floor(view.cz0 + span / 2) }
+  }
+  if (await stream.enter(spawn)) useWalk().enter()
+}
 
 function draw() {
   const canvas = mapEl.value
@@ -338,6 +352,10 @@ function onDblClick() {
       <div class="fill" :style="{ width: loadPct + '%' }"></div>
     </div>
     <template v-if="state.chunkCount">
+      <button class="explore-btn" :disabled="locked" @click="exploreWorld">
+        <span class="material-symbols-outlined">public</span>
+        Explore World
+      </button>
       <canvas ref="mapEl" class="map" @pointerdown="onDown" @pointermove="onMove"
         @pointerup="onUp" @pointercancel="onUp"
         @pointerenter="hovering = true" @pointerleave="hovering = false; hoverTxt = ''"
@@ -454,6 +472,25 @@ h2 .icon .material-symbols-outlined,
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.explore-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  margin-bottom: 8px;
+  padding: 7px 10px;
+  background: #2b6b3f;
+  color: #eafaf0;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.explore-btn:hover:not(:disabled) { background: #34804c; }
+.explore-btn:disabled { opacity: 0.5; cursor: default; }
+.explore-btn .material-symbols-outlined { font-size: 18px; }
 
 .map {
   width: 100%;
