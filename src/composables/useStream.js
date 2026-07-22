@@ -12,7 +12,7 @@ import { chunkBlocks } from "../world.js"
 // and the light volume come out seamless. Entered from walk mode; the orbit
 // build is torn down on entry and rebuilt from the loaded selection on exit.
 const TILE = 2
-const RENDER_DIST = 2
+const RENDER_DIST = 3
 const DISPOSE_DIST = RENDER_DIST + 1
 
 // resolved lazily: instantiating these at module init closes an import cycle
