@@ -60,6 +60,7 @@ const streamAnimator = {
   schedules: [],
   version: -1,
   lastTick: -1,
+  perTex: new WeakMap(),
   update() {
     // animations run at game tick rates; evaluating at display refresh burns
     // main-thread time for identical frames, so cap evaluation at ~60Hz
@@ -785,21 +786,28 @@ function tick(pos) {
 async function exit() {
   if (!state.on) return
   state.on = false
-  state.preparing = false
+  // the teardown plus orbit rebuild is the roughest stretch of frames in a
+  // session; mask it behind the same overlay entry uses
+  state.preparing = "restore"
   queueGen++
   playerTile = null
-  stopWorkers()
-  sceneApi2().animators.delete(streamAnimator)
-  streamAnimator.schedules = []
-  sharedAtlas?.dispose()
-  sharedAtlas = null
-  for (const k of Array.from(tiles.keys())) disposeTile(k)
-  blockCache.clear()
-  if (root) sceneApi2().contentRoots.delete(root)
-  root?.removeFromParent()
-  root = null
-  const { useStructure } = await import("./useStructure.js")
-  await useStructure().apply(true)
+  try {
+    stopWorkers()
+    sceneApi2().animators.delete(streamAnimator)
+    streamAnimator.schedules = []
+    streamAnimator.perTex = new WeakMap()
+    sharedAtlas?.dispose()
+    sharedAtlas = null
+    for (const k of Array.from(tiles.keys())) disposeTile(k)
+    blockCache.clear()
+    if (root) sceneApi2().contentRoots.delete(root)
+    root?.removeFromParent()
+    root = null
+    const { useStructure } = await import("./useStructure.js")
+    await useStructure().apply(true)
+  } finally {
+    state.preparing = false
+  }
 }
 
 export function useStream() {
