@@ -160,15 +160,49 @@ function fitView() {
 
 let R = null, win = null, dataRev = -1
 
-// enter streaming at the chunk under the map's centre
+// the nearest chunk to the map centre that exists in the world, searched over
+// the visible window only; spirals outward and exits on the first hit, so it
+// only pays a full sweep when nothing in view is valid
+function nearestValidChunk() {
+  if (!view || !bounds) return null
+  const span = W / view.px
+  const x0 = Math.max(Math.floor(view.cx0), bounds.minCx)
+  const z0 = Math.max(Math.floor(view.cz0), bounds.minCz)
+  const x1 = Math.min(Math.ceil(view.cx0 + span) - 1, bounds.maxCx)
+  const z1 = Math.min(Math.ceil(view.cz0 + span) - 1, bounds.maxCz)
+  if (x0 > x1 || z0 > z1) return null
+  const mx = view.cx0 + span / 2, mz = view.cz0 + span / 2
+  const cx = Math.floor(mx), cz = Math.floor(mz)
+  const d2 = (x, z) => (x + 0.5 - mx) ** 2 + (z + 0.5 - mz) ** 2
+  const maxR = Math.max(Math.abs(x0 - cx), Math.abs(x1 - cx), Math.abs(z0 - cz), Math.abs(z1 - cz))
+  let best = null, bestD = Infinity
+  const tryCell = (x, z) => {
+    if (x < x0 || x > x1 || z < z0 || z > z1) return
+    if (!bounds.present.has(x + "," + z)) return
+    const d = d2(x, z)
+    if (d < bestD) { bestD = d; best = { cx: x, cz: z } }
+  }
+  for (let r = 0; r <= maxR; r++) {
+    // chebyshev rings don't order by distance exactly: once something is
+    // found, rings beyond its euclidean distance can't beat it
+    if (best && (r - 1) ** 2 > bestD) break
+    if (r === 0) tryCell(cx, cz)
+    else {
+      for (let x = cx - r; x <= cx + r; x++) { tryCell(x, cz - r); tryCell(x, cz + r) }
+      for (let z = cz - r + 1; z <= cz + r - 1; z++) { tryCell(cx - r, z); tryCell(cx + r, z) }
+    }
+  }
+  return best
+}
+
+const explorable = ref(false)
+
+// enter streaming at the nearest valid chunk to the map's centre
 async function exploreWorld() {
+  const spawn = nearestValidChunk()
+  if (!spawn) return
   const stream = useStream()
   if (stream.state.session) stream.shutdown()
-  let spawn = { cx: 0, cz: 0 }
-  if (view) {
-    const span = W / view.px
-    spawn = { cx: Math.floor(view.cx0 + span / 2), cz: Math.floor(view.cz0 + span / 2) }
-  }
   if (await stream.enter(spawn)) useWalk().enter()
 }
 
@@ -176,7 +210,7 @@ function draw() {
   const canvas = mapEl.value
   if (!canvas || !state.active) return
   computeBounds()
-  if (!view) return
+  if (!view) { explorable.value = false; return }
   if (!R || R.canvas !== canvas) {
     R = createGridRenderer(canvas)
     R.resize(W)
@@ -209,6 +243,7 @@ function draw() {
   const marqueeOn = marquee ? !world.rectHasSelected(marquee.aCx, marquee.aCz, marquee.bCx, marquee.bCz) : false
   R.draw({ ...win, cx0: Math.round(cx0 * px) / px, cz0: Math.round(cz0 * px) / px, px, cellW, level, marquee, marqueeOn })
   world.setScanFocus(Math.floor(cx0), Math.floor(cz0), Math.ceil(cx0 + span), Math.ceil(cz0 + span))
+  explorable.value = !!nearestValidChunk()
 }
 
 watch(() => [state.rev, state.active, collapsed.value], () => nextTick(draw))
@@ -352,9 +387,9 @@ function onDblClick() {
       <div class="fill" :style="{ width: loadPct + '%' }"></div>
     </div>
     <template v-if="state.chunkCount">
-      <button class="explore-btn" :disabled="locked" @click="exploreWorld">
+      <button class="explore-btn" :disabled="locked || !explorable" @click="exploreWorld">
         <span class="material-symbols-outlined">public</span>
-        Explore World
+        {{ explorable ? "Explore World" : "No Valid Chunks" }}
       </button>
       <canvas ref="mapEl" class="map" @pointerdown="onDown" @pointermove="onMove"
         @pointerup="onUp" @pointercancel="onUp"
