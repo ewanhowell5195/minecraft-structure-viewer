@@ -40,6 +40,11 @@ let workerSeq = 0
 let anyWorkerReady = null     // resolves when the first worker finishes its zip scan
 let spawned = false
 const workerJobs = new Map()
+let buildWorker = null        // dedicated worker that runs whole tile builds
+let buildReady = false
+let buildSeq = 0
+const buildJobs = new Map()
+let mirror = null             // main-side copy of the build worker's atlas pages
 const blockCache = new Map()  // "cx,cz" -> Promise<blocks in world coords>
 const tiles = new Map()       // "cx,cz" -> { handle, group, cells, softs, boxes }
 let queueGen = 0
@@ -95,6 +100,45 @@ function stopWorkers() {
   for (const s of workers) s.worker.terminate()
   workers = []
   workerJobs.clear()
+  buildWorker?.terminate()
+  buildWorker = null
+  buildReady = false
+  for (const job of buildJobs.values()) job.resolve(null)
+  buildJobs.clear()
+}
+
+function startBuildWorker(file, dim) {
+  if (new URLSearchParams(location.search).has("mainbuild")) return
+  try {
+    buildWorker = new Worker(new URL("../streamWorker.js", import.meta.url), { type: "module" })
+  } catch { buildWorker = null; return }
+  buildWorker.onmessage = e => {
+    const m = e.data
+    if (m.type === "ready") {
+      buildWorker.postMessage({
+        type: "initBuild", id: 0,
+        sources: packs2().allSources(),
+        cfg: { origin, tile: TILE, dimension, daytime, lightOff }
+      })
+      return
+    }
+    if (m.type === "buildReady") { buildReady = true; return }
+    const job = buildJobs.get(m.id)
+    if (!job) return
+    buildJobs.delete(m.id)
+    if (m.type === "tile") job.resolve(m)
+    else job.resolve(null)
+  }
+  buildWorker.onerror = () => { buildReady = false }
+  buildWorker.postMessage({ type: "init", id: 0, file, dimension: dim, yMin: yRange.yMin, yMax: yRange.yMax })
+}
+
+function workerTile(tx, tz) {
+  return new Promise(resolve => {
+    const id = ++buildSeq
+    buildJobs.set(id, { resolve })
+    buildWorker.postMessage({ type: "build", id, tx, tz })
+  })
 }
 
 function idleWorker() {
@@ -187,6 +231,34 @@ function templateBoxes(tmpl) {
 }
 
 async function buildTile(tx, tz, gen) {
+  if (buildReady) return buildTileWorker(tx, tz, gen)
+  return buildTileMain(tx, tz, gen)
+}
+
+async function buildTileWorker(tx, tz, gen) {
+  const msg = await workerTile(tx, tz)
+  if (!msg || gen !== queueGen) return
+  if (msg.empty) {
+    tiles.set(ckey(tx, tz), { handle: null, group: null, cells: null, softs: null, boxes: null })
+    return
+  }
+  mirror.apply(msg.atlas)
+  const revived = lib.reviveScene(msg.payload, { atlas: mirror })
+  const cells = new Map()
+  for (const c of msg.cells) {
+    cells.set(c.pos.join(","), { pos: c.pos, ti: c.ti, pi: c.pi, entry: { id: c.id, properties: c.properties ?? undefined } })
+  }
+  const boxes = new Map(Object.entries(msg.boxes).map(([ti, arr]) => [Number(ti), arr]))
+  const tile = { handle: revived, group: revived.group, cells, softs: msg.softs, boxes }
+  try { await sceneApi2().renderer.compileAsync(revived.group, sceneApi2().perspCam, sceneApi2().scene) } catch {}
+  if (gen !== queueGen) { revived.dispose(); return }
+  root.add(revived.group)
+  tiles.set(ckey(tx, tz), tile)
+  state.tiles = tiles.size
+  onTilesChanged?.()
+}
+
+async function buildTileMain(tx, tz, gen) {
   const x0 = tx * TILE, z0 = tz * TILE
   const ownFetches = [], ctxFetches = []
   for (let dx = -1; dx <= TILE; dx++) for (let dz = -1; dz <= TILE; dz++) {
@@ -282,7 +354,7 @@ async function pump() {
       const want = desired(playerTile[0], playerTile[1])
       state.pending = want.length
       if (!want.length) break
-      for (const [ptx, ptz] of want.slice(1, 4)) {
+      if (!buildReady) for (const [ptx, ptz] of want.slice(1, 4)) {
         for (let dx = 0; dx < TILE; dx++) for (let dz = 0; dz < TILE; dz++) cachedBlocks(ptx * TILE + dx, ptz * TILE + dz)
       }
       await buildTile(want[0][0], want[0][1], gen)
@@ -317,7 +389,7 @@ const provider = {
     if (FLUID_BLOCK.test(cell.entry.id) || tile.softs[cell.ti]) return out
     let boxes = tile.boxes.get(cell.ti)
     if (!boxes) {
-      const tmpl = tile.handle.templates[cell.ti]
+      const tmpl = tile.handle.templates?.[cell.ti]
       boxes = tmpl?.group ? templateBoxes(tmpl.group) : []
       tile.boxes.set(cell.ti, boxes)
     }
@@ -392,7 +464,11 @@ async function enter() {
   state.on = true
   queueGen++
   const wfile = w.getWorldFile()
-  if (wfile) startWorkers(wfile, ws.dimension)
+  if (wfile) {
+    startWorkers(wfile, ws.dimension)
+    startBuildWorker(wfile, ws.dimension)
+  }
+  mirror = lib.createAtlasMirror?.({ renderer: sceneApi2().renderer }) ?? null
   root = new THREE.Group()
   sceneApi2().scene.add(root)
   sceneApi2().contentRoots.add(root)
@@ -432,6 +508,8 @@ async function exit() {
   stopWorkers()
   sharedAtlas?.dispose()
   sharedAtlas = null
+  mirror?.dispose()
+  mirror = null
   for (const k of Array.from(tiles.keys())) disposeTile(k)
   blockCache.clear()
   if (root) sceneApi2().contentRoots.delete(root)
