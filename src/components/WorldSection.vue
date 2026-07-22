@@ -487,7 +487,7 @@ h2 .icon .material-symbols-outlined,
   cursor: pointer;
 }
 
-.explore-btn:hover:not(:disabled) { filter: brightness(1.1); }
+.explore-btn:hover:not(:disabled) { background: #4cb87a; }
 .explore-btn:disabled { opacity: 0.5; cursor: default; }
 .explore-btn .material-symbols-outlined { font-size: 18px; }
 
