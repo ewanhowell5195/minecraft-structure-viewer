@@ -1783,6 +1783,8 @@ async function build(structure = source, refit = true, slice = false) {
     animator = lib.createAnimator(root)
     sceneApi.animators.add(animator)
     useSlicers().onBuild(root, position, [sx, sy, sz], slicedApplied)
+    // shader compiles land here in parallel instead of stalling the first visible frame
+    try { await sceneApi.renderer.compileAsync(root, sceneApi.perspCam, sceneApi.scene) } catch {}
     state.info = {
       size: `${sx}×${sy}×${sz}`,
       blocks: placedCount,
