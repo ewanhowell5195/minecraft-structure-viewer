@@ -1,4 +1,5 @@
 import * as THREE from "three"
+import { templateBoxes, cloneShaderShared } from "../streamShared.js"
 
 // interactive doors for streamed tiles: door blocks are excluded from tile
 // geometry by the worker and shipped as a list; this module grows a global
@@ -79,28 +80,6 @@ const boxCache = new Map()
 
 const _dm = new THREE.Matrix4()
 const _dzero = new THREE.Matrix4().makeScale(0, 0, 0)
-const _cb = new THREE.Box3()
-
-function templateBoxes(tmpl) {
-  const arr = []
-  tmpl.updateMatrixWorld(true)
-  tmpl.traverse(o => {
-    const coll = o.userData.collision
-    if (coll) {
-      for (const c of coll) {
-        _cb.min.set(c[0], c[1], c[2])
-        _cb.max.set(c[3], c[4], c[5])
-        _cb.applyMatrix4(o.matrixWorld)
-        if (!_cb.isEmpty()) arr.push([_cb.min.x, _cb.min.y, _cb.min.z, _cb.max.x, _cb.max.y, _cb.max.z])
-      }
-      return
-    }
-    if (!o.isMesh || o.parent?.userData.collision) return
-    _cb.setFromObject(o)
-    if (!_cb.isEmpty()) arr.push([_cb.min.x, _cb.min.y, _cb.min.z, _cb.max.x, _cb.max.y, _cb.max.z])
-  })
-  return arr
-}
 
 async function canonOf(lib, assets, id, props) {
   const models = await lib.parseBlockstate(assets, id, { data: props ?? {}, ignoreAtlases: true })
@@ -272,11 +251,7 @@ export function importDoorTemplates(pack, baseMat) {
       const mats = p.materials.map(spec => {
         const tex = textureFor(spec.tex)
         if (tex && spec.colorSpace != null) tex.colorSpace = spec.colorSpace
-        const u = baseMat.uniforms
-        baseMat.uniforms = {}
-        const c = baseMat.clone()
-        baseMat.uniforms = u
-        c.uniforms = { ...u }
+        const c = cloneShaderShared(baseMat)
         c.uniforms.map = { value: tex }
         c.uniforms.emission = { value: spec.emission }
         c.uniforms.shadeEnabled = { value: spec.shadeEnabled }
@@ -301,15 +276,7 @@ export function importDoorTemplates(pack, baseMat) {
 
 function cloneMaterialFor(mat, lightMat) {
   const out = (Array.isArray(mat) ? mat : [mat]).map(m => {
-    const u = m.uniforms
-    if (u) m.uniforms = {}
-    const c = m.clone()
-    if (u) {
-      m.uniforms = u
-      // share entries: three's clone would deep-copy uniform textures,
-      // uploading duplicates per tile
-      c.uniforms = { ...u }
-    }
+    const c = cloneShaderShared(m)
     if (c.uniforms && lightMat?.uniforms) {
       for (const k of ["daytime", "lightVol", "lightVolOrigin", "lightVolSize", "lightVolTex", "lightVolCols"]) {
         if (lightMat.uniforms[k]) c.uniforms[k] = lightMat.uniforms[k]

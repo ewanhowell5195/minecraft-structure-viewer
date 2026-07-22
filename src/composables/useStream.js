@@ -7,6 +7,7 @@ import { usePacks } from "./usePacks.js"
 import { loadLibrary } from "../lib.js"
 import { chunkBlocks, dropEnclosed } from "../world.js"
 import { attachTileDoors, importDoorTemplates, doorShape, rayBoxT, OPENABLE } from "./useStreamDoors.js"
+import { softFor, solidFor, templateBoxes } from "../streamShared.js"
 
 // world streaming: TILE x TILE chunks per tile, each tile its own createScene
 // build bordered with a chunk ring of context blocks so culling, fluid shaping
@@ -258,70 +259,16 @@ function cachedBlocks(cx, cz) {
   return p
 }
 
-const solidByKey = new Map()
 async function solidFlags(blocks) {
   const flags = new Uint8Array(blocks.length)
   for (let i = 0; i < blocks.length; i++) {
     const b = blocks[i]
-    const key = b.properties ?? b.id
-    let v = solidByKey.get(key)
-    if (v === undefined) {
-      v = await lib.fullyOccludes?.({ id: b.id, properties: b.properties, assets }).catch(() => false) ?? false
-      solidByKey.set(key, v)
-    }
-    flags[i] = v ? 1 : 0
+    flags[i] = (await solidFor(lib, assets, b.id, b.properties)) ? 1 : 0
   }
   return flags
 }
 
-const isPlane = el => el?.from && (el.from[0] === el.to[0] || el.from[1] === el.to[1] || el.from[2] === el.to[2])
-const softCache = new Map()   // state key -> Promise<bool>
-function softFor(entry) {
-  const k = entry.id + "|" + JSON.stringify(entry.properties ?? null)
-  let p = softCache.get(k)
-  if (!p) {
-    p = (async () => {
-      let any = false, allPlanes = true
-      for (const model of entry.models ?? []) {
-        if (model?.fluid) continue
-        const data = await lib.resolveModelData(assets, model)
-        for (const el of data?.elements ?? []) { any = true; if (!isPlane(el)) allPlanes = false }
-      }
-      return any && allPlanes
-    })().catch(() => false)
-    softCache.set(k, p)
-  }
-  return p
-}
-
 const FLUID_BLOCK = /(^|:)(water|flowing_water|lava|flowing_lava|bubble_column)$/
-const _cb = new THREE.Box3()
-function templateBoxes(tmpl) {
-  const arr = []
-  const inFluid = o => {
-    for (let n = o; n && n !== tmpl; n = n.parent) if (n.userData?.model?.fluid) return true
-    return false
-  }
-  tmpl.updateMatrixWorld(true)
-  tmpl.traverse(o => {
-    const coll = o.userData.collision
-    if (coll) {
-      if (inFluid(o)) return
-      for (const c of coll) {
-        _cb.min.set(c[0], c[1], c[2])
-        _cb.max.set(c[3], c[4], c[5])
-        _cb.applyMatrix4(o.matrixWorld)
-        if (!_cb.isEmpty()) arr.push([_cb.min.x, _cb.min.y, _cb.min.z, _cb.max.x, _cb.max.y, _cb.max.z])
-      }
-      return
-    }
-    if (!o.isMesh || o.parent?.userData.collision) return
-    if (inFluid(o)) return
-    _cb.setFromObject(o)
-    if (!_cb.isEmpty()) arr.push([_cb.min.x, _cb.min.y, _cb.min.z, _cb.max.x, _cb.max.y, _cb.max.z])
-  })
-  return arr
-}
 
 async function buildTile(tx, tz, gen) {
   if (readyBuilders().length) return buildTileWorker(tx, tz, gen)
@@ -473,7 +420,7 @@ async function buildTileMain(tx, tz, gen) {
     if (ti === 0xFFFFFFFF) continue
     const b = input[i]
     cells.set(b.pos.join(","), { pos: b.pos, ti, pi: handle.blockPalette[i], entry: b })
-    if (softs[ti] === undefined) softs[ti] = softFor(handle.palette[handle.blockPalette[i]])
+    if (softs[ti] === undefined) softs[ti] = softFor(lib, assets, handle.palette[handle.blockPalette[i]])
   }
   for (let i = 0; i < softs.length; i++) if (softs[i]) softs[i] = await softs[i]
   const tile = { handle, group: handle.group, cells, softs, boxes: new Map(), buriedFn: extOcc }
@@ -823,6 +770,7 @@ async function exit() {
     if (root) sceneApi2().contentRoots.delete(root)
     root?.removeFromParent()
     root = null
+    occlSeed = null
     const { useStructure } = await import("./useStructure.js")
     await useStructure().apply(true)
   } finally {

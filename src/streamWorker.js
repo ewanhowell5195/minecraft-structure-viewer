@@ -2,10 +2,10 @@
 // decode, createScene and geometry packing happen here so tile builds stop
 // stealing main-thread frames. The build worker owns the shared atlas; the
 // main thread mirrors its pages from the deltas each tile ships back.
-import * as THREE from "three"
 import { readWorldZip, switchDimension, chunkBlocks, chunkGrid, mergeTilePalettes, assembleTile } from "./world.js"
 import { loadLibrary } from "./lib.js"
 import { OPENABLE, packDoorTemplates } from "./composables/useStreamDoors.js"
+import { softFor, solidFor, templateBoxes } from "./streamShared.js"
 
 let world = null
 let range = null
@@ -36,65 +36,6 @@ function cachedGrid(cx, cz) {
   return p
 }
 
-const solidByKey = new Map()
-async function entrySolid(e) {
-  const key = e.id + "|" + (e.properties ? JSON.stringify(e.properties) : "")
-  let v = solidByKey.get(key)
-  if (v === undefined) {
-    v = await lib.fullyOccludes({ id: e.id, properties: e.properties ?? undefined, assets }).catch(() => false)
-    solidByKey.set(key, v)
-  }
-  return v
-}
-
-const isPlane = el => el?.from && (el.from[0] === el.to[0] || el.from[1] === el.to[1] || el.from[2] === el.to[2])
-const softCache = new Map()
-function softFor(entry) {
-  const k = entry.id + "|" + JSON.stringify(entry.properties ?? null)
-  let p = softCache.get(k)
-  if (!p) {
-    p = (async () => {
-      let any = false, allPlanes = true
-      for (const model of entry.models ?? []) {
-        if (model?.fluid) continue
-        const data = await lib.resolveModelData(assets, model)
-        for (const el of data?.elements ?? []) { any = true; if (!isPlane(el)) allPlanes = false }
-      }
-      return any && allPlanes
-    })().catch(() => false)
-    softCache.set(k, p)
-  }
-  return p
-}
-
-const _cb = new THREE.Box3()
-function templateBoxes(tmpl) {
-  const arr = []
-  const inFluid = o => {
-    for (let n = o; n && n !== tmpl; n = n.parent) if (n.userData?.model?.fluid) return true
-    return false
-  }
-  tmpl.updateMatrixWorld(true)
-  tmpl.traverse(o => {
-    const coll = o.userData.collision
-    if (coll) {
-      if (inFluid(o)) return
-      for (const c of coll) {
-        _cb.min.set(c[0], c[1], c[2])
-        _cb.max.set(c[3], c[4], c[5])
-        _cb.applyMatrix4(o.matrixWorld)
-        if (!_cb.isEmpty()) arr.push([_cb.min.x, _cb.min.y, _cb.min.z, _cb.max.x, _cb.max.y, _cb.max.z])
-      }
-      return
-    }
-    if (!o.isMesh || o.parent?.userData.collision) return
-    if (inFluid(o)) return
-    _cb.setFromObject(o)
-    if (!_cb.isEmpty()) arr.push([_cb.min.x, _cb.min.y, _cb.min.z, _cb.max.x, _cb.max.y, _cb.max.z])
-  })
-  return arr
-}
-
 async function buildTile(m) {
   const TILE = cfg.tile, origin = cfg.origin
   const x0 = m.tx * TILE, z0 = m.tz * TILE
@@ -110,7 +51,7 @@ async function buildTile(m) {
   for (let i = 0; i < globalPalette.length; i++) {
     const e = globalPalette[i]
     doorArr[i + 1] = e.properties && "open" in e.properties && OPENABLE.test(e.id) ? 1 : 0
-    solidArr[i + 1] = (await entrySolid(e)) ? 1 : 0
+    solidArr[i + 1] = (await solidFor(lib, assets, e.id, e.properties)) ? 1 : 0
   }
   const at = assembleTile({
     chunkGrids, maps, globalPalette, solidArr, doorArr, gcx0, gcz0,
@@ -148,7 +89,7 @@ async function buildTile(m) {
     cellData[cn++] = ti
     cellData[cn++] = pi
     if (softs[ti] === undefined) {
-      softs[ti] = softFor(handle.palette[pi])
+      softs[ti] = softFor(lib, assets, handle.palette[pi])
       const tmpl = handle.templates?.[ti]
       boxes[ti] = tmpl?.group ? templateBoxes(tmpl.group) : []
     }
