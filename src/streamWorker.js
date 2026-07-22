@@ -3,7 +3,7 @@
 // stealing main-thread frames. The build worker owns the shared atlas; the
 // main thread mirrors its pages from the deltas each tile ships back.
 import * as THREE from "three"
-import { readWorldZip, switchDimension, chunkBlocks } from "./world.js"
+import { readWorldZip, switchDimension, chunkBlocks, dropEnclosed } from "./world.js"
 import { loadLibrary } from "./lib.js"
 
 let world = null
@@ -25,8 +25,30 @@ function cachedBlocks(cx, cz) {
     const c = chunkMap.get(k)
     p = c ? chunkBlocks(world, c, range).catch(() => []) : Promise.resolve([])
     blockCache.set(k, p)
+    if (blockCache.size > 48) blockCache.delete(blockCache.keys().next().value)
+  } else {
+    blockCache.delete(k)
+    blockCache.set(k, p)
   }
   return p
+}
+
+// full-opaque-cube flags per block, cached by palette identity (chunkBlocks
+// shares each palette entry's Properties object across its blocks)
+const solidByKey = new Map()
+async function solidFlags(blocks) {
+  const flags = new Uint8Array(blocks.length)
+  for (let i = 0; i < blocks.length; i++) {
+    const b = blocks[i]
+    const key = b.properties ?? b.id
+    let v = solidByKey.get(key)
+    if (v === undefined) {
+      v = await lib.fullyOccludes({ id: b.id, properties: b.properties, assets }).catch(() => false)
+      solidByKey.set(key, v)
+    }
+    flags[i] = v ? 1 : 0
+  }
+  return flags
 }
 
 const isPlane = el => el?.from && (el.from[0] === el.to[0] || el.from[1] === el.to[1] || el.from[2] === el.to[2])
@@ -85,14 +107,18 @@ async function buildTile(m) {
     const own = dx >= 0 && dx < TILE && dz >= 0 && dz < TILE
     ;(own ? ownF : ctxF).push(cachedBlocks(x0 + dx, z0 + dz))
   }
-  const input = []
+  let input = []
   for (const own of await Promise.all(ownF)) {
     for (const b of own) input.push({ ...b, pos: [b.pos[0] - origin[0], b.pos[1] - origin[1], b.pos[2] - origin[2]] })
   }
-  const tileCount = input.length
+  const rawOwn = input.length
   for (const nb of await Promise.all(ctxF)) {
     for (const b of nb) input.push({ id: b.id, properties: b.properties, pos: [b.pos[0] - origin[0], b.pos[1] - origin[1], b.pos[2] - origin[2]], context: true })
   }
+  if (!rawOwn) { self.postMessage({ type: "tile", id: m.id, empty: true }); return }
+  input = dropEnclosed(input, await solidFlags(input))
+  let tileCount = input.length
+  for (let i = 0; i < input.length; i++) if (input[i].context) { tileCount = i; break }
   if (!tileCount) { self.postMessage({ type: "tile", id: m.id, empty: true }); return }
   const handle = await lib.createScene(assets, input, {
     lighting: cfg.lightOff ? { dimension: cfg.dimension, daytime: cfg.daytime, light: false } : { dimension: cfg.dimension, daytime: cfg.daytime },

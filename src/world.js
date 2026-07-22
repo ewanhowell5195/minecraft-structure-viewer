@@ -235,8 +235,11 @@ async function readChunkFrom(bytes, index) {
 }
 
 // lazy worlds keep zip entries in the bufs maps; inflated regions live in a
-// small LRU so a browse can't accumulate the whole world in memory
+// small LRU so a browse can't accumulate the whole world in memory. The cap is
+// byte-based: full-height regions inflate to 100MB+ each, so an entry-count cap
+// alone can balloon into gigabytes
 const REGION_CACHE_MAX = 24
+const REGION_CACHE_BYTES = 320 * 1024 * 1024
 async function regionData(world, kind, key) {
   const src = kind === "entity" ? world.entityBufs : world.regionBufs
   const v = src?.get(key)
@@ -252,7 +255,13 @@ async function regionData(world, kind, key) {
   }
   const bytes = await unzipEntry(v)
   cache.set(ck, bytes)
-  while (cache.size > REGION_CACHE_MAX) cache.delete(cache.keys().next().value)
+  let total = 0
+  for (const b of cache.values()) total += b.byteLength
+  while ((cache.size > REGION_CACHE_MAX || total > REGION_CACHE_BYTES) && cache.size > 1) {
+    const k0 = cache.keys().next().value
+    total -= cache.get(k0).byteLength
+    cache.delete(k0)
+  }
   return bytes
 }
 
@@ -667,6 +676,48 @@ export async function buildSelection(world, selected, { yMin = -Infinity, yMax =
   return out
 }
 
+// drop blocks buried under fully-occluding neighbors on every side. flags[i]
+// marks block i as a full opaque cube. A one-block lining of enclosed blocks
+// stays so the faces of every kept block still find their culling neighbor;
+// the lining's own inward faces render but sit sealed inside the solid mass.
+export function dropEnclosed(blocks, flags) {
+  let minX = Infinity, minY = Infinity, minZ = Infinity, maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity
+  for (const b of blocks) {
+    const p = b.pos
+    if (p[0] < minX) minX = p[0]
+    if (p[1] < minY) minY = p[1]
+    if (p[2] < minZ) minZ = p[2]
+    if (p[0] > maxX) maxX = p[0]
+    if (p[1] > maxY) maxY = p[1]
+    if (p[2] > maxZ) maxZ = p[2]
+  }
+  const w = maxX - minX + 1, h = maxY - minY + 1, d = maxZ - minZ + 1
+  if (!blocks.length || w * h * d > 50_000_000) return blocks
+  const solid = new Uint8Array(w * h * d)
+  const at = (x, y, z) => (z * h + y) * w + x
+  for (let i = 0; i < blocks.length; i++) {
+    if (!flags[i]) continue
+    const p = blocks[i].pos
+    solid[at(p[0] - minX, p[1] - minY, p[2] - minZ)] = 1
+  }
+  const enc = (x, y, z) =>
+    x > 0 && y > 0 && z > 0 && x < w - 1 && y < h - 1 && z < d - 1 &&
+    solid[at(x - 1, y, z)] && solid[at(x + 1, y, z)] &&
+    solid[at(x, y - 1, z)] && solid[at(x, y + 1, z)] &&
+    solid[at(x, y, z - 1)] && solid[at(x, y, z + 1)]
+  const out = []
+  for (let i = 0; i < blocks.length; i++) {
+    const p = blocks[i].pos
+    const x = p[0] - minX, y = p[1] - minY, z = p[2] - minZ
+    if (enc(x, y, z) &&
+        enc(x - 1, y, z) && enc(x + 1, y, z) &&
+        enc(x, y - 1, z) && enc(x, y + 1, z) &&
+        enc(x, y, z - 1) && enc(x, y, z + 1)) continue
+    out.push(blocks[i])
+  }
+  return out
+}
+
 // one chunk's blocks in createScene entry form, world block coordinates, for
 // the streaming tiles; block entity nbt rides along so banners/shelves render
 export async function chunkBlocks(world, c, { yMin = -Infinity, yMax = Infinity } = {}) {
@@ -686,14 +737,17 @@ export async function chunkBlocks(world, c, { yMin = -Infinity, yMax = Infinity 
     if (!pal || s.Y * 16 + 15 < yMin || s.Y * 16 > yMax) continue
     const sy = s.Y * 16
     const entries = pal.map(e => AIR.test(e.Name) ? null : e)
+    const hasBE = beMap.size > 0
     const put = (i, e) => {
       const y = sy + (i >> 8)
       if (y < yMin || y > yMax) return
       const pos = [bx + (i & 15), y, bz + ((i >> 4) & 15)]
       const b = { id: e.Name, pos }
       if (e.Properties) b.properties = e.Properties
-      const nb = beMap.get(pos.join(","))
-      if (nb) b.nbt = nb
+      if (hasBE) {
+        const nb = beMap.get(pos.join(","))
+        if (nb) b.nbt = nb
+      }
       blocks.push(b)
     }
     if (pal.length === 1) {
@@ -704,12 +758,21 @@ export async function chunkBlocks(world, c, { yMin = -Infinity, yMax = Infinity 
     const data = bs.data ?? []
     const bits = Math.max(4, 32 - Math.clz32(pal.length - 1))
     const vpl = Math.floor(64 / bits)
-    const bigBits = BigInt(bits), mask = (1n << bigBits) - 1n
-    for (let i = 0; i < 4096; i++) {
-      const l = data[(i / vpl) | 0]
-      if (l === undefined) break
-      const e = entries[Number(BigInt.asUintN(64, l) >> (BigInt(i % vpl) * bigBits) & mask)]
-      if (e) put(i, e)
+    const maskN = (1 << bits) - 1
+    const M32 = 0xFFFFFFFFn
+    let i = 0
+    for (let li = 0; li < data.length && i < 4096; li++) {
+      const l = data[li]
+      const lo = Number(l & M32), hi = Number((l >> 32n) & M32)
+      for (let j = 0; j < vpl && i < 4096; j++, i++) {
+        const off = j * bits
+        let v
+        if (off + bits <= 32) v = (lo >>> off) & maskN
+        else if (off >= 32) v = (hi >>> (off - 32)) & maskN
+        else v = ((lo >>> off) | (hi << (32 - off))) & maskN
+        const e = entries[v]
+        if (e) put(i, e)
+      }
     }
   }
   return blocks

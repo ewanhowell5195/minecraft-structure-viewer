@@ -5,7 +5,7 @@ import { useBuild } from "./useBuild.js"
 import { useWorld } from "./useWorld.js"
 import { usePacks } from "./usePacks.js"
 import { loadLibrary } from "../lib.js"
-import { chunkBlocks } from "../world.js"
+import { chunkBlocks, dropEnclosed } from "../world.js"
 
 // world streaming: TILE x TILE chunks per tile, each tile its own createScene
 // build bordered with a chunk ring of context blocks so culling, fluid shaping
@@ -103,6 +103,7 @@ function stopWorkers() {
     b.mirror?.dispose()
   }
   buildWorkers = []
+  regionOwner.clear()
   for (const job of buildJobs.values()) job.resolve(null)
   buildJobs.clear()
 }
@@ -142,11 +143,19 @@ function readyBuilders() {
   return buildWorkers.filter(b => b.ready)
 }
 
+// tiles stick to one worker per region file, so each worker only inflates
+// the regions it owns; overload spills to the least busy worker
+const regionOwner = new Map()
 function workerTile(tx, tz) {
-  let best = null
-  for (const b of buildWorkers) {
-    if (!b.ready) continue
-    if (!best || b.inflight < best.inflight) best = b
+  const rk = Math.floor(tx * TILE / 32) + "," + Math.floor(tz * TILE / 32)
+  let best = regionOwner.get(rk)
+  if (!best?.ready || best.inflight >= 4) {
+    best = null
+    for (const b of buildWorkers) {
+      if (!b.ready) continue
+      if (!best || b.inflight < best.inflight) best = b
+    }
+    if (best) regionOwner.set(rk, best)
   }
   if (!best) return Promise.resolve(null)
   return new Promise(resolve => {
@@ -193,8 +202,25 @@ function cachedBlocks(cx, cz) {
     }
     else p = chunkBlocks(world, c, yRange).catch(() => [])
     blockCache.set(k, p)
+    if (blockCache.size > 32) blockCache.delete(blockCache.keys().next().value)
   }
   return p
+}
+
+const solidByKey = new Map()
+async function solidFlags(blocks) {
+  const flags = new Uint8Array(blocks.length)
+  for (let i = 0; i < blocks.length; i++) {
+    const b = blocks[i]
+    const key = b.properties ?? b.id
+    let v = solidByKey.get(key)
+    if (v === undefined) {
+      v = await lib.fullyOccludes?.({ id: b.id, properties: b.properties, assets }).catch(() => false) ?? false
+      solidByKey.set(key, v)
+    }
+    flags[i] = v ? 1 : 0
+  }
+  return flags
 }
 
 const isPlane = el => el?.from && (el.from[0] === el.to[0] || el.from[1] === el.to[1] || el.from[2] === el.to[2])
@@ -283,20 +309,26 @@ async function buildTileMain(tx, tz, gen) {
     const own = dx >= 0 && dx < TILE && dz >= 0 && dz < TILE
     ;(own ? ownFetches : ctxFetches).push(cachedBlocks(x0 + dx, z0 + dz))
   }
-  const input = []
+  let input = []
   for (const own of await Promise.all(ownFetches)) {
     if (gen !== queueGen) return
     for (const b of own) {
       input.push({ ...b, pos: [b.pos[0] - origin[0], b.pos[1] - origin[1], b.pos[2] - origin[2]] })
     }
   }
-  const tileCount = input.length
+  const rawOwn = input.length
   for (const nb of await Promise.all(ctxFetches)) {
     if (gen !== queueGen) return
     for (const b of nb) {
       input.push({ id: b.id, properties: b.properties, pos: [b.pos[0] - origin[0], b.pos[1] - origin[1], b.pos[2] - origin[2]], context: true })
     }
   }
+  if (rawOwn) {
+    input = dropEnclosed(input, await solidFlags(input))
+    if (gen !== queueGen) return
+  }
+  let tileCount = input.length
+  for (let i = 0; i < input.length; i++) if (input[i].context) { tileCount = i; break }
   if (!tileCount) {
     tiles.set(ckey(tx, tz), { handle: null, group: null, cells: null, softs: null, boxes: null })
     return
