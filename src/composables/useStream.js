@@ -356,9 +356,23 @@ async function buildTileWorker(tx, tz, gen) {
   // tiles never move, so drop their subtree from three's per-frame matrix walk
   revived.group.updateWorldMatrix(true, true)
   revived.group.matrixWorldAutoUpdate = false
+  revealProgressively(revived.group)
   tiles.set(ckey(tx, tz), tile)
   state.tiles = tiles.size
   onTilesChanged?.()
+}
+
+// a tile's buffers upload on the frame each mesh first draws; revealing a
+// couple of meshes per frame spreads that upload cost instead of spiking one
+function revealProgressively(group) {
+  const meshes = []
+  group.traverse(o => { if (o.isMesh) { meshes.push(o); o.visible = false } })
+  const reveal = () => {
+    let budget = 2
+    while (budget-- > 0 && meshes.length) meshes.shift().visible = true
+    if (meshes.length) requestAnimationFrame(reveal)
+  }
+  requestAnimationFrame(reveal)
 }
 
 async function buildTileMain(tx, tz, gen) {
