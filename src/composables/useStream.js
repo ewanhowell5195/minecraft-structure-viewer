@@ -261,7 +261,7 @@ async function buildTileWorker(tx, tz, gen) {
     return
   }
   slot.mirror.apply(msg.atlas)
-  const revived = lib.reviveScene(msg.payload, { atlas: slot.mirror })
+  const revived = lib.reviveScene(msg.payload, { atlas: slot.mirror, releaseArrays: true })
   const cells = new Map()
   for (const c of msg.cells) {
     cells.set(c.pos.join(","), { pos: c.pos, ti: c.ti, pi: c.pi, entry: { id: c.id, properties: c.properties ?? undefined } })
