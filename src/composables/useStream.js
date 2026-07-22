@@ -389,7 +389,7 @@ function desired(tx, tz) {
   for (let dx = -RENDER_DIST; dx <= RENDER_DIST; dx++) {
     for (let dz = -RENDER_DIST; dz <= RENDER_DIST; dz++) {
       const k = ckey(tx + dx, tz + dz)
-      if (tileSet.has(k) && !tiles.has(k)) out.push([tx + dx, tz + dz, Math.max(Math.abs(dx), Math.abs(dz))])
+      if (tileSet.has(k) && !tiles.has(k)) out.push([tx + dx, tz + dz, dx * dx + dz * dz])
     }
   }
   out.sort((a, b) => a[2] - b[2])

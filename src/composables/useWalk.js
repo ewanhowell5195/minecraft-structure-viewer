@@ -23,6 +23,7 @@ const H_STAND = 28.8, H_SNEAK = 24, EYE_STAND = 25.92, EYE_SNEAK = 20.32
 const STEP = 9                                    // auto step-up (~half a block)
 const WALK_FOV = 78
 const DOUBLE_TAP = 350                            // minecraft's 7-tick window for double-tap sprint/fly
+const NOLOCK = new URLSearchParams(location.search).has("nolock")
 
 // vanilla movement constants, per tick (velocities are units/tick)
 const TICK = 1 / 20
@@ -596,7 +597,7 @@ function enter() {
     walk.yaw = Math.atan2(-(c.x - perspCam.position.x), -(c.z - perspCam.position.z))
   }
   addEventListener("beforeunload", unloadGuard)
-  canvas.requestPointerLock()?.catch?.(() => {})
+  if (!NOLOCK) canvas.requestPointerLock()?.catch?.(() => {})
 }
 
 function suspend() {
@@ -611,6 +612,7 @@ function suspend() {
 // user gesture (Esc closing the modal), and the next canvas click retries
 function resume() {
   if (!state.on || !state.suspended) return
+  if (NOLOCK) { state.suspended = false; return }
   sceneApi.canvas.requestPointerLock()?.catch?.(() => {})
 }
 
@@ -713,7 +715,7 @@ addEventListener("keyup", e => {
 }, { passive: false })
 // fly speed scroll, exactly spectator mode's: 0.005 a notch, clamped 0..0.2
 addEventListener("wheel", e => {
-  if (!state.on || state.suspended || document.pointerLockElement !== sceneApi.canvas) return
+  if (!state.on || state.suspended || (!NOLOCK && document.pointerLockElement !== sceneApi.canvas)) return
   if (!fly.on && !noclip) return
   e.preventDefault()
   fly.speed = Math.min(Math.max(fly.speed + Math.sign(-e.deltaY) * 0.005, 0), 0.2)
@@ -728,7 +730,7 @@ addEventListener("mousedown", e => {
     if (!containerApi.state.open && document.pointerLockElement !== sceneApi.canvas) resume()
     return
   }
-  if (document.pointerLockElement !== sceneApi.canvas) {
+  if (!NOLOCK && document.pointerLockElement !== sceneApi.canvas) {
     if (e.target === sceneApi.canvas) sceneApi.canvas.requestPointerLock()?.catch?.(() => {})
     return
   }
