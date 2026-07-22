@@ -386,18 +386,4 @@ export async function attachTileDoors({ lib, assets, doors, group, lightMat, onT
   }
 }
 
-export function rayBoxT(ox, oy, oz, dx, dy, dz, x0, y0, z0, x1, y1, z1) {
-  let tmin = 0, tmax = Infinity
-  for (const [o, d, a, b] of [[ox, dx, x0, x1], [oy, dy, y0, y1], [oz, dz, z0, z1]]) {
-    if (Math.abs(d) < 1e-9) {
-      if (o < a || o > b) return null
-    } else {
-      let t1 = (a - o) / d, t2 = (b - o) / d
-      if (t1 > t2) [t1, t2] = [t2, t1]
-      tmin = Math.max(tmin, t1)
-      tmax = Math.min(tmax, t2)
-      if (tmin > tmax) return null
-    }
-  }
-  return tmin
-}
+export { rayBoxT } from "../streamShared.js"

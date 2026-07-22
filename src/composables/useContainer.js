@@ -27,7 +27,7 @@ const KINDS = {
 
 function kindOf(name) {
   const n = name.replace(/^minecraft:/, "")
-  if (n === "dispenser" || n === "dropper") return KINDS.dispenser
+  if (n === "dispenser" || n === "dropper" || n === "decorated_pot") return KINDS.dispenser
   if (n === "hopper" || /(^|_)shelf$/.test(n)) return KINDS.hopper
   if (/shulker_box$/.test(n)) return KINDS.shulker
   return KINDS.generic
@@ -439,6 +439,28 @@ async function open(block) {
     if (bare === "trial_spawner") loadTrialRows(entry?.Properties ?? {}, block.nbt)
     return
   }
+  if (bare === "decorated_pot") {
+    const books = useBooks()
+    books.wobble(block.pos)
+    if (streamApi.state.session) streamApi.provider.wobble(block.pos)
+    if (!block.nbt?.LootTable) {
+      const it = block.nbt?.item
+      state.tab = "loot"
+      state.tableId = ""
+      state.table = null
+      state.odds = null
+      state.oddsBusy = false
+      state.rolls = 0
+      state.pileTotal = 0
+      state.gui = state.kind
+      state.guiTitle = state.blockName
+      state.stacks = it?.id ? [{ id: it.id, count: Number(it.count ?? it.Count ?? 1), components: it.components, tag: it.tag, slot: 4 }] : []
+      if (!it?.id) state.note = "This pot is empty."
+      openSeq++
+      state.open = true
+      return
+    }
+  }
   if (bare === "lectern") {
     const it = block.nbt?.Book
     state.tab = "loot"
@@ -596,14 +618,25 @@ const _ray = new THREE.Raycaster(), _ndc = new THREE.Vector2()
 let downX = 0, downY = 0, downT = 0
 let hover = null
 
-function underRay(e, canvas) {
+function screenRay(e, canvas) {
   const r = canvas.getBoundingClientRect()
   _ndc.set((e.clientX - r.left) / r.width * 2 - 1, -((e.clientY - r.top) / r.height * 2 - 1))
   _ray.setFromCamera(_ndc, sceneApi.camera)
-  const { origin: o, direction: d } = _ray.ray
+  return _ray.ray
+}
+
+function underRay(e, canvas) {
+  const { origin: o, direction: d } = screenRay(e, canvas)
   if (streamApi.state.session) return streamApi.provider.pick(o.x, o.y, o.z, d.x, d.y, d.z)
   if (!buildApi.getRoot()) return null
   return buildApi.rayHit(o.x, o.y, o.z, d.x, d.y, d.z, 4000)
+}
+
+// easter egg: bells ring where you whack them, no hitbox or hover
+function ringBellUnder(e, canvas) {
+  const { origin: o, direction: d } = screenRay(e, canvas)
+  if (streamApi.state.session) streamApi.provider.ringBell(o.x, o.y, o.z, d.x, d.y, d.z)
+  else if (buildApi.getRoot()) buildApi.ringBell(o.x, o.y, o.z, d.x, d.y, d.z)
 }
 
 function inspectableUnder(e, canvas) {
@@ -631,8 +664,12 @@ function clearHover(canvas) {
   if (!useSlicers().busy()) canvas.style.cursor = ""
 }
 
+// orbit controls only disable while walk mode holds the camera, so this stands
+// in for "walking or suspended" without importing useWalk (import cycle)
+const walking = () => sceneApi.controls?.enabled === false
+
 function hoverCheck(e, canvas) {
-  if (document.pointerLockElement || state.open || e.buttons || useSlicers().busy()) return clearHover(canvas)
+  if (document.pointerLockElement || state.open || e.buttons || useSlicers().busy() || walking()) return clearHover(canvas)
   const h = underRay(e, canvas)
   state.aim = aimFor(h)
   const u = h?.entity ? { marker: h.entity } : h?.container ? { block: h.container } : null
@@ -660,14 +697,14 @@ function initPicking(canvas) {
     downT = performance.now()
   })
   canvas.addEventListener("pointerup", e => {
-    if (document.pointerLockElement || e.button !== 0 || useSlicers().busy()) return
+    if (document.pointerLockElement || e.button !== 0 || useSlicers().busy() || walking()) return
     if (Math.hypot(e.clientX - downX, e.clientY - downY) > 4 || performance.now() - downT > 400) return
     if (state.open) return
     const u = inspectableUnder(e, canvas)
     if (u) {
       clearHover(canvas)
       u.marker ? openEntityMarker(u.marker) : open(u.block)
-    }
+    } else ringBellUnder(e, canvas)
   })
   let pending = null
   canvas.addEventListener("pointermove", e => {

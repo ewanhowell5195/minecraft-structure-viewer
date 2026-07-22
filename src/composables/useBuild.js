@@ -16,6 +16,7 @@ import { useWorld } from "./useWorld.js"
 import { useBooks } from "./useBooks.js"
 import { minimal } from "../minimal.js"
 import { loadStateCache, saveStateCache } from "../stateCache.js"
+import { SOFT_BLOCKS, HARD_BLOCKS, bellRingDir } from "../streamShared.js"
 
 const packs = usePacks()
 const sceneApi = useScene()
@@ -1048,15 +1049,18 @@ let collBoxCache = new Map()
 let aimBoxCache = new Map()
 const _cb = new THREE.Box3()
 function templateBoxes(tmpl, arr, skipFluid = false) {
-  const inFluid = o => {
-    for (let p = o; p && p !== tmpl; p = p.parent) if (p.userData?.model?.fluid) return true
+  const skip = o => {
+    for (let p = o; p && p !== tmpl; p = p.parent) {
+      if (p.userData?.dynamic === "enchanting_book") return true
+      if (skipFluid && p.userData?.model?.fluid) return true
+    }
     return false
   }
   tmpl.updateMatrixWorld(true)
   tmpl.traverse(o => {
     const coll = o.userData.collision
     if (coll) {
-      if (skipFluid && inFluid(o)) return
+      if (skip(o)) return
       for (const c of coll) {
         _cb.min.set(c[0], c[1], c[2])
         _cb.max.set(c[3], c[4], c[5])
@@ -1066,7 +1070,7 @@ function templateBoxes(tmpl, arr, skipFluid = false) {
       return
     }
     if (!o.isMesh || o.parent?.userData.collision) return
-    if (skipFluid && inFluid(o)) return
+    if (skip(o)) return
     _cb.setFromObject(o)
     if (!_cb.isEmpty()) arr.push([_cb.min.x, _cb.min.y, _cb.min.z, _cb.max.x, _cb.max.y, _cb.max.z])
   })
@@ -1171,11 +1175,29 @@ function rayHit(ox, oy, oz, dx, dy, dz, REACH = 80) {
   return entM ? { entity: entM } : null
 }
 
+function tryRingBell(h, ox, oy, oz, dx, dy, dz) {
+  if (!h?.block || !root) return false
+  const e = current.value?.palette[h.block.state]
+  if (!/(^|:)bell$/.test(e?.Name ?? "")) return false
+  const bx = h.block.pos[0] * 16 + root.position.x - 8
+  const by = h.block.pos[1] * 16 + root.position.y - 8
+  const bz = h.block.pos[2] * 16 + root.position.z - 8
+  const dir = bellRingDir(ox, oy, oz, dx, dy, dz, bx, by, bz, e.Properties ?? {})
+  if (!dir) return false
+  useBooks().ring(h.block.pos, dir)
+  return true
+}
+
+function ringBell(ox, oy, oz, dx, dy, dz) {
+  return tryRingBell(rayHit(ox, oy, oz, dx, dy, dz, 4000), ox, oy, oz, dx, dy, dz)
+}
+
 // { toggled: blocks }, { entity }, a container block, or false
 function interact(ox, oy, oz, dx, dy, dz) {
   const h = rayHit(ox, oy, oz, dx, dy, dz)
   if (h?.door) return { toggled: toggleDoor(h.door) }
   if (h?.entity) return { entity: h.entity }
+  if (h?.block) tryRingBell(h, ox, oy, oz, dx, dy, dz)
   return h?.container ?? false
 }
 
@@ -1208,6 +1230,7 @@ function shapeFor(e) {
     return PANEL[dir] ?? PANEL.north
   }
   if (/chest$/.test(name)) return [1, 0, 1, 15, 14, 15]
+  if (name === "decorated_pot") return [1, 0, 1, 15, 16, 15]
   if (/(^|_)shelf$/.test(name)) {
     const f = p.facing ?? "north"
     return f === "north" ? [0, 0, 11, 16, 16, 16]
@@ -1489,7 +1512,7 @@ async function build(structure = source, refit = true, slice = false) {
           if (data?.fluid) continue
           for (const el of data?.elements ?? []) { any = true; if (!isPlane(el)) allPlanes = false }
         }
-        if (any && allPlanes) nonSolid.add(stateIdx)
+        if (SOFT_BLOCKS.test(name) || (any && allPlanes && !HARD_BLOCKS.test(name))) nonSolid.add(stateIdx)
         if (g.children.length) tmpl = g
       } catch {}
       templates.set(stateIdx, tmpl)
@@ -1670,13 +1693,14 @@ async function build(structure = source, refit = true, slice = false) {
 
     for (let pi = 0; pi < handle.palette.length; pi++) {
       try {
+        const id = handle.palette[pi].id
         let any = false, allPlanes = true
         for (const model of handle.palette[pi].models) {
           if (model?.fluid) continue
           const data = await lib.resolveModelData(assets, model)
           for (const el of data?.elements ?? []) { any = true; if (!isPlane(el)) allPlanes = false }
         }
-        if (any && allPlanes) nonSolidPalette.add(pi)
+        if (SOFT_BLOCKS.test(id) || (any && allPlanes && !HARD_BLOCKS.test(id))) nonSolidPalette.add(pi)
       } catch {}
     }
     if (cancelBuild) {
@@ -1910,6 +1934,6 @@ async function clearMapArt() {
 export function useBuild() {
   return {
     state, current, build, cancel, answerWarn, setRestoreGate, restoreGateCheck, getRoot, getTemplates, getNonSolid, showFull, restoreFull,
-    blockAt, blockEntryAt, boxForBlock, boxForEntity, markerUnderRay, rayHit, interact, aimDoor, blockBoxes, exportCurrent, clearMapArt
+    blockAt, blockEntryAt, boxForBlock, boxForEntity, markerUnderRay, rayHit, interact, aimDoor, blockBoxes, ringBell, exportCurrent, clearMapArt
   }
 }

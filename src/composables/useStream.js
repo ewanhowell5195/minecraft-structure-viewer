@@ -7,7 +7,7 @@ import { usePacks } from "./usePacks.js"
 import { loadLibrary } from "../lib.js"
 import { chunkGrid, mergeTilePalettes, assembleTile } from "../world.js"
 import { attachTileDoors, importDoorTemplates, doorShape, rayBoxT, OPENABLE } from "./useStreamDoors.js"
-import { softFor, solidFor, templateBoxes, DYNAMIC_BLOCKS } from "../streamShared.js"
+import { softFor, solidFor, templateBoxes, bellRingDir, DYNAMIC_BLOCKS } from "../streamShared.js"
 import { attachTileDynamics } from "./useStreamDynamics.js"
 import { isInspectable } from "../loot.js"
 
@@ -591,9 +591,19 @@ const provider = {
   interact(ox, oy, oz, dx, dy, dz) {
     const h = marchDoor(ox, oy, oz, dx, dy, dz)
     if (h) return { toggled: h.tile.doors.toggle(h.reg) }
-    const c = marchContainer(ox, oy, oz, dx, dy, dz)
+    const c = marchContainer(ox, oy, oz, dx, dy, dz, 80, true)
     if (!c) return false
+    if (c.bell) {
+      tiles.get(tkeyAt(c.bell.pos[0], c.bell.pos[2]))?.dyn?.ring?.(c.bell.pos, c.bell.dir)
+      return false
+    }
     return { pos: c.cell.pos, entry: { Name: c.entry.id, Properties: c.entry.properties }, nbt: c.entry.nbt }
+  },
+  ringBell(ox, oy, oz, dx, dy, dz) {
+    const c = marchContainer(ox, oy, oz, dx, dy, dz, 4000, true)
+    if (!c?.bell) return false
+    tiles.get(tkeyAt(c.bell.pos[0], c.bell.pos[2]))?.dyn?.ring?.(c.bell.pos, c.bell.dir)
+    return true
   },
   // orbit-mode hover and click over a suspended session's tiles
   pick(ox, oy, oz, dx, dy, dz, reach = 4000) {
@@ -610,6 +620,9 @@ const provider = {
   },
   setLid(pos, on) {
     tiles.get(tkeyAt(pos[0], pos[2]))?.dyn?.setLid(pos, on)
+  },
+  wobble(pos) {
+    tiles.get(tkeyAt(pos[0], pos[2]))?.dyn?.wobble?.(pos)
   }
 }
 
@@ -617,6 +630,7 @@ const provider = {
 function containerShape(id, p) {
   const name = (id || "").replace(/^minecraft:/, "")
   if (/chest$/.test(name)) return [1, 0, 1, 15, 14, 15]
+  if (name === "decorated_pot") return [1, 0, 1, 15, 16, 15]
   if (/(^|_)shelf$/.test(name)) {
     const f = p.facing ?? "north"
     return f === "north" ? [0, 0, 11, 16, 16, 16]
@@ -627,7 +641,7 @@ function containerShape(id, p) {
   return [0, 0, 0, 16, 16, 16]
 }
 
-function marchContainer(ox, oy, oz, dx, dy, dz, reach = 80) {
+function marchContainer(ox, oy, oz, dx, dy, dz, reach = 80, bells = false) {
   let last = ""
   for (let t = 0; t <= reach; t += 2) {
     const gx = Math.round((ox + dx * t) / 16), gy = Math.round((oy + dy * t) / 16), gz = Math.round((oz + dz * t) / 16)
@@ -638,6 +652,10 @@ function marchContainer(ox, oy, oz, dx, dy, dz, reach = 80) {
     if (!e) continue
     const name = e.cell.entry.id
     const nbt = e.cell.entry.nbt
+    if (bells && /(^|:)bell$/.test(name)) {
+      const dir = bellRingDir(ox, oy, oz, dx, dy, dz, gx * 16 - 8, gy * 16 - 8, gz * 16 - 8, e.cell.entry.properties ?? {})
+      if (dir) return { bell: { pos: e.cell.pos, dir } }
+    }
     if (isInspectable(name) || nbt?.LootTable || /(^|[:_])spawner$/.test(name)) {
       return { cell: e.cell, entry: e.cell.entry, gx, gy, gz }
     }

@@ -36,20 +36,27 @@ export async function attachTileDynamics({ lib, assets, blocks, lightMat, shared
   const regs = new Map()
   blocks.forEach((d, i) => regs.set(d.pos.join(","), { pos: d.pos, id: d.id, properties: d.properties, nbt: d.nbt, i }))
   const boxCache = new Map()
-  // chest and shulker lids keep per-placement pose rigs; index them by cell
+  // chest and shulker lids, pot wobbles and bell rings keep per-placement pose
+  // rigs; index them by cell
   const lids = new Map()
   handle.group.updateMatrixWorld(true)
   handle.group.traverse(o => {
     const kind = o.userData?.dynamic
-    if (kind !== "chest" && kind !== "shulker_box") return
-    if (typeof o.open !== "function") return
+    if (kind !== "chest" && kind !== "shulker_box" && kind !== "decorated_pot" && kind !== "bell") return
+    if (typeof o.open !== "function" && typeof o.wobble !== "function" && typeof o.ring !== "function") return
     o.getWorldPosition(_wp)
     lids.set([Math.floor(_wp.x / 16), Math.floor(_wp.y / 16), Math.floor(_wp.z / 16)].join(","), o)
   })
   return {
     setLid(pos, on) {
       const l = lids.get(pos.join(","))
-      if (l) on ? l.open() : l.close()
+      if (l?.open) on ? l.open() : l.close()
+    },
+    wobble(pos) {
+      lids.get(pos.join(","))?.wobble?.("positive")
+    },
+    ring(pos, dir) {
+      lids.get(pos.join(","))?.ring?.(dir)
     },
     group: handle.group,
     regs,

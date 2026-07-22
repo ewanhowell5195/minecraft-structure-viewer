@@ -17,8 +17,16 @@ function setRange(blocks) {
 function setLid(pos, on) {
   const entry = lids.get(pos.join(","))
   if (!entry) return
-  if (on) entry.open()
-  else entry.close()
+  if (on) entry.open?.()
+  else entry.close?.()
+}
+
+function wobble(pos) {
+  lids.get(pos.join(","))?.wobble?.("positive")
+}
+
+function ring(pos, dir) {
+  lids.get(pos.join(","))?.ring?.(dir)
 }
 
 const _v = new THREE.Vector3()
@@ -32,7 +40,7 @@ function refresh() {
     if (!kind) return
     if (kind === "enchanting_book") {
       o.userData.range = rangeDefault
-    } else if ((kind === "chest" || kind === "shulker_box") && root) {
+    } else if ((kind === "chest" || kind === "shulker_box" || kind === "decorated_pot" || kind === "bell") && root) {
       o.getWorldPosition(_v)
       const key = [
         Math.floor((_v.x - root.position.x) / 16),
@@ -45,5 +53,5 @@ function refresh() {
 }
 
 export function useBooks() {
-  return { refresh, setLid, setRange }
+  return { refresh, setLid, setRange, wobble, ring }
 }
