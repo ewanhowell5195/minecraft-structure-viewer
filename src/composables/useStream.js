@@ -253,7 +253,8 @@ async function buildTile(tx, tz, gen) {
 
 async function buildTileWorker(tx, tz, gen) {
   const res = await workerTile(tx, tz)
-  if (!res || gen !== queueGen) return
+  if (gen !== queueGen) return
+  if (!res) return buildTileMain(tx, tz, gen)
   const { msg, slot } = res
   if (msg.empty) {
     tiles.set(ckey(tx, tz), { handle: null, group: null, cells: null, softs: null, boxes: null })
