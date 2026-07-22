@@ -594,6 +594,22 @@ const provider = {
     const c = marchContainer(ox, oy, oz, dx, dy, dz)
     if (!c) return false
     return { pos: c.cell.pos, entry: { Name: c.entry.id, Properties: c.entry.properties }, nbt: c.entry.nbt }
+  },
+  // orbit-mode hover and click over a suspended session's tiles
+  pick(ox, oy, oz, dx, dy, dz, reach = 4000) {
+    const c = marchContainer(ox, oy, oz, dx, dy, dz, reach)
+    if (!c) return null
+    const s = containerShape(c.entry.id, c.entry.properties ?? {})
+    const bx = c.gx * 16 - 8, by = c.gy * 16 - 8, bz = c.gz * 16 - 8
+    return {
+      container: { pos: c.cell.pos, entry: { Name: c.entry.id, Properties: c.entry.properties }, nbt: c.entry.nbt },
+      box: new THREE.Box3(
+        new THREE.Vector3(bx + s[0], by + s[1], bz + s[2]),
+        new THREE.Vector3(bx + s[3], by + s[4], bz + s[5]))
+    }
+  },
+  setLid(pos, on) {
+    tiles.get(tkeyAt(pos[0], pos[2]))?.dyn?.setLid(pos, on)
   }
 }
 
@@ -611,9 +627,9 @@ function containerShape(id, p) {
   return [0, 0, 0, 16, 16, 16]
 }
 
-function marchContainer(ox, oy, oz, dx, dy, dz) {
+function marchContainer(ox, oy, oz, dx, dy, dz, reach = 80) {
   let last = ""
-  for (let t = 0; t <= 80; t += 2) {
+  for (let t = 0; t <= reach; t += 2) {
     const gx = Math.round((ox + dx * t) / 16), gy = Math.round((oy + dy * t) / 16), gz = Math.round((oz + dz * t) / 16)
     const key = gx + "," + gy + "," + gz
     if (key === last) continue

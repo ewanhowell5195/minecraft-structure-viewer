@@ -9,9 +9,11 @@ import { useStructures } from "./useStructures.js"
 import { readLootTable, readTrialSpawnerConfig, rollLoot, sampleTable, stackKey, prettyName, isInspectable } from "../loot.js"
 import { parseState } from "../transforms.js"
 import { useBooks } from "./useBooks.js"
+import { useStream } from "./useStream.js"
 
 const sceneApi = useScene()
 const buildApi = useBuild()
+const streamApi = useStream()
 const packs = usePacks()
 const structures = useStructures()
 
@@ -397,7 +399,10 @@ function poseLids(block, entry, on) {
     positions.push([block.pos[0] + v[0], block.pos[1], block.pos[2] + v[1]])
   }
   const books = useBooks()
-  for (const pos of positions) books.setLid(pos, on)
+  for (const pos of positions) {
+    books.setLid(pos, on)
+    if (streamApi.state.session) streamApi.provider.setLid(pos, on)
+  }
   openLids = on ? positions : []
 }
 
@@ -569,7 +574,10 @@ function close() {
   state.pick = null
   state.item = null
   const books = useBooks()
-  for (const pos of openLids) books.setLid(pos, false)
+  for (const pos of openLids) {
+    books.setLid(pos, false)
+    if (streamApi.state.session) streamApi.provider.setLid(pos, false)
+  }
   openLids = []
   refreshHover()
 }
@@ -589,12 +597,12 @@ let downX = 0, downY = 0, downT = 0
 let hover = null
 
 function underRay(e, canvas) {
-  const root = buildApi.getRoot()
-  if (!root) return null
   const r = canvas.getBoundingClientRect()
   _ndc.set((e.clientX - r.left) / r.width * 2 - 1, -((e.clientY - r.top) / r.height * 2 - 1))
   _ray.setFromCamera(_ndc, sceneApi.camera)
   const { origin: o, direction: d } = _ray.ray
+  if (streamApi.state.session) return streamApi.provider.pick(o.x, o.y, o.z, d.x, d.y, d.z)
+  if (!buildApi.getRoot()) return null
   return buildApi.rayHit(o.x, o.y, o.z, d.x, d.y, d.z, 4000)
 }
 
@@ -612,7 +620,7 @@ function aimFor(h) {
   }
   const b = h?.door?.b ?? h?.container ?? h?.block
   if (!b) return null
-  const e = buildApi.current.value?.palette[b.state]
+  const e = b.entry ?? buildApi.current.value?.palette[b.state]
   if (!e?.Name) return null
   return { name: stripNs(e.Name), props: e.Properties ?? null }
 }
@@ -628,7 +636,7 @@ function hoverCheck(e, canvas) {
   const h = underRay(e, canvas)
   state.aim = aimFor(h)
   const u = h?.entity ? { marker: h.entity } : h?.container ? { block: h.container } : null
-  const box = u?.marker ? buildApi.boxForEntity(u.marker) : u?.block ? buildApi.boxForBlock(u.block) : null
+  const box = u?.marker ? buildApi.boxForEntity(u.marker) : u?.block ? (h.box ?? buildApi.boxForBlock(u.block)) : null
   if (box) {
     hover ??= sceneApi.makeHighlight()
     hover.show(box)

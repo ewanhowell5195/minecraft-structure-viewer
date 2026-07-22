@@ -1,4 +1,7 @@
+import * as THREE from "three"
 import { templateBoxes } from "../streamShared.js"
+
+const _wp = new THREE.Vector3()
 
 // dynamic-model blocks (chests, banners, bells, enchanting tables...) carry
 // live part rigs and pose methods the packed tile format can't ship, so each
@@ -33,7 +36,21 @@ export async function attachTileDynamics({ lib, assets, blocks, lightMat, shared
   const regs = new Map()
   blocks.forEach((d, i) => regs.set(d.pos.join(","), { pos: d.pos, id: d.id, properties: d.properties, nbt: d.nbt, i }))
   const boxCache = new Map()
+  // chest and shulker lids keep per-placement pose rigs; index them by cell
+  const lids = new Map()
+  handle.group.updateMatrixWorld(true)
+  handle.group.traverse(o => {
+    const kind = o.userData?.dynamic
+    if (kind !== "chest" && kind !== "shulker_box") return
+    if (typeof o.open !== "function") return
+    o.getWorldPosition(_wp)
+    lids.set([Math.floor(_wp.x / 16), Math.floor(_wp.y / 16), Math.floor(_wp.z / 16)].join(","), o)
+  })
   return {
+    setLid(pos, on) {
+      const l = lids.get(pos.join(","))
+      if (l) on ? l.open() : l.close()
+    },
     group: handle.group,
     regs,
     animator: lib.createAnimator?.(handle.group) ?? null,
