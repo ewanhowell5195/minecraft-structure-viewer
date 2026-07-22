@@ -237,7 +237,7 @@ async function buckets(e) {
         byModels.set(mk, tk)
         let g = new THREE.Group()
         for (const model of models) {
-          await lib.loadModel(g, assets, await lib.resolveModelData(assets, model), { display: {}, lighting: "world", animate: false, ...LIGHT })
+          await lib.loadModel(g, assets, await lib.resolveModelData(assets, model), { display: {}, lighting: LIGHT, animate: false })
         }
         if (!g.children.length) g = null
         templates.set(tk, g)
@@ -284,7 +284,7 @@ async function fluidTemplate(e, type, x, y, z) {
     let g = new THREE.Group()
     try {
       for (const model of await lib.parseBlockstate(assets, e.Name, { data: e.Properties ?? {}, ignoreAtlases: true })) {
-        await lib.loadModel(g, assets, await lib.resolveModelData(assets, model), { display: {}, lighting: "world", animate: false, fluidHeights: h, ...LIGHT })
+        await lib.loadModel(g, assets, await lib.resolveModelData(assets, model), { display: {}, lighting: LIGHT, animate: false, fluidHeights: h })
       }
     } catch {}
     t = g.children.length ? g : null
