@@ -25,6 +25,7 @@ const state = reactive({ on: false, tiles: 0, pending: 0 })
 let root = null
 let lib = null
 let assets = null
+let sharedAtlas = null
 let world = null
 let origin = null            // [blockX, blockY, blockZ] of the spawn chunk corner
 let yRange = null
@@ -194,6 +195,7 @@ async function buildTile(cx, cz, gen) {
     technical: false,
     animate: false,
     sliceMs: 8,
+    sharedAtlas,
     shouldCancel: () => gen !== queueGen
   })
   if (!handle || gen !== queueGen) {
@@ -323,6 +325,7 @@ async function enter() {
   lib = await loadLibrary()
   assets = packs2().assets.value
   if (!assets) return false
+  sharedAtlas = lib.createSharedAtlas?.() ?? null
 
   // the chunk under the orbit focus, mapped back through the selection layout
   chunkMap = new Map(w.getChunks().map(c => [ckey(c.cx, c.cz), c]))
@@ -398,6 +401,8 @@ async function exit() {
   queueGen++
   playerChunk = null
   stopWorkers()
+  sharedAtlas?.dispose()
+  sharedAtlas = null
   for (const k of Array.from(tiles.keys())) disposeTile(k)
   blockCache.clear()
   if (root) sceneApi2().contentRoots.delete(root)
