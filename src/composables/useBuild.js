@@ -7,7 +7,6 @@ import { useSlicers } from "./useSlicers.js"
 import { useLock } from "./useLock.js"
 import { yieldTask } from "../yield.js"
 import { exportScene } from "../export.js"
-import { dropEnclosed } from "../world.js"
 import { makeSignTexts, plainText } from "../signs.js"
 import { JIGSAW, parseState } from "../transforms.js"
 import { isInspectable, readTrialSpawnerConfig } from "../loot.js"
@@ -1443,14 +1442,12 @@ async function build(structure = source, refit = true, slice = false) {
     if (cancelBuild) return abort()
 
     let inputBlocks = []
-    const entryState = []
     const inputIdx = new Int32Array(structure.blocks.length).fill(-1)
     const stateCache = new Map()
-    for (let i = 0; i < structure.blocks.length; i++) {
-      const b = structure.blocks[i]
-      let sc = stateCache.get(b.state)
+    const scFor = state => {
+      let sc = stateCache.get(state)
       if (sc === undefined) {
-        const e = structure.palette[b.state]
+        const e = structure.palette[state]
         if (!e?.Name || AIR.test(e.Name) || isOpenable(e) || e.__loaderKey) sc = null
         else {
           const name = legacyNames.get(e.Name) ?? e.Name
@@ -1460,13 +1457,59 @@ async function build(structure = source, refit = true, slice = false) {
             props: fixLegacyProps(short, e.Properties),
             biome: e.__biome,
             isShelf: /(^|_)shelf$/.test(short),
-            isBanner: /(^|_)banner$/.test(short)
+            isBanner: /(^|_)banner$/.test(short),
+            solid: false
           }
         }
-        stateCache.set(b.state, sc)
+        stateCache.set(state, sc)
       }
+      return sc
+    }
+    let placeable = 0
+    let inBounds = true
+    for (let i = 0; i < structure.blocks.length; i++) {
+      const b = structure.blocks[i]
+      if (!scFor(b.state)) continue
+      placeable++
+      const p = b.pos
+      if (p[0] < 0 || p[1] < 0 || p[2] < 0 || p[0] >= sx || p[1] >= sy || p[2] >= sz) inBounds = false
+    }
+    // enclosure drop on a dense solid mask: blocks buried under fully-occluding
+    // neighbors on every side never materialize as entries; buried cells read
+    // as absent afterwards (no template, no collision), which only ever affects
+    // blocks nothing can reach or see
+    let buriedOcclusion = null
+    let enc = null
+    if (lib.fullyOccludes && placeable > 20000 && inBounds && sx * sy * sz <= 50_000_000) {
+      for (const [state, sc] of stateCache) {
+        if (!sc) continue
+        const e = structure.palette[state]
+        sc.solid = await lib.fullyOccludes({ id: sc.name, properties: sc.props ?? undefined, assets }).catch(() => false)
+      }
+      if (cancelBuild) return abort()
+      const w = sx, h = sy, d = sz
+      const solid = new Uint8Array(w * h * d)
+      for (let i = 0; i < structure.blocks.length; i++) {
+        const b = structure.blocks[i]
+        const sc = stateCache.get(b.state)
+        if (!sc || !sc.solid) continue
+        const p = b.pos
+        solid[(p[2] * h + p[1]) * w + p[0]] = 1
+      }
+      enc = (x, y, z) => {
+        if (x <= 0 || y <= 0 || z <= 0 || x >= w - 1 || y >= h - 1 || z >= d - 1) return false
+        const i = (z * h + y) * w + x
+        return !!(solid[i - 1] && solid[i + 1] && solid[i - w] && solid[i + w] && solid[i - w * h] && solid[i + w * h])
+      }
+      buriedOcclusion = (x, y, z) => x >= 0 && y >= 0 && z >= 0 && x < w && y < h && z < d && !!solid[(z * h + y) * w + x]
+    }
+    for (let i = 0; i < structure.blocks.length; i++) {
+      const b = structure.blocks[i]
+      const sc = stateCache.get(b.state)
       if (!sc) continue
-      const entry = { id: sc.name, pos: b.pos }
+      const p = b.pos
+      if (enc && enc(p[0], p[1], p[2])) continue
+      const entry = { id: sc.name, pos: p }
       if (sc.props) entry.properties = sc.props
       if (sc.biome) entry.biome = sc.biome
       if (b.nbt?.Items && sc.isShelf) {
@@ -1478,34 +1521,6 @@ async function build(structure = source, refit = true, slice = false) {
       }
       inputIdx[i] = inputBlocks.length
       inputBlocks.push(entry)
-      entryState.push(b.state)
-    }
-    // drop blocks buried under fully-occluding neighbors on every side, same as
-    // streaming does; buried cells read as absent afterwards (no template, no
-    // collision), which only ever affects blocks nothing can reach or see
-    let buriedOcclusion = null
-    if (lib.fullyOccludes && inputBlocks.length > 20000) {
-      const solidByState = new Map()
-      for (const si of new Set(entryState)) {
-        const e = structure.palette[si]
-        const name = legacyNames.get(e.Name) ?? e.Name
-        const props = fixLegacyProps(name.replace("minecraft:", ""), e.Properties)
-        solidByState.set(si, await lib.fullyOccludes({ id: name, properties: props ?? undefined, assets }).catch(() => false))
-      }
-      if (cancelBuild) return abort()
-      const flags = new Uint8Array(inputBlocks.length)
-      for (let k = 0; k < entryState.length; k++) flags[k] = solidByState.get(entryState[k]) ? 1 : 0
-      const de = dropEnclosed(inputBlocks, flags)
-      buriedOcclusion = de.occludes
-      if (de.blocks.length !== inputBlocks.length) {
-        const keptIdx = new Map()
-        for (let k = 0; k < de.blocks.length; k++) keptIdx.set(de.blocks[k], k)
-        for (let i = 0; i < inputIdx.length; i++) {
-          const ii = inputIdx[i]
-          if (ii >= 0) inputIdx[i] = keptIdx.get(inputBlocks[ii]) ?? -1
-        }
-        inputBlocks = de.blocks
-      }
     }
     // frame models ride the main scene mesh as blocks (facing blockstates are a
     // lib override); only the contained item stays an entity attachment
