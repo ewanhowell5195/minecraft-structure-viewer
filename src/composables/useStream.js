@@ -224,6 +224,8 @@ async function buildTile(tx, tz, gen) {
   }
   for (let i = 0; i < softs.length; i++) if (softs[i]) softs[i] = await softs[i]
   const tile = { handle, group: handle.group, cells, softs, boxes: new Map() }
+  try { await sceneApi2().renderer.compileAsync(handle.group, sceneApi2().perspCam, sceneApi2().scene) } catch {}
+  if (gen !== queueGen) { try { handle.dispose?.() } catch {} return }
   root.add(handle.group)
   tiles.set(ckey(tx, tz), tile)
   state.tiles = tiles.size
@@ -335,7 +337,7 @@ async function enter() {
   lib = await loadLibrary()
   assets = packs2().assets.value
   if (!assets) return false
-  sharedAtlas = lib.createSharedAtlas?.() ?? null
+  sharedAtlas = lib.createSharedAtlas?.({ renderer: sceneApi2().renderer }) ?? null
 
   // the chunk under the orbit focus, mapped back through the selection layout
   chunkMap = new Map(w.getChunks().map(c => [ckey(c.cx, c.cz), c]))
