@@ -1388,11 +1388,21 @@ async function build(structure = source, refit = true, slice = false) {
     // flood filled over what actually builds, so a slice relights; oversized scenes skip it
     if (state.lighting === "world" && !state.fullbright && lib.computeSceneLight && (sx + 2) * (sy + 2) * (sz + 2) <= 48000000) {
       const lightBlocks = []
+      // per-state shared descriptors keep the lib's identity memo effective
+      const lightSC = new Map()
       for (const b of structure.blocks) {
-        const e = structure.palette[b.state]
-        if (!e?.Name || AIR.test(e.Name)) continue
-        const name = legacyNames.get(e.Name) ?? e.Name
-        lightBlocks.push({ id: name, properties: fixLegacyProps(name.replace("minecraft:", ""), e.Properties) ?? {}, pos: b.pos })
+        let sc = lightSC.get(b.state)
+        if (sc === undefined) {
+          const e = structure.palette[b.state]
+          if (!e?.Name || AIR.test(e.Name)) sc = null
+          else {
+            const name = legacyNames.get(e.Name) ?? e.Name
+            sc = { id: name, properties: fixLegacyProps(name.replace("minecraft:", ""), e.Properties) ?? {} }
+          }
+          lightSC.set(b.state, sc)
+        }
+        if (!sc) continue
+        lightBlocks.push({ id: sc.id, properties: sc.properties, pos: b.pos })
       }
       if (lightBlocks.length) {
         state.status = "lighting…"
