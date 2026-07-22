@@ -2,7 +2,7 @@
 // decode, createScene and geometry packing happen here so tile builds stop
 // stealing main-thread frames. The build worker owns the shared atlas; the
 // main thread mirrors its pages from the deltas each tile ships back.
-import { readWorldZip, switchDimension, chunkBlocks, chunkGrid, mergeTilePalettes, assembleTile } from "./world.js"
+import { readWorldZip, switchDimension, chunkGrid, mergeTilePalettes, assembleTile } from "./world.js"
 import { loadLibrary } from "./lib.js"
 import { OPENABLE, packDoorTemplates } from "./composables/useStreamDoors.js"
 import { softFor, solidFor, templateBoxes } from "./streamShared.js"
@@ -140,10 +140,6 @@ self.onmessage = async e => {
       self.postMessage({ type: "buildReady", id: m.id })
     } else if (m.type === "build") {
       await buildTile(m)
-    } else if (m.type === "chunk") {
-      const c = chunkMap.get(m.cx + "," + m.cz)
-      const blocks = c ? await chunkBlocks(world, c, range) : []
-      self.postMessage({ type: "chunk", id: m.id, blocks })
     }
   } catch (err) {
     self.postMessage({ type: "error", id: m.id, error: String(err?.message ?? err) })

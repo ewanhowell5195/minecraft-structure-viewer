@@ -5,7 +5,7 @@ import { useBuild } from "./useBuild.js"
 import { useWorld } from "./useWorld.js"
 import { usePacks } from "./usePacks.js"
 import { loadLibrary } from "../lib.js"
-import { chunkBlocks, dropEnclosed } from "../world.js"
+import { chunkGrid, mergeTilePalettes, assembleTile } from "../world.js"
 import { attachTileDoors, importDoorTemplates, doorShape, rayBoxT, OPENABLE } from "./useStreamDoors.js"
 import { softFor, solidFor, templateBoxes } from "../streamShared.js"
 
@@ -38,16 +38,11 @@ let daytime = 6000
 let lightOff = false
 let chunkMap = null           // "cx,cz" -> chunk descriptor
 let tileSet = null            // "tx,tz" tile keys with at least one chunk
-let workers = []              // { worker, ready, inflight }
-let workerSeq = 0
-let anyWorkerReady = null     // resolves when the first worker finishes its zip scan
-let spawned = false
-const workerJobs = new Map()
 let buildWorkers = []         // { worker, ready, inflight, mirror } tile build workers
 let buildSeq = 0
 const buildJobs = new Map()
-const blockCache = new Map()  // "cx,cz" -> Promise<blocks in world coords>
-const tiles = new Map()       // "cx,cz" -> { handle, group, cells, softs, boxes }
+const gridCache = new Map()   // "cx,cz" -> Promise<chunk grid> for main-thread builds
+const tiles = new Map()       // "cx,cz" -> { handle, group, grid, softs, boxes }
 let queueGen = 0
 let building = false
 let playerTile = null
@@ -115,40 +110,7 @@ function tkeyAt(gx, gz) {
   return ckey(Math.floor(cx / TILE), Math.floor(cz / TILE))
 }
 
-// a small pool of parse workers; each owns its own zip scan, so parsing goes
-// wide once they land. Before that (and if a worker fails) the main thread
-// parses so the first tile never waits on the scans
-function startWorkers(file, dimension) {
-  const count = Math.min(2, Math.max(1, (navigator.hardwareConcurrency || 4) - 2))
-  workers = []
-  let readyResolve = null
-  anyWorkerReady = new Promise(r => { readyResolve = r })
-  for (let i = 0; i < count; i++) {
-    let w
-    try {
-      w = new Worker(new URL("../streamWorker.js", import.meta.url), { type: "module" })
-    } catch { break }
-    const slot = { worker: w, ready: false, inflight: 0 }
-    w.onmessage = e => {
-      const m = e.data
-      if (m.type === "ready") { slot.ready = true; readyResolve?.(); return }
-      const job = workerJobs.get(m.id)
-      if (!job) return
-      workerJobs.delete(m.id)
-      slot.inflight--
-      if (m.type === "chunk") job.resolve(m.blocks)
-      else job.reject(new Error(m.error))
-    }
-    w.onerror = () => { slot.ready = false }
-    w.postMessage({ type: "init", id: 0, file, dimension, yMin: yRange.yMin, yMax: yRange.yMax })
-    workers.push(slot)
-  }
-}
-
 function stopWorkers() {
-  for (const s of workers) s.worker.terminate()
-  workers = []
-  workerJobs.clear()
   for (const b of buildWorkers) {
     b.worker.terminate()
     b.mirror?.dispose()
@@ -218,54 +180,19 @@ function workerTile(tx, tz) {
   })
 }
 
-function idleWorker() {
-  let best = null
-  for (const s of workers) {
-    if (!s.ready) continue
-    if (!best || s.inflight < best.inflight) best = s
-  }
-  return best
-}
-
-function workerChunk(slot, cx, cz) {
-  return new Promise((resolve, reject) => {
-    const id = ++workerSeq
-    workerJobs.set(id, { resolve, reject })
-    slot.inflight++
-    slot.worker.postMessage({ type: "chunk", id, cx, cz })
-  })
-}
-
-function cachedBlocks(cx, cz) {
+function cachedGrid(cx, cz) {
   const k = ckey(cx, cz)
-  let p = blockCache.get(k)
+  let p = gridCache.get(k)
   if (!p) {
     const c = chunkMap.get(k)
-    const slot = c && idleWorker()
-    if (!c) p = Promise.resolve([])
-    else if (slot) p = workerChunk(slot, cx, cz).catch(() => chunkBlocks(world, c, yRange)).catch(() => [])
-    else if (spawned && workers.length) {
-      p = Promise.race([anyWorkerReady, new Promise(r => setTimeout(r, 15000))])
-        .then(() => {
-          const s = idleWorker()
-          return s ? workerChunk(s, cx, cz) : chunkBlocks(world, c, yRange)
-        })
-        .catch(() => chunkBlocks(world, c, yRange)).catch(() => [])
-    }
-    else p = chunkBlocks(world, c, yRange).catch(() => [])
-    blockCache.set(k, p)
-    if (blockCache.size > 32) blockCache.delete(blockCache.keys().next().value)
+    p = c ? chunkGrid(world, c, yRange).catch(() => null) : Promise.resolve(null)
+    gridCache.set(k, p)
+    if (gridCache.size > 48) gridCache.delete(gridCache.keys().next().value)
+  } else {
+    gridCache.delete(k)
+    gridCache.set(k, p)
   }
   return p
-}
-
-async function solidFlags(blocks) {
-  const flags = new Uint8Array(blocks.length)
-  for (let i = 0; i < blocks.length; i++) {
-    const b = blocks[i]
-    flags[i] = (await solidFor(lib, assets, b.id, b.properties)) ? 1 : 0
-  }
-  return flags
 }
 
 const FLUID_BLOCK = /(^|:)(water|flowing_water|lava|flowing_lava|bubble_column)$/
@@ -357,45 +284,32 @@ function revealProgressively(group) {
 
 async function buildTileMain(tx, tz, gen) {
   const x0 = tx * TILE, z0 = tz * TILE
-  const ownFetches = [], ctxFetches = []
-  for (let dx = -1; dx <= TILE; dx++) for (let dz = -1; dz <= TILE; dz++) {
-    const own = dx >= 0 && dx < TILE && dz >= 0 && dz < TILE
-    ;(own ? ownFetches : ctxFetches).push(cachedBlocks(x0 + dx, z0 + dz))
+  const fetches = []
+  for (let dz = -1; dz <= TILE; dz++) for (let dx = -1; dx <= TILE; dx++) fetches.push(cachedGrid(x0 + dx, z0 + dz))
+  const chunkGrids = (await Promise.all(fetches)).filter(cg => cg && !cg.empty)
+  if (gen !== queueGen) return
+  const anyOwn = chunkGrids.some(cg => cg.cx >= x0 && cg.cx < x0 + TILE && cg.cz >= z0 && cg.cz < z0 + TILE)
+  if (!anyOwn) {
+    tiles.set(ckey(tx, tz), { handle: null, group: null, grid: null, softs: null, boxes: null })
+    return
   }
-  let input = []
-  for (const own of await Promise.all(ownFetches)) {
-    if (gen !== queueGen) return
-    for (const b of own) {
-      input.push({ ...b, pos: [b.pos[0] - origin[0], b.pos[1] - origin[1], b.pos[2] - origin[2]] })
-    }
+  const { globalPalette, maps } = mergeTilePalettes(chunkGrids)
+  const solidArr = new Uint8Array(globalPalette.length + 1)
+  const doorArr = new Uint8Array(globalPalette.length + 1)
+  for (let i = 0; i < globalPalette.length; i++) {
+    const e = globalPalette[i]
+    doorArr[i + 1] = e.properties && "open" in e.properties && OPENABLE.test(e.id) ? 1 : 0
+    solidArr[i + 1] = (await solidFor(lib, assets, e.id, e.properties)) ? 1 : 0
   }
-  const rawOwn = input.length
-  const mainDoors = []
-  if (rawOwn) {
-    const undoored = []
-    for (const b of input) {
-      if (b.properties && "open" in b.properties && OPENABLE.test(b.id)) { mainDoors.push({ pos: b.pos, id: b.id, properties: b.properties }); continue }
-      undoored.push(b)
-    }
-    input = undoored
-  }
-  for (const nb of await Promise.all(ctxFetches)) {
-    if (gen !== queueGen) return
-    for (const b of nb) {
-      input.push({ id: b.id, properties: b.properties, pos: [b.pos[0] - origin[0], b.pos[1] - origin[1], b.pos[2] - origin[2]], context: true })
-    }
-  }
-  let extOcc = null
-  if (rawOwn) {
-    const de = dropEnclosed(input, await solidFlags(input))
-    input = de.blocks
-    extOcc = de.occludes
-    if (gen !== queueGen) return
-  }
-  let tileCount = input.length
-  for (let i = 0; i < input.length; i++) if (input[i].context) { tileCount = i; break }
+  if (gen !== queueGen) return
+  const at = assembleTile({
+    chunkGrids, maps, globalPalette, solidArr, doorArr, gcx0: x0 - 1, gcz0: z0 - 1,
+    chunksAcross: TILE + 2, yMin: yRange.yMin, yMax: yRange.yMax, origin,
+    ownTest: (lx, lz) => lx >= 16 && lz >= 16 && lx < (TILE + 1) * 16 && lz < (TILE + 1) * 16
+  })
+  const input = at.input, tileCount = at.tileCount, doors = at.doors
   if (!tileCount) {
-    tiles.set(ckey(tx, tz), { handle: null, group: null, cells: null, softs: null, boxes: null })
+    tiles.set(ckey(tx, tz), { handle: null, group: null, grid: null, softs: null, boxes: null })
     return
   }
   const handle = await lib.createScene(assets, input, {
@@ -406,31 +320,54 @@ async function buildTileMain(tx, tz, gen) {
     animate: false,
     sliceMs: 8,
     sharedAtlas,
-    externalOcclusion: extOcc,
+    externalOcclusion: at.occludes,
     shouldCancel: () => gen !== queueGen
   })
   if (!handle || gen !== queueGen) {
     handle?.dispose?.()
     return
   }
-  const cells = new Map()
-  const softs = []
+  const gw = TILE * 16, gh = at.H, W = at.W
+  const ox = x0 * 16 - origin[0], oy = yRange.yMin, oz = z0 * 16 - origin[2]
+  const cellData = new Int32Array(tileCount * 5)
+  let cn = 0
+  const softs = {}
   for (let i = 0; i < tileCount; i++) {
     const ti = handle.blockTemplate[i]
     if (ti === 0xFFFFFFFF) continue
     const b = input[i]
-    cells.set(b.pos.join(","), { pos: b.pos, ti, pi: handle.blockPalette[i], entry: b })
-    if (softs[ti] === undefined) softs[ti] = softFor(lib, assets, handle.palette[handle.blockPalette[i]])
+    const pi = handle.blockPalette[i]
+    cellData[cn++] = b.pos[0]
+    cellData[cn++] = b.pos[1]
+    cellData[cn++] = b.pos[2]
+    cellData[cn++] = ti
+    cellData[cn++] = pi
+    if (softs[ti] === undefined) softs[ti] = softFor(lib, assets, handle.palette[pi])
   }
-  for (let i = 0; i < softs.length; i++) if (softs[i]) softs[i] = await softs[i]
-  const tile = { handle, group: handle.group, cells, softs, boxes: new Map(), buriedFn: extOcc }
-  if (mainDoors.length) {
+  for (const ti of Object.keys(softs)) softs[ti] = await softs[ti]
+  const cd = cellData.slice(0, cn)
+  const grid = new Int32Array(gw * gw * gh)
+  for (let i = 0; i < cd.length; i += 5) {
+    const lx = cd[i] - ox, ly = cd[i + 1] - oy, lz = cd[i + 2] - oz
+    if (lx < 0 || lz < 0 || ly < 0 || lx >= gw || lz >= gw || ly >= gh) continue
+    grid[(ly * gw + lz) * gw + lx] = (i / 5) + 1
+  }
+  const buried = new Uint8Array(Math.ceil(gw * gw * gh / 8))
+  for (let ly = 0; ly < gh; ly++) for (let lz = 0; lz < gw; lz++) for (let lx = 0; lx < gw; lx++) {
+    if (solidArr[at.tile[(ly * W + lz + 16) * W + lx + 16]]) {
+      const bi = (ly * gw + lz) * gw + lx
+      buried[bi >> 3] |= 1 << (bi & 7)
+    }
+  }
+  const palette = handle.palette.map(p => ({ id: p.id, properties: p.properties ?? null }))
+  const tile = { handle, group: handle.group, cellData: cd, grid, ox, oy, oz, gw, gh, palette, softs, boxes: new Map(), buried }
+  if (doors.length) {
     let lightMat = null
     handle.group.traverse(o => {
       if (lightMat || !o.isMesh) return
       for (const m of [].concat(o.material)) if (m?.uniforms?.lightVol) { lightMat = m; break }
     })
-    tile.doors = await attachTileDoors({ lib, assets, doors: mainDoors, group: handle.group, lightMat, onToggle: () => onTilesChanged?.() })
+    tile.doors = await attachTileDoors({ lib, assets, doors, group: handle.group, lightMat, onToggle: () => onTilesChanged?.() })
   }
   try { await sceneApi2().renderer.compileAsync(handle.group, sceneApi2().perspCam, sceneApi2().scene) } catch {}
   if (gen !== queueGen) { try { handle.dispose?.() } catch {} return }
@@ -511,7 +448,7 @@ async function pump() {
         inflight.set(k, buildTile(tx, tz, gen).catch(() => {}).finally(() => inflight.delete(k)))
       }
       if (!readyBuilders().length) for (const [ptx, ptz] of want.slice(0, 3)) {
-        for (let dx = 0; dx < TILE; dx++) for (let dz = 0; dz < TILE; dz++) cachedBlocks(ptx * TILE + dx, ptz * TILE + dz)
+        for (let dx = 0; dx < TILE; dx++) for (let dz = 0; dz < TILE; dz++) cachedGrid(ptx * TILE + dx, ptz * TILE + dz)
       }
       if (inflight.size) await Promise.race(Array.from(inflight.values()))
       await new Promise(r => setTimeout(r))
@@ -522,17 +459,10 @@ async function pump() {
   }
 }
 
-// worker tiles carry a flat grid over typed cell data; main-built tiles keep
-// a cells Map. cellAt bridges both for the walk provider
+// every tile carries a flat grid over typed cell data; buried cells read as
+// solid stone so walk collision holds inside the dropped interior
 function cellAt(t, gx, gy, gz) {
-  if (!t) return null
-  if (t.cells) {
-    const c = t.cells.get(gx + "," + gy + "," + gz)
-    if (c) return c
-    if (t.buriedFn?.(gx, gy, gz)) return { pos: [gx, gy, gz], ti: -1, pi: -1, buried: true, entry: { id: "minecraft:stone" } }
-    return null
-  }
-  if (!t.grid) return null
+  if (!t?.grid) return null
   const lx = gx - t.ox, ly = gy - t.oy, lz = gz - t.oz
   if (lx < 0 || lz < 0 || ly < 0 || lx >= t.gw || lz >= t.gw || ly >= t.gh) return null
   const idx = t.grid[(ly * t.gw + lz) * t.gw + lx]
@@ -630,17 +560,7 @@ function marchDoor(ox, oy, oz, dx, dy, dz) {
 // scene-space column -> highest solid block top, for the spawn point
 async function surfaceAt(gx, gz) {
   const t = tiles.get(tkeyAt(gx, gz))
-  if (!t) return null
-  if (t.cells) {
-    let top = null
-    for (const cell of t.cells.values()) {
-      if (cell.pos[0] !== gx || cell.pos[2] !== gz) continue
-      if (FLUID_BLOCK.test(cell.entry.id) || t.softs[cell.ti]) continue
-      if (top === null || cell.pos[1] > top) top = cell.pos[1]
-    }
-    return top
-  }
-  if (!t.grid) return null
+  if (!t?.grid) return null
   const lx = gx - t.ox, lz = gz - t.oz
   if (lx < 0 || lz < 0 || lx >= t.gw || lz >= t.gw) return null
   for (let ly = t.gh - 1; ly >= 0; ly--) {
@@ -707,10 +627,7 @@ async function enter() {
   queueGen++
   occlSeed = await lib.exportOcclusionCache?.(assets).catch(() => null) ?? null
   const wfile = w.getWorldFile()
-  if (wfile) {
-    startWorkers(wfile, ws.dimension)
-    startBuildWorkers(wfile, ws.dimension)
-  }
+  if (wfile) startBuildWorkers(wfile, ws.dimension)
   root = new THREE.Group()
   sceneApi2().scene.add(root)
   sceneApi2().contentRoots.add(root)
@@ -719,14 +636,12 @@ async function enter() {
   await buildApi2().build(EMPTY, false)
   sceneApi2().setGrids([])
 
-  spawned = false
   playerTile = [Math.floor(scx / TILE), Math.floor(scz / TILE)]
   try {
     await buildTile(playerTile[0], playerTile[1], queueGen)
   } finally {
     state.preparing = false
   }
-  spawned = true
   const sgx = Math.min(scx * 16 + 15, Math.max(scx * 16, Math.floor(wxb))) - origin[0]
   const sgz = Math.min(scz * 16 + 15, Math.max(scz * 16, Math.floor(wzb))) - origin[2]
   const top = await surfaceAt(sgx, sgz) ?? await surfaceAt(8, 8)
@@ -766,7 +681,7 @@ async function exit() {
     sharedAtlas?.dispose()
     sharedAtlas = null
     for (const k of Array.from(tiles.keys())) disposeTile(k)
-    blockCache.clear()
+    gridCache.clear()
     if (root) sceneApi2().contentRoots.delete(root)
     root?.removeFromParent()
     root = null
