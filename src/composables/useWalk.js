@@ -649,7 +649,7 @@ function exit() {
   sceneApi.updateProjection()
   sceneApi.controls.update()
   outline?.hide()
-  if (streaming) streamApi.exit()
+  if (streaming) streamApi.exit({ x: walk.pos.x, y: walk.pos.y + walk.eye, z: walk.pos.z, pitch: walk.pitch, yaw: walk.yaw })
 }
 
 streamApi.setTilesChanged(() => { collCells = new Map() })

@@ -670,6 +670,12 @@ async function surfaceAt(gx, gz) {
 
 async function enter(spawn) {
   if (state.session && !state.on) {
+    if (resumeCam) {
+      const c = sceneApi2().perspCam
+      c.position.set(resumeCam.x, resumeCam.y, resumeCam.z)
+      c.rotation.set(resumeCam.pitch, resumeCam.yaw, 0, "YXZ")
+      c.updateMatrixWorld(true)
+    }
     state.on = true
     pump()
     return true
@@ -747,10 +753,12 @@ function tick(pos) {
 
 // leaving walk keeps the streamed tiles as the live scene: streaming pauses,
 // the orbit camera takes over where the player stood, and re-entering walk
-// resumes the same session
-function exit() {
+// resumes the same session from the remembered spot
+let resumeCam = null
+function exit(cam) {
   if (!state.on) return
   state.on = false
+  resumeCam = cam ?? null
 }
 
 // full teardown: before a fresh stream entry or when a new orbit build
@@ -772,6 +780,7 @@ function shutdown() {
   root?.removeFromParent()
   root = null
   occlSeed = null
+  resumeCam = null
 }
 
 export function useStream() {
