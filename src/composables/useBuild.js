@@ -1378,6 +1378,7 @@ async function build(structure = source, refit = true, slice = false) {
     const slicedApplied = structure !== unsliced
     current.value = structure
     const lib = await loadLibrary()
+    lib.setAnimationRenderer?.(sceneApi.renderer)
     const [sx, sy, sz] = structure.size
     state.status = "building…"
     buildDim = !state.fullbright && /^(the_nether|the_end)$/.test(unsliced.dimension) ? unsliced.dimension : "overworld"

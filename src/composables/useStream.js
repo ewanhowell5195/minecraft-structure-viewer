@@ -52,6 +52,27 @@ let onTilesChanged = null
 
 const EMPTY = { size: [1, 1, 1], palette: [], blocks: [], entities: [] }
 
+// animates the mirror pages' atlas regions (water, lava, fire...) with the
+// lib's schedule logic; applyFrame subimage-uploads via the registered renderer
+const streamAnimator = {
+  schedules: [],
+  version: -1,
+  update() {
+    let v = sharedAtlas?.serial ?? 0
+    for (const b of buildWorkers) v += b.mirror?.regionsVersion ?? 0
+    if (v !== this.version) {
+      this.version = v
+      const texs = []
+      for (const b of buildWorkers) b.mirror?.eachPage(pg => { if (pg.texture.userData.regions?.length) texs.push(pg.texture) })
+      if (sharedAtlas) for (const sheet of sharedAtlas.sheets.values()) {
+        for (const pg of sheet.pages) if (pg.texture.userData.regions?.length && !texs.includes(pg.texture)) texs.push(pg.texture)
+      }
+      this.schedules = texs.length && lib.buildSchedules ? lib.buildSchedules(texs) : []
+    }
+    if (this.schedules.length) lib.evaluateAnimation(this.schedules, [], performance.now() / 50)
+  }
+}
+
 const ckey = (cx, cz) => cx + "," + cz
 
 function chunkOf(worldBlockX, worldBlockZ) {
@@ -536,6 +557,7 @@ async function enter() {
   assets = packs2().assets.value
   if (!assets) return false
   sharedAtlas = lib.createSharedAtlas?.({ renderer: sceneApi2().renderer }) ?? null
+  lib.setAnimationRenderer?.(sceneApi2().renderer)
 
   // the chunk under the orbit focus, mapped back through the selection layout
   chunkMap = new Map(w.getChunks().map(c => [ckey(c.cx, c.cz), c]))
@@ -585,6 +607,8 @@ async function enter() {
   root = new THREE.Group()
   sceneApi2().scene.add(root)
   sceneApi2().contentRoots.add(root)
+  streamAnimator.version = -1
+  sceneApi2().animators.add(streamAnimator)
   await buildApi2().build(EMPTY, false)
   sceneApi2().setGrids([])
 
@@ -621,6 +645,8 @@ async function exit() {
   queueGen++
   playerTile = null
   stopWorkers()
+  sceneApi2().animators.delete(streamAnimator)
+  streamAnimator.schedules = []
   sharedAtlas?.dispose()
   sharedAtlas = null
   for (const k of Array.from(tiles.keys())) disposeTile(k)
