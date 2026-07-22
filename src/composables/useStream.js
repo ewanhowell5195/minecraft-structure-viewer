@@ -76,7 +76,27 @@ const streamAnimator = {
       if (sharedAtlas) for (const sheet of sharedAtlas.sheets.values()) {
         for (const pg of sheet.pages) if (pg.texture.userData.regions?.length && !texs.includes(pg.texture)) texs.push(pg.texture)
       }
-      this.schedules = texs.length && lib.buildSchedules ? lib.buildSchedules(texs) : []
+      // rebuild per texture and keep schedule state for regions that persist,
+      // else every region on every page re-applies in a single frame
+      const all = []
+      for (const tex of texs) {
+        const regions = tex.userData.regions
+        let c = this.perTex.get(tex)
+        if (!c || c.count !== regions.length) {
+          const fresh = lib.buildSchedules ? lib.buildSchedules([tex]) : []
+          if (c) {
+            const prev = new Map(c.schedules.map(s => [s.region, s]))
+            for (const s of fresh) {
+              const p = prev.get(s.region)
+              if (p) s.lastKey = p.lastKey
+            }
+          }
+          c = { count: regions.length, schedules: fresh }
+          this.perTex.set(tex, c)
+        }
+        all.push(...c.schedules)
+      }
+      this.schedules = all
     }
     if (this.schedules.length) lib.evaluateAnimation(this.schedules, [], performance.now() / 50)
   }
