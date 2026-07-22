@@ -439,6 +439,7 @@ function desired(tx, tz) {
   const out = []
   for (let dx = -RENDER_DIST; dx <= RENDER_DIST; dx++) {
     for (let dz = -RENDER_DIST; dz <= RENDER_DIST; dz++) {
+      if (dx * dx + dz * dz > (RENDER_DIST + 0.5) ** 2) continue
       const k = ckey(tx + dx, tz + dz)
       if (!tileSet.has(k) || tiles.has(k)) continue
       let vis = 0
@@ -466,7 +467,8 @@ async function pump() {
       if (!playerTile) break
       for (const k of Array.from(tiles.keys())) {
         const [ttx, ttz] = k.split(",").map(Number)
-        if (Math.max(Math.abs(ttx - playerTile[0]), Math.abs(ttz - playerTile[1])) > DISPOSE_DIST) disposeTile(k)
+        const dx = ttx - playerTile[0], dz = ttz - playerTile[1]
+        if (dx * dx + dz * dz > (DISPOSE_DIST + 0.5) ** 2) disposeTile(k)
       }
       if (!state.on) break
       const want = desired(playerTile[0], playerTile[1]).filter(([tx, tz]) => !inflight.has(ckey(tx, tz)))
