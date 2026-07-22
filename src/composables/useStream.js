@@ -6,7 +6,7 @@ import { useWorld } from "./useWorld.js"
 import { usePacks } from "./usePacks.js"
 import { loadLibrary } from "../lib.js"
 import { chunkBlocks, dropEnclosed } from "../world.js"
-import { attachTileDoors, doorShape, rayBoxT, OPENABLE } from "./useStreamDoors.js"
+import { attachTileDoors, importDoorTemplates, doorShape, rayBoxT, OPENABLE } from "./useStreamDoors.js"
 
 // world streaming: TILE x TILE chunks per tile, each tile its own createScene
 // build bordered with a chunk ring of context blocks so culling, fluid shaping
@@ -345,11 +345,15 @@ async function buildTileWorker(tx, tz, gen) {
   const boxes = new Map(Object.entries(msg.boxes).map(([ti, arr]) => [Number(ti), arr]))
   const tile = { handle: revived, group: revived.group, cellData: cd, grid, ox, oy, oz, gw, gh, palette: msg.palette, softs: msg.softs, boxes, buried: msg.buried ?? null }
   if (msg.doors?.length) {
-    let lightMat = null
+    let lightMat = null, baseMat = null
     revived.group.traverse(o => {
-      if (lightMat || !o.isMesh) return
-      for (const m of [].concat(o.material)) if (m?.uniforms?.lightVol) { lightMat = m; break }
+      if (!o.isMesh) return
+      for (const m of [].concat(o.material)) {
+        if (!lightMat && m?.uniforms?.lightVol) lightMat = m
+        if (!baseMat && m?.uniforms?.worldShade) baseMat = m
+      }
     })
+    if (msg.doorPack) importDoorTemplates(msg.doorPack, lightMat ?? baseMat)
     tile.doors = await attachTileDoors({ lib, assets, doors: msg.doors, group: revived.group, lightMat, onToggle: () => onTilesChanged?.() })
   }
   try { await sceneApi2().renderer.compileAsync(revived.group, sceneApi2().perspCam, sceneApi2().scene) } catch {}

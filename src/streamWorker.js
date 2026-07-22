@@ -5,7 +5,7 @@
 import * as THREE from "three"
 import { readWorldZip, switchDimension, chunkBlocks, chunkGrid, mergeTilePalettes, assembleTile } from "./world.js"
 import { loadLibrary } from "./lib.js"
-import { OPENABLE } from "./composables/useStreamDoors.js"
+import { OPENABLE, packDoorTemplates } from "./composables/useStreamDoors.js"
 
 let world = null
 let range = null
@@ -16,6 +16,8 @@ let sharedAtlas = null
 let cfg = null
 let atlasSerial = 0
 const blockCache = new Map()
+const shippedDoorStates = new Set()
+const shippedDoorKeys = new Set()
 
 const ckey = (cx, cz) => cx + "," + cz
 
@@ -166,9 +168,16 @@ async function buildTile(m) {
   const atlas = await lib.packAtlasDelta(sharedAtlas, atlasSerial)
   atlasSerial = atlas.serial
   try { handle.dispose?.() } catch {}
+  let doorPack = null, doorTransfers = []
+  if (doors.length) {
+    try {
+      const dp = await packDoorTemplates(lib, assets, doors, shippedDoorStates, shippedDoorKeys)
+      if (dp) { doorPack = dp.pack; doorTransfers = dp.transfers }
+    } catch {}
+  }
   self.postMessage(
-    { type: "tile", id: m.id, payload: packed.payload, atlas: { deltas: atlas.deltas, serial: atlas.serial, size: atlas.size }, cells, palette, softs, boxes, buried, doors },
-    [cells.buffer, ...(buried ? [buried.buffer] : []), ...packed.transfers, ...atlas.transfers]
+    { type: "tile", id: m.id, payload: packed.payload, atlas: { deltas: atlas.deltas, serial: atlas.serial, size: atlas.size }, cells, palette, softs, boxes, buried, doors, doorPack },
+    [cells.buffer, ...(buried ? [buried.buffer] : []), ...packed.transfers, ...atlas.transfers, ...doorTransfers]
   )
 }
 

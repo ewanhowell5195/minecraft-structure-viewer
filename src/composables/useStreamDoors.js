@@ -102,58 +102,201 @@ function templateBoxes(tmpl) {
   return arr
 }
 
+async function canonOf(lib, assets, id, props) {
+  const models = await lib.parseBlockstate(assets, id, { data: props ?? {}, ignoreAtlases: true })
+  const m = models.length === 1 ? models[0] : null
+  if (m && !(m.uvlock && (m.x || m.y || m.z))) {
+    const rot = new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(
+      THREE.MathUtils.degToRad(-(m.x ?? 0)),
+      THREE.MathUtils.degToRad(-(m.y ?? 0)),
+      THREE.MathUtils.degToRad(m.z ?? 0), "ZYX"))
+    return { key: JSON.stringify({ ...m, x: 0, y: 0, z: 0 }), rot, build: [{ ...m, x: 0, y: 0, z: 0 }] }
+  }
+  return { key: "state:" + stateKeyOf(id, props), rot: new THREE.Matrix4(), build: models }
+}
+
+async function buildCanonGroup(lib, assets, modelList) {
+  const g = new THREE.Group()
+  for (const model of modelList) {
+    const data = await lib.resolveModelData(assets, model)
+    await lib.loadModel(g, assets, data, { display: {}, lighting: "world", animate: false })
+  }
+  return g.children.length ? g : null
+}
+
+function extractParts(tmplGroup) {
+  tmplGroup.updateMatrixWorld(true)
+  const parts = []
+  tmplGroup.traverse(o => {
+    if (!o.isMesh) return
+    const merged = mergeInstanceSource(o.geometry, o.material)
+    if (merged) parts.push({ geometry: merged.geometry, material: merged.material, base: o.matrixWorld.clone() })
+  })
+  return parts.length ? parts : null
+}
+
 async function ensureState(lib, assets, id, props) {
   const sk = stateKeyOf(id, props)
   let info = stateInfo.get(sk)
   if (info) return info
   let key = null
-  const rot = new THREE.Matrix4()
-  let tmplGroup = null
+  let rot = new THREE.Matrix4()
   try {
-    const models = await lib.parseBlockstate(assets, id, { data: props ?? {}, ignoreAtlases: true })
-    const m = models.length === 1 ? models[0] : null
-    if (m && !(m.uvlock && (m.x || m.y || m.z))) {
-      key = JSON.stringify({ ...m, x: 0, y: 0, z: 0 })
-      rot.makeRotationFromEuler(new THREE.Euler(
-        THREE.MathUtils.degToRad(-(m.x ?? 0)),
-        THREE.MathUtils.degToRad(-(m.y ?? 0)),
-        THREE.MathUtils.degToRad(m.z ?? 0), "ZYX"))
-      if (!canonParts.has(key)) {
-        const g = new THREE.Group()
-        const data = await lib.resolveModelData(assets, { ...m, x: 0, y: 0, z: 0 })
-        await lib.loadModel(g, assets, data, { display: {}, lighting: "world", animate: false })
-        tmplGroup = g.children.length ? g : null
+    const canon = await canonOf(lib, assets, id, props)
+    key = canon.key
+    rot = canon.rot
+    if (!canonParts.has(key)) {
+      const tmplGroup = await buildCanonGroup(lib, assets, canon.build)
+      let parts = null
+      if (tmplGroup) {
+        parts = extractParts(tmplGroup)
+        if (parts) boxCache.set(key, templateBoxes(tmplGroup))
       }
-    } else {
-      key = "state:" + sk
-      if (!canonParts.has(key)) {
-        const g = new THREE.Group()
-        for (const model of models) {
-          const data = await lib.resolveModelData(assets, model)
-          await lib.loadModel(g, assets, data, { display: {}, lighting: "world", animate: false })
-        }
-        tmplGroup = g.children.length ? g : null
-      }
+      canonParts.set(key, parts)
     }
-  } catch {}
-  if (key && !canonParts.has(key)) {
-    let parts = null
-    if (tmplGroup) {
-      tmplGroup.updateMatrixWorld(true)
-      parts = []
-      tmplGroup.traverse(o => {
-        if (!o.isMesh) return
-        const merged = mergeInstanceSource(o.geometry, o.material)
-        if (merged) parts.push({ geometry: merged.geometry, material: merged.material, base: o.matrixWorld.clone() })
-      })
-      if (!parts.length) parts = null
-      if (parts) boxCache.set(key, templateBoxes(tmplGroup))
-    }
-    canonParts.set(key, parts)
-  }
+  } catch { key = null }
   info = { key, rot, sk }
   stateInfo.set(sk, info)
   return info
+}
+
+// worker side: build canonical templates for door states this worker hasn't
+// shipped yet and pack them as transferable geometry + material specs, so the
+// main thread never runs the model pipeline for doors mid-flight
+export async function packDoorTemplates(lib, assets, doors, shippedStates, shippedKeys) {
+  const states = [], templates = [], transfers = []
+  const bitmapIdx = new Map()
+  const bitmaps = []
+  for (const d of doors) {
+    for (const open of ["true", "false"]) {
+      const props = { ...(d.properties ?? {}), open }
+      const sk = stateKeyOf(d.id, props)
+      if (shippedStates.has(sk)) continue
+      shippedStates.add(sk)
+      try {
+        const canon = await canonOf(lib, assets, d.id, props)
+        states.push({ sk, key: canon.key, rot: canon.rot.elements.slice() })
+        if (shippedKeys.has(canon.key)) continue
+        shippedKeys.add(canon.key)
+        const tmplGroup = await buildCanonGroup(lib, assets, canon.build)
+        const parts = tmplGroup && extractParts(tmplGroup)
+        if (!parts) { templates.push({ key: canon.key, parts: null }); continue }
+        const packedParts = []
+        for (const p of parts) {
+          const geo = p.geometry
+          const attrs = {}
+          for (const [name, a] of Object.entries(geo.attributes)) {
+            const arr = a.array.slice()
+            attrs[name] = { array: arr, itemSize: a.itemSize, normalized: a.normalized }
+            transfers.push(arr.buffer)
+          }
+          let index = null
+          if (geo.index) {
+            index = geo.index.array.slice()
+            transfers.push(index.buffer)
+          }
+          const materials = []
+          for (const m of [].concat(p.material)) {
+            const u = m.uniforms ?? {}
+            const tex = u.map?.value ?? m.map ?? null
+            let ti = null
+            if (tex?.image) {
+              ti = bitmapIdx.get(tex)
+              if (ti === undefined) {
+                const bmp = await createImageBitmap(tex.image)
+                ti = bitmaps.length
+                bitmaps.push(bmp)
+                transfers.push(bmp)
+                bitmapIdx.set(tex, ti)
+              }
+            }
+            materials.push({
+              tex: ti,
+              colorSpace: tex?.colorSpace ?? null,
+              emission: u.emission?.value ?? 0,
+              shadeEnabled: u.shadeEnabled?.value !== false,
+              shadeOverride: u.shadeOverride?.value ? u.shadeOverride.value.toArray() : [0, 0, 0],
+              aoEnabled: u.aoEnabled?.value !== false,
+              side: m.side,
+              transparent: m.transparent,
+              depthWrite: m.depthWrite
+            })
+          }
+          packedParts.push({
+            base: p.base.elements.slice(),
+            attrs, index,
+            groups: geo.groups?.length ? geo.groups.map(g => ({ start: g.start, count: g.count, materialIndex: g.materialIndex })) : null,
+            materials
+          })
+        }
+        templates.push({ key: canon.key, parts: packedParts, boxes: boxCache.get(canon.key) ?? templateBoxes(tmplGroup) })
+      } catch {}
+    }
+  }
+  if (!states.length && !templates.length) return null
+  return { pack: { states, templates, bitmaps }, transfers }
+}
+
+// main side: revive shipped templates into the global canon cache. baseMat is
+// any lib world-lighting material from the tile; per-tile light rebinding
+// still happens in cloneMaterialFor
+export function importDoorTemplates(pack, baseMat) {
+  if (!pack) return
+  const textures = []
+  const textureFor = i => {
+    if (i == null) return null
+    if (textures[i]) return textures[i]
+    const bmp = pack.bitmaps[i]
+    if (!bmp) return null
+    const canvas = document.createElement("canvas")
+    canvas.width = bmp.width
+    canvas.height = bmp.height
+    canvas.getContext("2d").drawImage(bmp, 0, 0)
+    bmp.close?.()
+    const tex = new THREE.Texture(canvas)
+    tex.magFilter = tex.minFilter = THREE.NearestFilter
+    tex.generateMipmaps = false
+    tex.needsUpdate = true
+    return textures[i] = tex
+  }
+  for (const t of pack.templates ?? []) {
+    if (canonParts.has(t.key)) continue
+    if (!t.parts) { canonParts.set(t.key, null); continue }
+    if (!baseMat?.uniforms) continue
+    const parts = []
+    for (const p of t.parts) {
+      const geo = new THREE.BufferGeometry()
+      for (const [name, a] of Object.entries(p.attrs)) geo.setAttribute(name, new THREE.BufferAttribute(a.array, a.itemSize, a.normalized))
+      if (p.index) geo.setIndex(new THREE.BufferAttribute(p.index, 1))
+      if (p.groups) for (const g of p.groups) geo.addGroup(g.start, g.count, g.materialIndex)
+      const mats = p.materials.map(spec => {
+        const tex = textureFor(spec.tex)
+        if (tex && spec.colorSpace != null) tex.colorSpace = spec.colorSpace
+        const u = baseMat.uniforms
+        baseMat.uniforms = {}
+        const c = baseMat.clone()
+        baseMat.uniforms = u
+        c.uniforms = { ...u }
+        c.uniforms.map = { value: tex }
+        c.uniforms.emission = { value: spec.emission }
+        c.uniforms.shadeEnabled = { value: spec.shadeEnabled }
+        c.uniforms.shadeOverride = { value: new THREE.Vector3(...spec.shadeOverride) }
+        c.uniforms.aoEnabled = { value: spec.aoEnabled }
+        c.defines = { ...c.defines }
+        delete c.defines.FACE_ATTRS
+        c.side = spec.side
+        c.transparent = spec.transparent
+        c.depthWrite = spec.depthWrite
+        return c
+      })
+      parts.push({ geometry: geo, material: mats.length > 1 ? mats : mats[0], base: new THREE.Matrix4().fromArray(p.base) })
+    }
+    canonParts.set(t.key, parts.length ? parts : null)
+    if (t.boxes) boxCache.set(t.key, t.boxes)
+  }
+  for (const s of pack.states ?? []) {
+    if (!stateInfo.has(s.sk)) stateInfo.set(s.sk, { key: s.key, rot: new THREE.Matrix4().fromArray(s.rot), sk: s.sk })
+  }
 }
 
 function cloneMaterialFor(mat, lightMat) {
@@ -194,10 +337,17 @@ export async function attachTileDoors({ lib, assets, doors, group, lightMat, onT
   const regs = new Map()
   const slots = new Map()
   const entries = []
+  // canonical template builds are the expensive part; time-slice them so a
+  // tile full of new door types never blocks a frame
+  let sliceT = performance.now()
   for (const d of doors) {
     const props = d.properties ?? {}
     const openInfo = await ensureState(lib, assets, d.id, { ...props, open: "true" })
     const closedInfo = await ensureState(lib, assets, d.id, { ...props, open: "false" })
+    if (performance.now() - sliceT > 5) {
+      await new Promise(r => requestAnimationFrame(r))
+      sliceT = performance.now()
+    }
     if (!openInfo.key || !closedInfo.key) continue
     const slotFor = info => {
       let s = slots.get(info.key)
