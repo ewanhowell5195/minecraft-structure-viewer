@@ -79,6 +79,7 @@ const canonParts = new Map()
 const boxCache = new Map()
 
 const _dm = new THREE.Matrix4()
+const _cb = new THREE.Box3()
 const _dzero = new THREE.Matrix4().makeScale(0, 0, 0)
 
 async function canonOf(lib, assets, id, props) {

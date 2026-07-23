@@ -4,12 +4,17 @@ import { useScene } from "./useScene.js"
 import { useBuild } from "./useBuild.js"
 import { useWorld } from "./useWorld.js"
 import { usePacks } from "./usePacks.js"
+import { useLock } from "./useLock.js"
 import { loadLibrary } from "../lib.js"
 import { chunkGrid, mergeTilePalettes, assembleTile } from "../world.js"
 import { attachTileDoors, importDoorTemplates, doorShape, rayBoxT, OPENABLE } from "./useStreamDoors.js"
 import { softFor, solidFor, templateBoxes, bellRingDir, DYNAMIC_BLOCKS } from "../streamShared.js"
 import { attachTileDynamics } from "./useStreamDynamics.js"
 import { isInspectable } from "../loot.js"
+
+// stateful singleton (workers, shared atlas, tile registry): hot updates must
+// full-reload, never re-execute alongside the old instance
+if (import.meta.hot) import.meta.hot.decline()
 
 // world streaming: TILE x TILE chunks per tile, each tile its own createScene
 // build bordered with a chunk ring of context blocks so culling, fluid shaping
@@ -25,12 +30,13 @@ const sceneApi2 = () => _scene ??= useScene()
 const buildApi2 = () => _build ??= useBuild()
 const packs2 = () => _packs ??= usePacks()
 
-const state = reactive({ on: false, session: false, tiles: 0, pending: 0 })
+const state = reactive({ on: false, session: false, tiles: 0, pending: 0, preparing: false, prepMsg: "" })
 
 let root = null
 let lib = null
 let assets = null
 let sharedAtlas = null
+let atlasLayout = null
 let occlSeed = null
 let world = null
 let origin = null            // [blockX, blockY, blockZ] of the spawn chunk corner
@@ -40,7 +46,7 @@ let daytime = 6000
 let lightOff = false
 let chunkMap = null           // "cx,cz" -> chunk descriptor
 let tileSet = null            // "tx,tz" tile keys with at least one chunk
-let buildWorkers = []         // { worker, ready, inflight, mirror } tile build workers
+let buildWorkers = []         // { worker, ready, inflight } tile build workers
 let buildSeq = 0
 const buildJobs = new Map()
 const gridCache = new Map()   // "cx,cz" -> Promise<chunk grid> for main-thread builds
@@ -51,54 +57,6 @@ let playerTile = null
 let onTilesChanged = null
 
 const EMPTY = { size: [1, 1, 1], palette: [], blocks: [], entities: [] }
-
-// animates the mirror pages' atlas regions (water, lava, fire...) with the
-// lib's schedule logic; applyFrame subimage-uploads via the registered renderer
-const streamAnimator = {
-  schedules: [],
-  version: -1,
-  lastTick: -1,
-  perTex: new WeakMap(),
-  update() {
-    // animations run at game tick rates; evaluating at display refresh burns
-    // main-thread time for identical frames, so cap evaluation at ~60Hz
-    const tick = Math.floor(performance.now() / 16)
-    if (tick === this.lastTick) return
-    this.lastTick = tick
-    let v = sharedAtlas?.serial ?? 0
-    for (const b of buildWorkers) v += b.mirror?.regionsVersion ?? 0
-    if (v !== this.version) {
-      this.version = v
-      const texs = []
-      for (const b of buildWorkers) b.mirror?.eachPage(pg => { if (pg.texture.userData.regions?.length) texs.push(pg.texture) })
-      if (sharedAtlas) for (const sheet of sharedAtlas.sheets.values()) {
-        for (const pg of sheet.pages) if (pg.texture.userData.regions?.length && !texs.includes(pg.texture)) texs.push(pg.texture)
-      }
-      // rebuild per texture and keep schedule state for regions that persist,
-      // else every region on every page re-applies in a single frame
-      const all = []
-      for (const tex of texs) {
-        const regions = tex.userData.regions
-        let c = this.perTex.get(tex)
-        if (!c || c.count !== regions.length) {
-          const fresh = lib.buildSchedules ? lib.buildSchedules([tex]) : []
-          if (c) {
-            const prev = new Map(c.schedules.map(s => [s.region, s]))
-            for (const s of fresh) {
-              const p = prev.get(s.region)
-              if (p) s.lastKey = p.lastKey
-            }
-          }
-          c = { count: regions.length, schedules: fresh }
-          this.perTex.set(tex, c)
-        }
-        all.push(...c.schedules)
-      }
-      this.schedules = all
-    }
-    if (this.schedules.length) lib.evaluateAnimation(this.schedules, [], performance.now() / 50)
-  }
-}
 
 const ckey = (cx, cz) => cx + "," + cz
 
@@ -113,10 +71,7 @@ function tkeyAt(gx, gz) {
 }
 
 function stopWorkers() {
-  for (const b of buildWorkers) {
-    b.worker.terminate()
-    b.mirror?.dispose()
-  }
+  for (const b of buildWorkers) b.worker.terminate()
   buildWorkers = []
   regionOwner.clear()
   for (const job of buildJobs.values()) job.resolve(null)
@@ -130,7 +85,7 @@ function startBuildWorkers(file, dim, count = Math.min(3, Math.max(1, Math.floor
     try {
       w = new Worker(new URL("../streamWorker.js", import.meta.url), { type: "module" })
     } catch { break }
-    const slot = { worker: w, ready: false, inflight: 0, mirror: lib.createAtlasMirror?.({ renderer: sceneApi2().renderer }) ?? null }
+    const slot = { worker: w, ready: false, inflight: 0 }
     w.onmessage = e => {
       const m = e.data
       if (m.type === "ready") {
@@ -138,13 +93,25 @@ function startBuildWorkers(file, dim, count = Math.min(3, Math.max(1, Math.floor
           type: "initBuild", id: 0,
           sources: packs2().allSources(),
           occl: occlSeed,
+          layout: atlasLayout,
           cfg: { origin, tile: TILE, dimension, daytime, lightOff }
         })
         return
       }
       if (m.type === "buildReady") { slot.ready = true; return }
+      if (m.type === "atlasRequest") {
+        // stitch the worker's runtime textures into the live atlas and reply
+        // with the coordinates; duplicate content across workers shares rects
+        Promise.resolve(lib.insertSharedTextures?.(sharedAtlas, m.items)).catch(() => null).then(res => {
+          w.postMessage({ type: "atlasSpace", id: m.id, rects: res?.rects ?? [], pages: res?.pages ?? 0 })
+        })
+        return
+      }
       const job = buildJobs.get(m.id)
-      if (!job) return
+      if (!job) {
+        if (m.type === "error") console.error("stream worker:", m.error)
+        return
+      }
       buildJobs.delete(m.id)
       slot.inflight--
       job.resolve(m.type === "tile" ? { msg: m, slot } : null)
@@ -226,15 +193,14 @@ async function buildTileWorker(tx, tz, gen) {
   const res = await workerTile(tx, tz)
   if (gen !== queueGen) return
   if (!res) return buildTileMain(tx, tz, gen)
-  const { msg, slot } = res
+  const { msg } = res
   if (msg.empty) {
     tiles.set(ckey(tx, tz), { handle: null, group: null, cells: null, softs: null, boxes: null })
     return
   }
   await integrateSlot()
   if (gen !== queueGen) return
-  slot.mirror.apply(msg.atlas)
-  const revived = lib.reviveScene(msg.payload, { atlas: slot.mirror, releaseArrays: true })
+  const revived = lib.reviveScene(msg.payload, { atlas: sharedAtlas, releaseArrays: true })
   const ox = tx * TILE * 16 - origin[0], oz = tz * TILE * 16 - origin[2]
   const oy = yRange.yMin, gh = yRange.yMax - yRange.yMin + 1
   const gw = TILE * 16
@@ -263,6 +229,10 @@ async function buildTileWorker(tx, tz, gen) {
     tile.doors = await attachTileDoors({ lib, assets, doors: msg.doors, group: revived.group, lightMat, onToggle: () => onTilesChanged?.() })
   }
   if (msg.dynamics?.length) {
+    // dynamics build a main-thread scene (chests, pots...); give that its own
+    // integration frame instead of stacking it on the revive frame
+    await integrateSlot()
+    if (gen !== queueGen) { revived.dispose(); return }
     tile.dyn = await attachTileDynamics({ lib, assets, blocks: msg.dynamics, lightMat, sharedAtlas, dimension, daytime, lightOff })
     if (gen !== queueGen) { tile.dyn?.dispose(); revived.dispose(); return }
     if (tile.dyn) {
@@ -465,10 +435,17 @@ async function pump() {
   try {
     while (state.on && gen === queueGen) {
       if (!playerTile) break
+      // disposals free GPU resources, so they pace through the same per-frame
+      // slot as integrations: a burst of tiles crossing the dispose radius at
+      // flight speed must not dump a dozen deletions into a choked GPU queue
       for (const k of Array.from(tiles.keys())) {
         const [ttx, ttz] = k.split(",").map(Number)
         const dx = ttx - playerTile[0], dz = ttz - playerTile[1]
-        if (dx * dx + dz * dz > (DISPOSE_DIST + 0.5) ** 2) disposeTile(k)
+        if (dx * dx + dz * dz > (DISPOSE_DIST + 0.5) ** 2) {
+          await integrateSlot()
+          if (!state.on || gen !== queueGen) break
+          disposeTile(k)
+        }
       }
       if (!state.on) break
       const want = desired(playerTile[0], playerTile[1]).filter(([tx, tz]) => !inflight.has(ckey(tx, tz)))
@@ -561,7 +538,7 @@ const provider = {
     }
     if (cell.buried) {
       const ox = cell.pos[0] * 16, oy = cell.pos[1] * 16, oz = cell.pos[2] * 16
-      out.push({ nx: ox, ny: oy, nz: oz, px: ox + 16, py: oy + 16, pz: oz + 16 })
+      out.push({ nx: ox - 8, ny: oy - 8, nz: oz - 8, px: ox + 8, py: oy + 8, pz: oz + 8 })
       return out
     }
     if (FLUID_BLOCK.test(cell.entry.id) || tile.softs[cell.ti]) return out
@@ -725,8 +702,6 @@ async function enter(spawn) {
   lib = await loadLibrary()
   assets = packs2().assets.value
   if (!assets) return false
-  sharedAtlas = lib.createSharedAtlas?.({ renderer: sceneApi2().renderer }) ?? null
-  lib.setAnimationRenderer?.(sceneApi2().renderer)
 
   chunkMap = new Map(w.getChunks().map(c => [ckey(c.cx, c.cz), c]))
   tileSet = new Set()
@@ -753,28 +728,56 @@ async function enter(spawn) {
 
   state.on = true
   state.session = true
+  state.preparing = true
+  state.prepMsg = ""
+  useLock().lock(true)
   queueGen++
-  occlSeed = await lib.exportOcclusionCache?.(assets).catch(() => null) ?? null
-  const wfile = w.getWorldFile()
-  if (wfile) startBuildWorkers(wfile, ws.dimension)
-  root = new THREE.Group()
-  sceneApi2().scene.add(root)
-  sceneApi2().contentRoots.add(root)
-  streamAnimator.version = -1
-  sceneApi2().animators.add(streamAnimator)
-  await buildApi2().build(EMPTY, false)
-  sceneApi2().setGrids([])
+  try {
+    // fresh build drops the old orbit scene immediately so it isn't eating
+    // frame time while the world spins up
+    await buildApi2().build(EMPTY, false, false, true)
+    sceneApi2().setGrids([])
 
-  playerTile = [Math.floor(scx / TILE), Math.floor(scz / TILE)]
-  await buildTile(playerTile[0], playerTile[1], queueGen)
-  const sgx = Math.min(scx * 16 + 15, Math.max(scx * 16, Math.floor(wxb))) - origin[0]
-  const sgz = Math.min(scz * 16 + 15, Math.max(scz * 16, Math.floor(wzb))) - origin[2]
-  const top = await surfaceAt(sgx, sgz) ?? await surfaceAt(8, 8)
-  const spawnY = top !== null ? top * 16 + 8 : (yRange.yMax - origin[1]) * 16
-  const cam = sceneApi2().perspCam
-  cam.position.set(sgx * 16 + 8, spawnY + 28, sgz * 16 + 8)
-  cam.rotation.set(0, 0, 0)
-  cam.updateMatrixWorld(true)
+    // animate: true makes the lib tick the atlas's animated regions at 20Hz
+    // itself; setAnimationRenderer gives it the GL renderer for subimage uploads
+    sharedAtlas = lib.createSharedAtlas({ renderer: sceneApi2().renderer, animate: true })
+    lib.setAnimationRenderer?.(sceneApi2().renderer)
+    // one game-style stitch of every pack texture up front; workers adopt the
+    // layout so all tiles bake UVs against the same fixed atlas. This must
+    // succeed before workers start: a failure aborts the enter instead of
+    // falling back to a degraded pipeline
+    state.prepMsg = "Building texture atlas…"
+    await lib.stitchSharedAtlas(sharedAtlas, assets, {
+      onProgress: (n, total) => { state.prepMsg = `Building texture atlas… ${Math.round(n / total * 100)}%` }
+    })
+    atlasLayout = lib.exportSharedAtlasLayout(sharedAtlas)
+
+    state.prepMsg = "Building spawn area…"
+    occlSeed = await lib.exportOcclusionCache?.(assets).catch(() => null) ?? null
+    const wfile = w.getWorldFile()
+    if (wfile) startBuildWorkers(wfile, ws.dimension)
+    root = new THREE.Group()
+    sceneApi2().scene.add(root)
+    sceneApi2().contentRoots.add(root)
+
+    playerTile = [Math.floor(scx / TILE), Math.floor(scz / TILE)]
+    await buildTile(playerTile[0], playerTile[1], queueGen)
+    const sgx = Math.min(scx * 16 + 15, Math.max(scx * 16, Math.floor(wxb))) - origin[0]
+    const sgz = Math.min(scz * 16 + 15, Math.max(scz * 16, Math.floor(wzb))) - origin[2]
+    const top = await surfaceAt(sgx, sgz) ?? await surfaceAt(8, 8)
+    const spawnY = top !== null ? top * 16 + 8 : (yRange.yMax - origin[1]) * 16
+    const cam = sceneApi2().perspCam
+    cam.position.set(sgx * 16 + 8, spawnY + 28, sgz * 16 + 8)
+    cam.rotation.set(0, 0, 0)
+    cam.updateMatrixWorld(true)
+  } catch (e) {
+    shutdown()
+    throw e
+  } finally {
+    state.preparing = false
+    state.prepMsg = ""
+    useLock().lock(false)
+  }
   pump()
   return true
 }
@@ -808,11 +811,9 @@ function shutdown() {
   queueGen++
   playerTile = null
   stopWorkers()
-  sceneApi2().animators.delete(streamAnimator)
-  streamAnimator.schedules = []
-  streamAnimator.perTex = new WeakMap()
   sharedAtlas?.dispose()
   sharedAtlas = null
+  atlasLayout = null
   for (const k of Array.from(tiles.keys())) disposeTile(k)
   gridCache.clear()
   if (root) sceneApi2().contentRoots.delete(root)

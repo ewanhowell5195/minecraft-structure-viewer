@@ -1,7 +1,8 @@
 // chunk parsing and whole tile builds for world streaming: zip inflate, NBT
 // decode, createScene and geometry packing happen here so tile builds stop
-// stealing main-thread frames. The build worker owns the shared atlas; the
-// main thread mirrors its pages from the deltas each tile ships back.
+// stealing main-thread frames. The worker adopts the main thread's prestitched
+// atlas layout so packed tiles reference fixed atlas coordinates; runtime
+// textures not in the layout get space requested from main as they appear.
 import { readWorldZip, switchDimension, chunkGrid, mergeTilePalettes, assembleTile } from "./world.js"
 import { loadLibrary } from "./lib.js"
 import { OPENABLE, packDoorTemplates } from "./composables/useStreamDoors.js"
@@ -14,7 +15,8 @@ let lib = null
 let assets = null
 let sharedAtlas = null
 let cfg = null
-let atlasSerial = 0
+let atlasReqSeq = 0
+const atlasWaiters = new Map()
 const blockCache = new Map()
 const shippedDoorStates = new Set()
 const shippedDoorKeys = new Set()
@@ -108,8 +110,6 @@ async function buildTile(m) {
     }
   }
   const packed = await lib.packScene(handle, { sharedAtlas })
-  const atlas = await lib.packAtlasDelta(sharedAtlas, atlasSerial)
-  atlasSerial = atlas.serial
   try { handle.dispose?.() } catch {}
   let doorPack = null, doorTransfers = []
   if (doors.length) {
@@ -119,8 +119,8 @@ async function buildTile(m) {
     } catch {}
   }
   self.postMessage(
-    { type: "tile", id: m.id, payload: packed.payload, atlas: { deltas: atlas.deltas, serial: atlas.serial, size: atlas.size }, cells, palette, softs, boxes, buried, doors, doorPack, dynamics: at.dynamics, nbts: at.nbts },
-    [cells.buffer, ...(buried ? [buried.buffer] : []), ...packed.transfers, ...atlas.transfers, ...doorTransfers]
+    { type: "tile", id: m.id, payload: packed.payload, cells, palette, softs, boxes, buried, doors, doorPack, dynamics: at.dynamics, nbts: at.nbts },
+    [cells.buffer, ...(buried ? [buried.buffer] : []), ...packed.transfers, ...doorTransfers]
   )
 }
 
@@ -137,11 +137,39 @@ self.onmessage = async e => {
       lib = await loadLibrary()
       assets = await lib.prepareAssets(m.sources, { cache: true })
       if (m.occl) await lib.importOcclusionCache?.(assets, m.occl).catch(() => {})
-      sharedAtlas = lib.createSharedAtlas()
+      // the layout is always stitched before workers start; adopting a missing
+      // one must fail loudly (tiles fall back to main-thread builds), never
+      // silently pack against pages the main thread doesn't have
+      sharedAtlas = lib.adoptSharedAtlasLayout(lib.createSharedAtlas(), m.layout)
+      // runtime textures (sign text, banners...) aren't in the prestitched
+      // layout; batch-request atlas space from the main thread, shipping the
+      // pixels along so main can stitch them and reply with the coordinates
+      sharedAtlas.requestSpace = async items => {
+        const out = []
+        const transfers = []
+        for (const it of items) {
+          const image = await createImageBitmap(it.image)
+          transfers.push(image)
+          let frames = null
+          if (it.frames?.length) {
+            frames = await Promise.all(it.frames.map(f => createImageBitmap(f)))
+            transfers.push(...frames)
+          }
+          out.push({ key: it.key, image, frames, times: it.times, interpolate: it.interpolate })
+        }
+        return new Promise(resolve => {
+          const id = ++atlasReqSeq
+          atlasWaiters.set(id, resolve)
+          self.postMessage({ type: "atlasRequest", id, items: out }, transfers)
+        })
+      }
       cfg = m.cfg
       self.postMessage({ type: "buildReady", id: m.id })
     } else if (m.type === "build") {
       await buildTile(m)
+    } else if (m.type === "atlasSpace") {
+      atlasWaiters.get(m.id)?.({ rects: m.rects, pages: m.pages })
+      atlasWaiters.delete(m.id)
     }
   } catch (err) {
     self.postMessage({ type: "error", id: m.id, error: String(err?.message ?? err) })
