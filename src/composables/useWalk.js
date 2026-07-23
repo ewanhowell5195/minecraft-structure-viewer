@@ -598,7 +598,19 @@ function enter() {
     walk.yaw = Math.atan2(-(c.x - perspCam.position.x), -(c.z - perspCam.position.z))
   }
   addEventListener("beforeunload", unloadGuard)
-  if (!NOLOCK) canvas.requestPointerLock()?.catch?.(() => {})
+  if (!NOLOCK) lockPointer()
+}
+
+// raw deltas always: with os pointer acceleration in play, a fresh lock warms
+// its ballistics back up, reading as a burst of very high sensitivity right
+// after a modal relock. Falls back plain where the option is unsupported
+function lockPointer() {
+  const c = sceneApi.canvas
+  try {
+    c.requestPointerLock({ unadjustedMovement: true })?.catch?.(() => { c.requestPointerLock()?.catch?.(() => {}) })
+  } catch {
+    c.requestPointerLock()?.catch?.(() => {})
+  }
 }
 
 function suspend() {
@@ -615,7 +627,7 @@ function suspend() {
 function resume() {
   if (!state.on || !state.suspended) return
   if (NOLOCK) { state.suspended = false; return }
-  sceneApi.canvas.requestPointerLock()?.catch?.(() => {})
+  lockPointer()
 }
 
 function exit() {
@@ -778,7 +790,7 @@ addEventListener("mousedown", e => {
     return
   }
   if (!NOLOCK && document.pointerLockElement !== sceneApi.canvas) {
-    if (e.target === sceneApi.canvas) sceneApi.canvas.requestPointerLock()?.catch?.(() => {})
+    if (e.target === sceneApi.canvas) lockPointer()
     return
   }
   e.preventDefault()
