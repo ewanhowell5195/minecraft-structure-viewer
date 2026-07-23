@@ -623,6 +623,9 @@ const provider = {
   },
   wobble(pos) {
     tiles.get(tkeyAt(pos[0], pos[2]))?.dyn?.wobble?.(pos)
+  },
+  chunkOf(wx, wz) {
+    return [(wx / 16 + origin[0]) / 16, (wz / 16 + origin[2]) / 16]
   }
 }
 

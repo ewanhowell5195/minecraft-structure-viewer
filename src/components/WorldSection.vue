@@ -11,6 +11,9 @@ import Modal from "./Modal.vue"
 import TreeFolder from "./TreeFolder.vue"
 import { useStream } from "../composables/useStream.js"
 import { useWalk } from "../composables/useWalk.js"
+import { useScene } from "../composables/useScene.js"
+import { usePacks } from "../composables/usePacks.js"
+import { loadLibrary } from "../lib.js"
 
 const world = useWorld()
 const { state } = world
@@ -237,7 +240,7 @@ function draw() {
       w0x: Math.floor(cx0 + span / 2 - wSpan / 2),
       w0z: Math.floor(cz0 + span / 2 - wSpan / 2)
     }
-    world.fillGridWindow(R.data, win.w0x, win.w0z, GRID, tpc)
+    world.fillGridWindow(R.data, win.w0x, win.w0z, GRID, tpc, exploring.value)
     R.upload()
     dataRev = state.rev
   }
@@ -262,6 +265,54 @@ watch(mapEl, (el, old) => {
   }
 })
 document.addEventListener("visibilitychange", () => { if (!document.hidden) nextTick(draw) })
+
+// explore mode: the selection hides, the map follows the player with the
+// vanilla marker centred and rotating with the camera, and the prior view
+// (zoom included) comes back on exit
+const exploring = ref(false)
+const playerIconEl = ref(null)
+let savedView = null
+let followRaf = 0
+
+async function loadPlayerIcon() {
+  try {
+    const lib = await loadLibrary()
+    const spr = await lib.readTexture("assets/minecraft/textures/map/decorations/player.png", usePacks().assets.value)
+    const c = playerIconEl.value
+    if (!c || !spr?.current) return
+    c.width = spr.current.width
+    c.height = spr.current.height
+    c.getContext("2d").drawImage(spr.current, 0, 0)
+  } catch {}
+}
+
+function followTick() {
+  followRaf = requestAnimationFrame(followTick)
+  if (!view) return
+  const cam = useScene().perspCam
+  const [pcx, pcz] = useStream().provider.chunkOf(cam.position.x, cam.position.z)
+  const span = W / view.px
+  view.cx0 = pcx - span / 2
+  view.cz0 = pcz - span / 2
+  if (playerIconEl.value) playerIconEl.value.style.transform = `translate(-50%, -50%) rotate(${-cam.rotation.y}rad)`
+  draw()
+}
+
+watch(() => useStream().state.on, on => {
+  exploring.value = on
+  win = null
+  cancelAnimationFrame(followRaf)
+  followRaf = 0
+  if (on) {
+    savedView = view ? { ...view } : null
+    loadPlayerIcon()
+    followTick()
+  } else {
+    if (savedView) view = { ...savedView }
+    savedView = null
+    nextTick(draw)
+  }
+})
 
 const hovering = ref(false)
 window.addEventListener("keydown", e => {
@@ -295,6 +346,7 @@ function marqueeHint() {
 }
 
 function onDown(e) {
+  if (exploring.value) return
   if (e.button === 0) {
     if (!view || !bounds) return
     const [cx, cz] = chunkCoords(e)
@@ -394,10 +446,13 @@ function onDblClick() {
         <span class="material-symbols-outlined">public</span>
         {{ explorable ? "Explore World" : "No Valid Chunks" }}
       </button>
-      <canvas ref="mapEl" class="map" @pointerdown="onDown" @pointermove="onMove"
-        @pointerup="onUp" @pointercancel="onUp"
-        @pointerenter="hovering = true" @pointerleave="hovering = false; hoverTxt = ''"
-        @wheel="onWheel" @dblclick="onDblClick" @contextmenu.prevent></canvas>
+      <div class="map-wrap">
+        <canvas ref="mapEl" class="map" @pointerdown="onDown" @pointermove="onMove"
+          @pointerup="onUp" @pointercancel="onUp"
+          @pointerenter="hovering = true" @pointerleave="hovering = false; hoverTxt = ''"
+          @wheel="onWheel" @dblclick="onDblClick" @contextmenu.prevent></canvas>
+        <canvas v-show="exploring" ref="playerIconEl" class="player-icon"></canvas>
+      </div>
       <div class="hint">{{ hoverTxt || "Drag a box to select · wheel zooms · right-drag pans" }}</div>
       <div class="checks">
         <div class="yrange">
@@ -529,7 +584,21 @@ h2 .icon .material-symbols-outlined,
 .explore-btn:disabled { opacity: 0.5; cursor: default; }
 .explore-btn .material-symbols-outlined { font-size: 18px; }
 
+.map-wrap { position: relative; }
+
+.player-icon {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 20px;
+  height: 20px;
+  transform: translate(-50%, -50%);
+  image-rendering: pixelated;
+  pointer-events: none;
+}
+
 .map {
+  display: block;
   width: 100%;
   aspect-ratio: 1;
   image-rendering: pixelated;

@@ -134,7 +134,7 @@ async function applySuggestedRange() {
   setYRange(Math.max(-64, Math.max(bottom, top - 40)), Math.min(320, top))
 }
 
-function fillGridWindow(d, w0x, w0z, size, tpc) {
+function fillGridWindow(d, w0x, w0z, size, tpc, hideSel = false) {
   d.fill(0)
   if (!world) return
   const span = size / tpc
@@ -142,7 +142,7 @@ function fillGridWindow(d, w0x, w0z, size, tpc) {
     const key = c.cx + "," + c.cz
     const s = surface.get(key)
     if (s === null) continue
-    const sel = selected.has(key) ? 128 : 0
+    const sel = !hideSel && selected.has(key) ? 128 : 0
     const bx = c.cx - w0x, bz = c.cz - w0z
     if (bx < 0 || bz < 0 || bx >= span || bz >= span) continue
     if (tpc === 1) {
