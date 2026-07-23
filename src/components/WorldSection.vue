@@ -294,7 +294,7 @@ function followTick() {
   const span = W / view.px
   view.cx0 = pcx - span / 2
   view.cz0 = pcz - span / 2
-  if (playerIconEl.value) playerIconEl.value.style.transform = `translate(-50%, -50%) rotate(${-cam.rotation.y}rad)`
+  if (playerIconEl.value) playerIconEl.value.style.transform = `translate(-56.25%, -50%) rotate(${-cam.rotation.y}rad)`
   draw()
 }
 
@@ -592,7 +592,9 @@ h2 .icon .material-symbols-outlined,
   top: 50%;
   width: 40px;
   height: 40px;
-  transform: translate(-50%, -50%);
+  /* the sprite's arrow pivots at texel (4.5, 4) of the 8x8, not the canvas centre */
+  transform-origin: 56.25% 50%;
+  transform: translate(-56.25%, -50%);
   image-rendering: pixelated;
   pointer-events: none;
 }
