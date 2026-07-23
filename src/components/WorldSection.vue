@@ -244,7 +244,7 @@ function draw() {
     R.upload()
     dataRev = state.rev
   }
-  const cellW = px - (view.zi >= 7 ? 1 : 0)
+  const cellW = px - (view.zi >= 7 && !exploring.value ? 1 : 0)
   const level = Math.min(8, Math.max(1, Math.pow(2, Math.floor(Math.log2(cellW)) - 1)))
   const marqueeOn = marquee ? !world.rectHasSelected(marquee.aCx, marquee.aCz, marquee.bCx, marquee.bCz) : false
   R.draw({ ...win, cx0: Math.round(cx0 * px) / px, cz0: Math.round(cz0 * px) / px, px, cellW, level, marquee, marqueeOn })
