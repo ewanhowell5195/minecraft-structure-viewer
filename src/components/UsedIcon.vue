@@ -57,14 +57,6 @@ async function render() {
       drawText(ctx, font, "?", x + s, y + s, { scale: s, color: "#3f3f3f" })
       drawText(ctx, font, "?", x, y, { scale: s, color: "#ffffff" })
     } else {
-      let cross = false
-      try {
-        const resolved = []
-        for (const m of await lib.parseBlockstate(assets, props.id, { data: props.blockstates ?? {}, ignoreAtlases: true })) {
-          resolved.push(await lib.resolveModelData(assets, m))
-        }
-        cross = lib.isCrossModel(resolved)
-      } catch {}
       await lib.renderBlock({
         id: props.id,
         assets,
@@ -73,7 +65,7 @@ async function render() {
         height: size,
         canvas: c,
         ignoreAtlases: true,
-        ...(cross ? { display: { rotation: [30, 180, 0], scale: [0.625, 0.625, 0.625] } } : null)
+        display: { type: "fallback", rotateFlat: true, ...lib.DISPLAYS.block }
       })
     }
   } catch {}
