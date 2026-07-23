@@ -30,6 +30,7 @@ import ContainerModal from "./components/ContainerModal.vue"
 import UsedBlocksModal from "./components/UsedBlocksModal.vue"
 import ContextMenu from "./components/ContextMenu.vue"
 import BuildProgress from "./components/BuildProgress.vue"
+import SplashScreen from "./components/SplashScreen.vue"
 import BuildWarning from "./components/BuildWarning.vue"
 import Modal from "./components/Modal.vue"
 
@@ -45,7 +46,9 @@ const walk = useWalk()
 const stream = useStream()
 async function walkClick() {
   if (stream.state.session) {
+    walk.prelock()
     if (await stream.enter()) walk.enter()
+    else if (document.pointerLockElement) document.exitPointerLock()
     return
   }
   walk.enter()
@@ -109,6 +112,30 @@ function splashCancel() {
 
 // zero-width breaks so long structure paths wrap at their slashes
 const splashName = computed(() => current.name.replace(/\//g, "/\u200B"))
+
+// one splash screen, many states: minimal-mode landing/progress/error and the
+// stream world-prepare screen all reduce to a SplashScreen config here
+const splash = computed(() => {
+  if (!minimalReady.value) {
+    if (notFound.value) return { error: notFound.value, link: { label: "Open the full site", href: homeUrl } }
+    if (splashCancelled.value) return { blurb: true, link: { label: "Open the full site", href: mainSiteUrl.value } }
+    return {
+      name: splashName.value,
+      blurb: !splashName.value,
+      spinner: true,
+      status: splashStatus.value,
+      cancel: (buildState.building || !!current.reading) && cancelReady.value
+    }
+  }
+  if (stream.state.preparing) {
+    return {
+      spinner: true,
+      status: stream.state.prepMsg || "Preparing world\u2026",
+      note: "You may experience some lag shortly after loading in while the nearby chunks stream in."
+    }
+  }
+  return null
+})
 
 const STAGE_LABELS = { light: "lighting", build: "building", optimise: "optimising", maps: "generating maps" }
 const splashStatus = computed(() => {
@@ -260,31 +287,7 @@ onMounted(async () => {
       <ContextMenu />
       <BuildProgress />
       <BuildWarning />
-      <div v-if="!minimalReady" class="splash-overlay">
-        <h1>Structure Viewer</h1>
-        <template v-if="notFound">
-          <p class="splash-error">{{ notFound }}</p>
-          <a class="splash-link" :href="homeUrl" target="_blank" rel="noopener">Open the full site</a>
-        </template>
-        <template v-else-if="splashCancelled">
-          <p>View every Minecraft structure and worldgen feature in 3D, from village pieces to whole strongholds and trees to geodes, and test out how they generate with re-rollable seeds.</p>
-          <p>Load your own structures and world saves, apply resource packs, mods, and datapacks, combine structures into one scene, and share anything with a link.</p>
-          <a class="splash-link" :href="mainSiteUrl" target="_blank" rel="noopener" @pointerdown="refreshMainSiteUrl">Open the full site</a>
-        </template>
-        <template v-else>
-          <p v-if="splashName" class="splash-name">Opening: {{ splashName }}</p>
-          <template v-else>
-            <p>View every Minecraft structure and worldgen feature in 3D, from village pieces to whole strongholds and trees to geodes, and test out how they generate with re-rollable seeds.</p>
-            <p>Load your own structures and world saves, apply resource packs, mods, and datapacks, combine structures into one scene, and share anything with a link.</p>
-          </template>
-          <svg class="spinner" viewBox="0 0 24 24" width="30" height="30" aria-label="Loading">
-            <circle cx="12" cy="12" r="10" fill="none" stroke="#ffffff1f" stroke-width="3"/>
-            <path d="M12 2 a 10 10 0 0 1 10 10" fill="none" stroke="#4c8dff" stroke-width="3" stroke-linecap="round"/>
-          </svg>
-          <p class="splash-status">{{ splashStatus }}</p>
-          <button v-if="(buildState.building || current.reading) && cancelReady" class="splash-cancel" @click="splashCancel">Cancel</button>
-        </template>
-      </div>
+      <SplashScreen v-if="splash" v-bind="splash" @cancel="splashCancel" @linkdown="refreshMainSiteUrl" />
       <button v-if="minimal && minimalReady && fullscreenSupported" class="fs-btn" :title="isFullscreen ? 'Exit fullscreen' : 'Fullscreen'" @click="toggleFullscreen">
         <span class="material-symbols-outlined">{{ isFullscreen ? "fullscreen_exit" : "fullscreen" }}</span>
       </button>
@@ -399,63 +402,6 @@ onMounted(async () => {
 /* no walk button to stack above in minimal mode */
 .minimal .used-btn { bottom: 12px; }
 
-.splash-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 40;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  padding: 24px;
-  background: var(--bg);
-  color: #9a9aa5;
-  text-align: center;
-}
-
-
-.splash-overlay h1 {
-  margin: 0;
-  font-size: 34px;
-  color: #e8e8ec;
-}
-
-.splash-overlay p {
-  margin: 0;
-  max-width: 560px;
-  line-height: 1.6;
-}
-
-.splash-overlay .spinner {
-  margin-top: 10px;
-  animation: spin 0.9s linear infinite;
-}
-
-.splash-overlay .splash-name {
-  color: #c9c9d2;
-}
-
-.splash-overlay .splash-error {
-  color: var(--red);
-}
-
-.splash-overlay .splash-link {
-  margin-top: 10px;
-  background: var(--panel-2);
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 6px 12px;
-  text-decoration: none;
-}
-
-.splash-overlay .splash-link:hover { background: #2e2e36; }
-
-.splash-overlay .splash-cancel {
-  margin-top: 6px;
-}
-
 .open-full {
   position: absolute;
   top: 12px;
@@ -504,16 +450,6 @@ onMounted(async () => {
   color: var(--text-dim);
   line-height: 1.5;
   overflow-wrap: anywhere;
-}
-
-.splash-overlay .splash-status {
-  font-size: 13px;
-  color: #6f6f7a;
-  font-variant-numeric: tabular-nums;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
 }
 
 .used-btn .material-symbols-outlined { font-size: 18px; }

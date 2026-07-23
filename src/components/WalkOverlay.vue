@@ -28,7 +28,13 @@ const _frustum = new THREE.Frustum(), _m = new THREE.Matrix4(), _v = new THREE.V
 const wrapPi = a => ((a + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI
 const asin1 = v => Math.asin(Math.max(-1, Math.min(1, v)))
 
+// stop the old instance's loop when vite hot-swaps this component, else each
+// swap leaks another rAF ticker
+let hmrDead = false
+import.meta.hot?.dispose(() => { hmrDead = true })
+
 function tick() {
+  if (hmrDead) return
   requestAnimationFrame(tick)
   const cam = sceneApi.camera, canvas = sceneApi.canvas
   if (!canvas || !sceneApi.contentRoots.size) {
@@ -141,4 +147,5 @@ requestAnimationFrame(tick)
   color: #eee;
   font-size: 15px;
 }
+
 </style>
