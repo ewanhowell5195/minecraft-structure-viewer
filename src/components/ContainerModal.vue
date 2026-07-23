@@ -8,7 +8,7 @@ import { useWalk } from "../composables/useWalk.js"
 import { useWorld } from "../composables/useWorld.js"
 import { getFont, measure, drawText } from "../mcfont.js"
 import { drawTooltip, onTooltipFrame, MARGIN } from "../tooltip.js"
-import { describeTable, prettyName } from "../loot.js"
+import { describeTable, prettyName, stackKey } from "../loot.js"
 import Modal from "./Modal.vue"
 import ItemIcon from "./ItemIcon.vue"
 import UsedIcon from "./UsedIcon.vue"
@@ -39,8 +39,18 @@ const TABS = computed(() => state.dataRows || state.item ? [] : state.table
 
 const rules = computed(() => state.table ? describeTable(state.table) : [])
 
-const listStacks = computed(() => Array.from(state.stacks).sort((a, b) =>
-  b.count - a.count || stackName(a).localeCompare(stackName(b))))
+// identical stacks combine into one row with the grand total
+const listStacks = computed(() => {
+  const merged = new Map()
+  for (const s of state.stacks) {
+    const k = stackKey(s)
+    const ex = merged.get(k)
+    if (ex) ex.count += s.count
+    else merged.set(k, { ...s })
+  }
+  return Array.from(merged.values()).sort((a, b) =>
+    b.count - a.count || stackName(a).localeCompare(stackName(b)))
+})
 
 function stackName(s) {
   let n = prettyName(s.id)
@@ -275,19 +285,26 @@ async function drawItemsInner(c, K, seq) {
   const font = await getFont()
   if (seq !== itemSeq) return
   const ctx = c.getContext("2d")
+  // a chest of one item is one render, blitted per slot, not a render per slot
+  const rendered = new Map()
   for (const st of state.stacks) {
     if (seq !== itemSeq) return
+    const k = stackKey(st)
+    if (!rendered.has(k)) {
+      try {
+        rendered.set(k, await lib.renderItem({
+          id: st.id,
+          assets,
+          components: st.components ?? {},
+          width: 16 * S,
+          height: 16 * S
+        }))
+      } catch { rendered.set(k, null) }
+    }
+    const img = rendered.get(k)
+    if (!img) continue
     const [ix, iy] = inner(K, st.slot)
-    try {
-      await lib.renderItem({
-        id: st.id,
-        assets,
-        components: st.components ?? {},
-        width: 16 * S,
-        height: 16 * S,
-        canvas: { canvas: c, x: ix * S, y: iy * S, width: 16 * S, height: 16 * S }
-      })
-    } catch {}
+    ctx.drawImage(img, ix * S, iy * S)
   }
   if (seq !== itemSeq) return
   for (const st of state.stacks) {
