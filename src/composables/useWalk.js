@@ -7,6 +7,11 @@ import { useBooks } from "./useBooks.js"
 import { useLock } from "./useLock.js"
 import { useStream } from "./useStream.js"
 
+// stateful singleton with document listeners and live loops: a hot update
+// re-executing this module would stack them (walking speeds up per reload),
+// so force a clean full reload instead
+if (import.meta.hot) import.meta.hot.decline()
+
 // movement numbers are the vanilla ones throughout; world units: 16 = one block
 const sceneApi = useScene()
 const buildApi = useBuild()
@@ -84,12 +89,18 @@ function cellBoxes(ci, cj, ck) {
     for (let gx = lo(ci, p.x); gx <= hi(ci, p.x); gx++)
       for (let gy = lo(cj, p.y); gy <= hi(cj, p.y); gy++)
         for (let gz = lo(ck, p.z); gz <= hi(ck, p.z); gz++) {
-          const b = wapi().blockEntryAt(p.x + gx * 16, p.y + gy * 16, p.z + gz * 16)
-          if (!b) continue
-          for (const box of wapi().blockBoxes(b)) {
-            if (box.px > ci * 16 && box.nx < ci * 16 + 16 &&
-              box.py > cj * 16 && box.ny < cj * 16 + 16 &&
-              box.pz > ck * 16 && box.nz < ck * 16 + 16) a.push(box)
+          // one bad block must never kill the frame's collision solve or cache
+          // a half-filled cell (a thrown boxesFor did exactly that once)
+          try {
+            const b = wapi().blockEntryAt(p.x + gx * 16, p.y + gy * 16, p.z + gz * 16)
+            if (!b) continue
+            for (const box of wapi().blockBoxes(b)) {
+              if (box.px > ci * 16 && box.nx < ci * 16 + 16 &&
+                box.py > cj * 16 && box.ny < cj * 16 + 16 &&
+                box.pz > ck * 16 && box.nz < ck * 16 + 16) a.push(box)
+            }
+          } catch (err) {
+            console.error(err)
           }
         }
   }
@@ -613,6 +624,13 @@ function lockPointer() {
   }
 }
 
+// grab the pointer lock inside the click gesture itself: by the time an async
+// prepare (stream enter) resolves, the gesture is stale and a lock request
+// would be denied, forcing an extra click
+function prelock() {
+  if (!NOLOCK) lockPointer()
+}
+
 function suspend() {
   if (!state.on || state.suspended) return
   state.suspended = true
@@ -811,7 +829,7 @@ addEventListener("mousedown", e => {
 export function useWalk() {
   return {
     state: readonly(state),
-    enter, exit, suspend, resume,
+    enter, exit, suspend, resume, prelock,
     toggle: () => state.on ? exit() : enter()
   }
 }

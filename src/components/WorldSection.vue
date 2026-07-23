@@ -209,7 +209,10 @@ async function exploreWorld() {
   history.replaceState(null, "", u)
   const stream = useStream()
   if (stream.state.session) stream.shutdown()
-  if (await stream.enter(spawn)) useWalk().enter()
+  const walk = useWalk()
+  walk.prelock()
+  if (await stream.enter(spawn)) walk.enter()
+  else if (document.pointerLockElement) document.exitPointerLock()
 }
 
 function draw() {
