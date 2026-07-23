@@ -8,7 +8,7 @@ export function makeDebug(kind) {
     }
     return pi.get(k)
   }
-  const blocks = [], put = (x, y, z, name, props) => blocks.push({ pos: [x, y, z], state: st(name, props) })
+  const blocks = [], put = (x, y, z, name, props, nbt) => blocks.push({ pos: [x, y, z], state: st(name, props), ...(nbt ? { nbt } : {}) })
   const run = (z, name, props, n = 6, y = 0) => { for (let i = 0; i < n; i++) put(i, y, z, name, props) }
   function finish() {
     const mx = a => Math.max(...blocks.map(b => b.pos[a])) + 1
@@ -233,6 +233,8 @@ export function makeDebug(kind) {
     put(12, 0, 0, "decorated_pot", { facing: "south", cracked: "false", waterlogged: "false" })
     put(14, 0, 0, "dragon_head", { rotation: "8", powered: "true" })
     put(16, 0, 0, "piglin_head", { rotation: "8", powered: "true" })
+    put(18, 0, 0, "chest", { facing: "south", type: "right", waterlogged: "false" }, { Items: [{ id: "minecraft:diamond", count: 3, Slot: 0 }] })
+    put(19, 0, 0, "chest", { facing: "south", type: "left", waterlogged: "false" }, { LootTable: "minecraft:chests/simple_dungeon" })
     return finish()
   }
 

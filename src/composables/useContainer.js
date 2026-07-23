@@ -406,6 +406,35 @@ function poseLids(block, entry, on) {
   openLids = on ? positions : []
 }
 
+// the other half of a double chest, so the modal can show both inventories;
+// in game the type "right" half provides the first 27 slots
+function chestPartner(block, entry) {
+  const p = entry?.Properties ?? {}
+  if ((p.type !== "left" && p.type !== "right") || !p.facing) return null
+  let dir = CW[p.facing] ?? "east"
+  if (p.type === "right") dir = CW[CW[dir]]
+  const v = SIDE_VEC[dir]
+  const pos = [block.pos[0] + v[0], block.pos[1], block.pos[2] + v[1]]
+  let e = null, nbt = null
+  if (streamApi.state.session) {
+    const h = streamApi.provider.blockEntryAt(pos[0] * 16, pos[1] * 16, pos[2] * 16)
+    if (h?.cell?.entry) {
+      e = { Name: h.cell.entry.id, Properties: h.cell.entry.properties }
+      nbt = h.cell.entry.nbt
+    }
+  } else if (buildApi.getRoot()) {
+    const r = buildApi.getRoot().position
+    const b = buildApi.blockEntryAt(r.x + pos[0] * 16, r.y + pos[1] * 16, r.z + pos[2] * 16)
+    if (b) {
+      e = buildApi.current.value?.palette[b.state]
+      nbt = b.nbt
+    }
+  }
+  if (!e?.Name || stripNs(e.Name) !== stripNs(entry.Name)) return null
+  if (e.Properties?.type !== (p.type === "left" ? "right" : "left")) return null
+  return { nbt }
+}
+
 async function open(block) {
   const entry = block.entry ?? buildApi.current.value?.palette[block.state]
   const name = entry?.Name ?? "minecraft:chest"
@@ -479,7 +508,16 @@ async function open(block) {
     state.open = true
     return
   }
-  state.tableId = (block.nbt?.LootTable ?? "").replace(/^minecraft:/, "")
+  const partner = /chest$/.test(bare) ? chestPartner(block, entry) : null
+  const parts = partner
+    ? (entry.Properties.type === "right"
+        ? [{ nbt: block.nbt, off: 0 }, { nbt: partner.nbt, off: 27 }]
+        : [{ nbt: partner.nbt, off: 0 }, { nbt: block.nbt, off: 27 }])
+    : [{ nbt: block.nbt, off: 0 }]
+  const kind = partner ? { ...KINDS.generic, rows: 6 } : kindOf(name)
+  const cap = partner ? 27 : kind.cols * kind.rows
+  state.kind = kind
+  state.tableId = [...new Set(parts.map(p => stripNs(p.nbt?.LootTable ?? "")).filter(Boolean))].join(" + ")
   state.table = null
   state.stacks = []
   state.tab = "loot"
@@ -487,32 +525,43 @@ async function open(block) {
   state.oddsBusy = false
   state.rolls = 0
   state.pileTotal = 0
-  state.gui = kindOf(name)
+  state.gui = kind
   state.guiTitle = state.blockName
   pile = []
+  lootParts = []
+  fixedStacks = []
   openSeq++
   state.open = true
   try {
-    if (block.nbt?.LootTable) {
-      const table = await readLootTable(block.nbt.LootTable)
-      if (!table) {
-        state.error = "loot table not found: " + state.tableId
-        return
+    const shelf = /(^|_)shelf$/.test(bare)
+    for (const part of parts) {
+      if (part.nbt?.LootTable) {
+        const table = await readLootTable(part.nbt.LootTable)
+        if (!table) {
+          state.error = "loot table not found: " + stripNs(part.nbt.LootTable)
+          return
+        }
+        lootParts.push({ table, off: part.off, cap })
+      } else if (Array.isArray(part.nbt?.Items)) {
+        for (const it of part.nbt.Items) {
+          if (!it?.id) continue
+          fixedStacks.push({
+            id: it.id,
+            count: it.count ?? it.Count ?? 1,
+            components: it.components,
+            tag: it.tag,
+            slot: part.off + (shelf ? 1 + Math.min(2, Math.max(0, it.Slot ?? 0)) : Math.min(cap - 1, Math.max(0, it.Slot ?? 0)))
+          })
+        }
       }
-      state.table = table
+    }
+    state.table = lootParts[0]?.table ?? null
+    if (lootParts.length) {
       await reroll()
-    } else if (Array.isArray(block.nbt?.Items) && block.nbt.Items.length) {
-      const cap = state.kind.cols * state.kind.rows
-      const shelf = /(^|_)shelf$/.test(bare)
-      state.stacks = block.nbt.Items.filter(it => it?.id).map(it => ({
-        id: it.id,
-        count: it.count ?? it.Count ?? 1,
-        components: it.components,
-        tag: it.tag,
-        slot: shelf ? 1 + Math.min(2, Math.max(0, it.Slot ?? 0)) : Math.min(cap - 1, Math.max(0, it.Slot ?? 0))
-      }))
+    } else if (fixedStacks.length) {
+      state.stacks = fixedStacks
       state.note = "Fixed contents stored in the structure."
-    } else if (/(^|_)shelf$/.test(bare)) {
+    } else if (shelf) {
       state.note = "This shelf is empty."
     } else {
       state.note = "This container has no loot table."
@@ -523,11 +572,11 @@ async function open(block) {
 }
 
 async function ensureOdds() {
-  if (!state.table || state.odds || state.oddsBusy) return
+  if (!lootParts.length || state.odds || state.oddsBusy) return
   const seq = openSeq
   state.oddsBusy = true
   try {
-    const odds = await sampleTable(state.table)
+    const odds = await sampleTable(lootParts.map(p => p.table))
     if (seq === openSeq) state.odds = odds
   } finally {
     if (seq === openSeq) state.oddsBusy = false
@@ -540,15 +589,20 @@ function setTab(tab) {
 }
 
 let pile = []
+let lootParts = []
+let fixedStacks = []
 
-function mergeRoll(loot) {
+function mergeInto(arr, loot) {
   for (const s of loot) {
     const k = stackKey(s)
-    const ex = pile.find(t => t.key === k)
+    const ex = arr.find(t => t.key === k)
     if (ex) ex.count += s.count
-    else pile.push({ key: k, id: s.id, components: s.components, count: s.count })
+    else arr.push({ key: k, id: s.id, components: s.components, count: s.count })
   }
+  return arr
 }
+
+const mergeRoll = loot => mergeInto(pile, loot)
 
 // single rolls scatter into random slots like the game fills a chest
 function display(scatter = false) {
@@ -572,20 +626,44 @@ function display(scatter = false) {
 }
 
 async function reroll() {
-  if (!state.table || !state.kind) return
+  if (!lootParts.length || !state.kind) return
+  const seq = openSeq
   pile = []
-  mergeRoll(await rollLoot(state.table))
+  const rolled = []
+  for (const p of lootParts) {
+    const loot = await rollLoot(p.table)
+    if (seq !== openSeq || !state.open) return
+    rolled.push({ p, merged: mergeInto([], loot) })
+    mergeRoll(loot)
+  }
   state.rolls = 1
-  display(true)
+  if (rolled.every(r => r.merged.length <= r.p.cap)) {
+    state.pileTotal = pile.reduce((a, s) => a + s.count, 0)
+    state.gui = state.kind
+    state.guiTitle = state.blockName
+    // each part scatters within its own slot region, like the game fills each half
+    const stacks = Array.from(fixedStacks)
+    for (const r of rolled) {
+      const slots = Array.from(Array(r.p.cap).keys())
+      for (let i = slots.length - 1; i > 0; i--) {
+        const j = Math.random() * (i + 1) | 0
+        ;[slots[i], slots[j]] = [slots[j], slots[i]]
+      }
+      r.merged.forEach((s, i) => stacks.push({ id: s.id, components: s.components, count: s.count, slot: r.p.off + slots[i] }))
+    }
+    state.stacks = stacks
+  } else display()
 }
 
 async function addRoll(n = 1) {
-  if (!state.table || !state.kind) return
+  if (!lootParts.length || !state.kind) return
   const seq = openSeq
   for (let i = 0; i < n; i++) {
-    const loot = await rollLoot(state.table)
-    if (seq !== openSeq || !state.open) return
-    mergeRoll(loot)
+    for (const p of lootParts) {
+      const loot = await rollLoot(p.table)
+      if (seq !== openSeq || !state.open) return
+      mergeRoll(loot)
+    }
     state.rolls++
   }
   display()

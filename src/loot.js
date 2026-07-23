@@ -163,11 +163,12 @@ async function entryItems(entry, out, seen) {
 export const stackKey = s => s.id + "|" + JSON.stringify(s.components ?? null)
 
 export async function sampleTable(table, opens = 10000) {
+  const tables = Array.isArray(table) ? table : [table]
   const tally = new Map()
   const perOpen = new Map()
   for (let i = 0; i < opens; i++) {
     perOpen.clear()
-    for (const s of await rollLoot(table)) {
+    for (const t of tables) for (const s of await rollLoot(t)) {
       const k = stackKey(s)
       perOpen.set(k, (perOpen.get(k) ?? 0) + s.count)
       if (!tally.has(k)) tally.set(k, { id: s.id, components: s.components, hits: 0, total: 0, min: Infinity, max: 0 })
