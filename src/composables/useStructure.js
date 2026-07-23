@@ -322,7 +322,7 @@ async function apply(refit = true) {
     state.name = `${rel} (field of ${loaded.length})`
     setStructureParam(null, rel, base === features.defaultSeed(rel) ? 0 : base, true)
     const s = loaded.length === 1 ? loaded[0].structure : await packField()
-    if (await buildApi.build(s, refit) === false) return false
+    if (await buildApi.build(s, refit, false, true) === false) return false
     session.endSession()
     return
   }
@@ -331,11 +331,11 @@ async function apply(refit = true) {
     state.name = name
     if (feature) {
       setStructureParam(null, rel, seed === features.defaultSeed(rel) ? 0 : seed)
-      if (await buildApi.build(s, refit) === false) return false
+      if (await buildApi.build(s, refit, false, true) === false) return false
       session.endSession()
     } else {
       if (rel) setStructureParam(rel)
-      if (await buildApi.build(s, refit) === false) return false
+      if (await buildApi.build(s, refit, false, true) === false) return false
       await session.startSession(s, name)
     }
   } else {
@@ -345,7 +345,7 @@ async function apply(refit = true) {
     if (allFeatures) setStructureParam(null, loaded.map(e => e.rel).join(","))
     else if (allStructures) setStructureParam(await encodeRels(loaded.map(e => e.rel)))
     else setStructureParam(null)
-    if (await buildApi.build(await packLoaded(), refit) === false) return false
+    if (await buildApi.build(await packLoaded(), refit, false, true) === false) return false
     session.endSession()
   }
 }

@@ -18,6 +18,10 @@ import { minimal } from "../minimal.js"
 import { loadStateCache, saveStateCache } from "../stateCache.js"
 import { SOFT_BLOCKS, HARD_BLOCKS, bellRingDir } from "../streamShared.js"
 
+// stateful singleton (live scene root, handles, watchers): hot updates must
+// full-reload, never re-execute alongside the old instance
+if (import.meta.hot) import.meta.hot.decline()
+
 const packs = usePacks()
 const sceneApi = useScene()
 const { lock } = useLock()
@@ -1264,13 +1268,28 @@ function blockEntryAt(wx, wy, wz) {
   if (!structure || !root) return null
   const [bx, by, bz] = cellOf(wx, wy, wz)
   const i = cellIndex().get(bx + "," + by + "," + bz)
-  return i == null ? null : structure.blocks[i]
+  if (i != null) return structure.blocks[i]
+  const bits = structure.__buried
+  if (bits) {
+    const [sx, sy, sz] = structure.size
+    if (bx >= 0 && by >= 0 && bz >= 0 && bx < sx && by < sy && bz < sz) {
+      const bi = (bz * sy + by) * sx + bx
+      if (bits[bi >> 3] & (1 << (bi & 7))) return { buried: true, pos: [bx, by, bz] }
+    }
+  }
+  return null
 }
 
 function blockBoxes(b) {
   const structure = current.value
   const out = []
   if (!structure || !root) return out
+  if (b.buried) {
+    const p = root.position
+    const ox = p.x + b.pos[0] * 16, oy = p.y + b.pos[1] * 16, oz = p.z + b.pos[2] * 16
+    out.push({ nx: ox - 8, ny: oy - 8, nz: oz - 8, px: ox + 8, py: oy + 8, pz: oz + 8 })
+    return out
+  }
   const entry = structure.palette[b.state]
   if (gateOpen(entry) || isFluidBlock(entry)) return out
   const i = cellIndex().get(b.pos.join(","))
@@ -1410,7 +1429,7 @@ function scheduleOcclusionSave(lib, assets) {
 }
 
 // true when a build landed, false when cancelled
-async function build(structure = source, refit = true, slice = false) {
+async function build(structure = source, refit = true, slice = false, fresh = false) {
   const assets = packs.assets.value
   if (!assets || !structure || state.building) return
   state.building = true
@@ -1440,6 +1459,26 @@ async function build(structure = source, refit = true, slice = false) {
     if (slice) structure = useSlicers().sliceStructure(structure)
     const slicedApplied = structure !== unsliced
     current.value = structure
+    // fresh loads clear the old scene up front so it stops eating frame time
+    // during the new build; rebuilds (levels, slicers) keep it until the swap
+    if (fresh && (root || fullBundle)) {
+      discardFull()
+      if (animator) sceneApi.animators.delete(animator)
+      if (root) {
+        sceneApi.contentRoots.delete(root)
+        disposeGroup(root)
+        sceneHandle?.dispose()
+        for (const t of markerTextures) t.dispose()
+        sceneLight?.dispose()
+      }
+      root = null
+      sceneHandle = null
+      markerTextures = []
+      animator = null
+      sceneLight = null
+      rootSliced = false
+      sceneApi.setGrids([])
+    }
     const lib = await loadLibrary()
     lib.setAnimationRenderer?.(sceneApi.renderer)
     // a new orbit build replaces a suspended stream session's tiles
@@ -1583,12 +1622,20 @@ async function build(structure = source, refit = true, slice = false) {
       }
       buriedOcclusion = (x, y, z) => x >= 0 && y >= 0 && z >= 0 && x < w && y < h && z < d && !!solid[(z * h + y) * w + x]
     }
+    // dropped cells keep collision as full cubes (like stream tiles), so noclip
+    // or a bad spawn inside sealed terrain bumps out instead of floating in it
+    const buriedBits = enc ? new Uint8Array((sx * sy * sz + 7) >> 3) : null
+    structure.__buried = buriedBits
     for (let i = 0; i < structure.blocks.length; i++) {
       const b = structure.blocks[i]
       const sc = stateCache.get(b.state)
       if (!sc) continue
       const p = b.pos
-      if (enc && enc(p[0], p[1], p[2])) continue
+      if (enc && enc(p[0], p[1], p[2])) {
+        const bi = (p[2] * sy + p[1]) * sx + p[0]
+        buriedBits[bi >> 3] |= 1 << (bi & 7)
+        continue
+      }
       const entry = { id: sc.name, pos: p }
       if (sc.props) entry.properties = sc.props
       if (sc.biome) entry.biome = sc.biome
