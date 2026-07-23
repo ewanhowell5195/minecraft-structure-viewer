@@ -2,6 +2,9 @@ import { reactive, watch } from "vue"
 import * as THREE from "three"
 import { OrbitControls } from "three/addons/controls/OrbitControls.js"
 
+// owns the render loop; hot-updating this module would start a second one
+if (import.meta.hot) import.meta.hot.decline()
+
 const FOV = 45
 const GRID_COLOR = 0x444448
 
