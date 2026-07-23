@@ -26,8 +26,8 @@ const state = reactive({
   regionFile: false,
   rev: 0,
   focusRev: 0,
-  yMin: 60,
-  yMax: 100
+  yMin: 48,
+  yMax: 200
 })
 
 let world = null
