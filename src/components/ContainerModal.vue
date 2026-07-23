@@ -300,11 +300,19 @@ async function drawItemsInner(c, K, seq) {
   }
 }
 
+// the background redraw (texture read, decode, compose) keys on what it would
+// actually show: rolls swap in fresh gui objects with identical layouts
+let bgKey = ""
 watch(() => [state.open, state.gui, state.guiTitle], () => {
   hoverSlot.value = -1
   hideTip()
-  if (state.open) nextTick(drawHl)
-  if (state.open) nextTick(drawBg)
+  if (!state.open) { bgKey = ""; return }
+  nextTick(drawHl)
+  const K = state.gui
+  const key = K ? [K.tex, K.texH, K.rows, K.tile ? 1 : 0, state.guiTitle].join("|") : ""
+  if (key === bgKey) return
+  bgKey = key
+  nextTick(drawBg)
 })
 watch(() => [state.open, state.stacks, state.gui], () => {
   hideTip()
