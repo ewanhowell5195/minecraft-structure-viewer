@@ -201,6 +201,9 @@ const explorable = ref(false)
 async function exploreWorld() {
   const spawn = nearestValidChunk()
   if (!spawn) return
+  const u = new URL(location)
+  u.searchParams.set("wy", state.yMin + "," + state.yMax)
+  history.replaceState(null, "", u)
   const stream = useStream()
   if (stream.state.session) stream.shutdown()
   if (await stream.enter(spawn)) useWalk().enter()

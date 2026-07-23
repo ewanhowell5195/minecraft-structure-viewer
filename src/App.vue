@@ -179,6 +179,11 @@ onMounted(async () => {
         await useWorld().restoreLoad(params.get("wy"), wsel, params.get("wdim"))
         return
       }
+      // a bare wy (saved by explore world) restores the sliders without a build
+      if (worldFile && params.get("wy")) {
+        const [lo, hi] = params.get("wy").split(",").map(Number)
+        if (Number.isFinite(lo) && Number.isFinite(hi)) useWorld().setYRange(lo, hi)
+      }
       const rels = requested.filter(r => isRemote(r) || structures.has(r))
       if (structureParam != null && !rels.length) {
         notFound.value = requested.length === 1
