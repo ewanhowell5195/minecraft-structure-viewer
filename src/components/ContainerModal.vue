@@ -9,6 +9,7 @@ import { useWorld } from "../composables/useWorld.js"
 import { getFont, measure, drawText } from "../mcfont.js"
 import { drawTooltip, onTooltipFrame, MARGIN } from "../tooltip.js"
 import { describeTable, prettyName, stackKey } from "../loot.js"
+import { iconInfo, acquireIcon, releaseIcon, nextToken } from "../icons.js"
 import Modal from "./Modal.vue"
 import ItemIcon from "./ItemIcon.vue"
 import UsedIcon from "./UsedIcon.vue"
@@ -19,6 +20,7 @@ const container = useContainer()
 const state = container.state
 const walk = useWalk()
 const bgEl = ref(null)
+const animEl = ref(null)
 const itemsEl = ref(null)
 const hlBackEl = ref(null)
 const hlFrontEl = ref(null)
@@ -277,35 +279,70 @@ async function drawItems() {
   }
 }
 
+// slots this grid currently holds of a shared player, released whenever the
+// slots change so the player is retargeted rather than rebuilt
+const animHeld = []
+function clearAnimations() {
+  for (const [spec, token] of animHeld) releaseIcon(spec, token)
+  animHeld.length = 0
+  animEl.value?.replaceChildren()
+}
+
 async function drawItemsInner(c, K, seq) {
   c.width = 176 * S
   c.height = bodyH(K) * S
-  const lib = await loadLibrary()
-  const assets = packs.assets.value
+  clearAnimations()
   const font = await getFont()
   if (seq !== itemSeq) return
   const ctx = c.getContext("2d")
-  // a chest of one item is one render, blitted per slot, not a render per slot
-  const rendered = new Map()
+  // a chest of one item is one render, blitted per slot, not a render per slot,
+  // and slots fill in as their renders land rather than waiting on the slowest
+  const byKey = new Map()
   for (const st of state.stacks) {
-    if (seq !== itemSeq) return
     const k = stackKey(st)
-    if (!rendered.has(k)) {
-      try {
-        rendered.set(k, await lib.renderItem({
-          id: st.id,
-          assets,
-          components: st.components ?? {},
-          width: 16 * S,
-          height: 16 * S
-        }))
-      } catch { rendered.set(k, null) }
-    }
-    const img = rendered.get(k)
-    if (!img) continue
-    const [ix, iy] = inner(K, st.slot)
-    ctx.drawImage(img, ix * S, iy * S)
+    let group = byKey.get(k)
+    if (!group) byKey.set(k, group = [])
+    group.push(st)
   }
+  await Promise.all(Array.from(byKey.values(), async stacks => {
+    const spec = {
+      kind: "item",
+      id: stacks[0].id,
+      components: stacks[0].components ?? {},
+      size: 16 * S
+    }
+    const info = await iconInfo(spec)
+    if (seq !== itemSeq || !info) return
+    // an animated item gets one player covering every slot it occupies, each
+    // painting its own canvas beneath this one; the slot is left transparent
+    // here so it shows through
+    if (info.animates && animEl.value) {
+      let placed = 0
+      for (const st of stacks) {
+        const token = nextToken()
+        const got = await acquireIcon(spec, token, 16 * S)
+        if (!got?.animated) {
+          if (got) releaseIcon(spec, token)
+          break
+        }
+        if (seq !== itemSeq) {
+          releaseIcon(spec, token)
+          return
+        }
+        const [ix, iy] = inner(K, st.slot)
+        // styled inline because scoped css never reaches elements made here
+        got.canvas.style.cssText = `position:absolute;left:${ix * S}px;top:${iy * S}px;image-rendering:pixelated`
+        animEl.value.append(got.canvas)
+        animHeld.push([spec, token])
+        placed++
+      }
+      if (placed === stacks.length) return
+    }
+    for (const st of stacks) {
+      const [ix, iy] = inner(K, st.slot)
+      ctx.drawImage(info.bitmap, ix * S, iy * S)
+    }
+  }))
   if (seq !== itemSeq) return
   for (const st of state.stacks) {
     if (st.count <= 1) continue
@@ -432,6 +469,7 @@ watch(() => [state.open, state.stacks, state.gui], () => {
               @click="clickGui" @pointermove="moveGui" @pointerleave="leaveGui">
               <canvas ref="bgEl"></canvas>
               <canvas ref="hlBackEl" class="overlay"></canvas>
+              <div ref="animEl" class="overlay anim"></div>
               <canvas ref="itemsEl" class="overlay"></canvas>
               <canvas ref="hlFrontEl" class="overlay"></canvas>
             </div>
@@ -715,6 +753,10 @@ watch(() => [state.open, state.stacks, state.gui], () => {
   inset: 0;
   pointer-events: none;
 }
+
+/* animated slots sit under the items canvas, so the counts drawn there still
+   show above a slot that a player is repainting. the canvases themselves are
+   positioned inline, since scoped css can't reach elements created in script */
 
 .tooltip {
   position: fixed;

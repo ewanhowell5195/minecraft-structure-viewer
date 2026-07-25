@@ -1,7 +1,7 @@
 <script setup>
-import { ref, watchEffect } from "vue"
-import { loadLibrary } from "../lib.js"
+import { onBeforeUnmount, onMounted, ref, watchEffect } from "vue"
 import { usePacks } from "../composables/usePacks.js"
+import { acquireIcon, releaseIcon, nextToken, onVisible, offVisible } from "../icons.js"
 
 const props = defineProps({
   id: String,
@@ -11,36 +11,58 @@ const props = defineProps({
 
 const packs = usePacks()
 const el = ref(null)
+const shown = ref(false)
+// the canvas is managed by hand rather than by the template: an animated icon
+// is painted by a player in the worker, and a canvas can only be handed over if
+// nothing has ever taken a context on it
+const token = nextToken()
+let held = null
+
+function clear() {
+  if (held) {
+    releaseIcon(held, token)
+    held = null
+  }
+  if (el.value) el.value.replaceChildren()
+}
 
 watchEffect(async () => {
-  const c = el.value
+  const host = el.value
   const { id, size } = props
   const components = props.components ?? {}
-  if (!c || !id) return
-  const lib = await loadLibrary()
-  if (el.value !== c || props.id !== id) return
-  c.getContext("2d").clearRect(0, 0, size, size)
-  try {
-    await lib.renderItem({
-      id,
-      assets: packs.assets.value,
-      components,
-      width: size,
-      height: size,
-      canvas: { canvas: c, x: 0, y: 0, width: size, height: size }
-    })
-  } catch {}
+  const version = packs.state.assetsVersion
+  if (!host || !id || !shown.value) return
+  clear()
+  const spec = { kind: "item", id, components, size }
+  const got = await acquireIcon(spec, token, size)
+  if (el.value !== host || props.id !== id || packs.state.assetsVersion !== version) {
+    if (got?.animated) releaseIcon(spec, token)
+    return
+  }
+  if (!got) return
+  if (got.animated) held = spec
+  host.replaceChildren(got.canvas)
+})
+
+onMounted(() => onVisible(el.value, () => shown.value = true))
+onBeforeUnmount(() => {
+  offVisible(el.value)
+  clear()
 })
 </script>
 
 <template>
-  <canvas ref="el" :width="size" :height="size" class="item-icon"></canvas>
+  <div ref="el" class="item-icon" :style="{ width: size + 'px', height: size + 'px' }"></div>
 </template>
 
 <style scoped>
 .item-icon {
   display: block;
-  image-rendering: pixelated;
   flex-shrink: 0;
+}
+
+.item-icon :deep(canvas) {
+  display: block;
+  image-rendering: pixelated;
 }
 </style>
