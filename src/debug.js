@@ -1,3 +1,21 @@
+// every scene makeDebug knows about, listed for the ?debug picker. keep in step
+// with the kind checks below
+export const DEBUG_SCENES = [
+  { kind: "", name: "Mesher", desc: "The default greedy-mesher test scene" },
+  { kind: "fluid", name: "Fluids", desc: "Water spread, levels and surface shaping" },
+  { kind: "lighting1", name: "Lighting 1", desc: "Light propagation" },
+  { kind: "lighting2", name: "Lighting 2", desc: "Light propagation" },
+  { kind: "lighting3", name: "Lighting 3", desc: "Light propagation" },
+  { kind: "lighting4", name: "Lighting 4", desc: "Light propagation" },
+  { kind: "lighting5", name: "Lighting 5", desc: "Light propagation" },
+  { kind: "ao", name: "Ambient occlusion", desc: "AO situations on a bright floor. Enable Lighting, disable Fullbright" },
+  { kind: "pane", name: "Panes", desc: "Glass pane and connection shapes" },
+  { kind: "dynamic", name: "Dynamic parts", desc: "Chests, banners, bells and heads with moving pieces" },
+  { kind: "billboard", name: "Billboards", desc: "Camera-facing sprites" },
+  { kind: "aquarium", name: "Aquarium", desc: "Underwater scene" },
+  { kind: "container", name: "Containers", desc: "Every container gui, animated icons and item frames" }
+]
+
 export function makeDebug(kind) {
   const palette = [], pi = new Map()
   function st(Name, Properties = {}) {
@@ -10,9 +28,12 @@ export function makeDebug(kind) {
   }
   const blocks = [], put = (x, y, z, name, props, nbt) => blocks.push({ pos: [x, y, z], state: st(name, props), ...(nbt ? { nbt } : {}) })
   const run = (z, name, props, n = 6, y = 0) => { for (let i = 0; i < n; i++) put(i, y, z, name, props) }
+  const entities = []
+  // the type lives in the entity nbt, the same as in a real structure file
+  const spawn = (id, pos, nbt) => entities.push({ id: "minecraft:" + id, pos, nbt: { id: "minecraft:" + id, ...nbt } })
   function finish() {
     const mx = a => Math.max(...blocks.map(b => b.pos[a])) + 1
-    return { size: [mx(0), mx(1), mx(2)], palette, blocks }
+    return { size: [mx(0), mx(1), mx(2)], palette, blocks, entities }
   }
 
   if (kind === "fluid") {
@@ -235,6 +256,131 @@ export function makeDebug(kind) {
     put(16, 0, 0, "piglin_head", { rotation: "8", powered: "true" })
     put(18, 0, 0, "chest", { facing: "south", type: "right", waterlogged: "false" }, { Items: [{ id: "minecraft:diamond", count: 3, Slot: 0 }] })
     put(19, 0, 0, "chest", { facing: "south", type: "left", waterlogged: "false" }, { LootTable: "minecraft:chests/simple_dungeon" })
+    return finish()
+  }
+
+  // one of every container gui the viewer draws, with hand-picked contents:
+  // animated items (magma, sea lantern, prismarine), glinting ones, big stack
+  // counts sitting over animated slots, and the same item repeated so a single
+  // player has to cover several slots at once
+  if (kind === "container") {
+    const chest = (facing = "south") => ({ facing, type: "single", waterlogged: "false" })
+    const glint = { "minecraft:enchantment_glint_override": true }
+    const item = (id, Slot, count = 1, components) => ({ id: "minecraft:" + id, count, Slot, ...(components ? { components } : {}) })
+
+    // generic 9x3: animated and static side by side, counts over both
+    put(0, 0, 0, "chest", chest(), { Items: [
+      item("magma_block", 0), item("magma_block", 1, 64), item("sea_lantern", 2, 12),
+      item("prismarine", 3), item("stone", 4, 64), item("diamond", 5, 7),
+      item("enchanted_book", 9), item("diamond_sword", 10, 1, glint), item("apple", 11, 3),
+      item("command_block", 18), item("respawn_anchor", 19), item("crying_obsidian", 20)
+    ] })
+    // one item in many slots: should be a single player painting all of them
+    put(2, 0, 0, "trapped_chest", chest(), { Items: [
+      item("sea_lantern", 0, 64), item("sea_lantern", 4, 64), item("sea_lantern", 8, 64),
+      item("sea_lantern", 13), item("sea_lantern", 22)
+    ] })
+    put(4, 0, 0, "barrel", { facing: "north", open: "false" }, { LootTable: "minecraft:chests/simple_dungeon" })
+
+    // shulker 9x3: same metrics, different gui art
+    put(6, 0, 0, "shulker_box", { facing: "up" }, { Items: [
+      item("magma_block", 0, 5), item("enchanted_book", 1), item("stone", 2, 64)
+    ] })
+    put(8, 0, 0, "red_shulker_box", { facing: "up" }, { Items: [
+      item("prismarine", 4), item("golden_apple", 13, 2)
+    ] })
+
+    // dispenser 3x3
+    put(10, 0, 0, "dispenser", { facing: "south", triggered: "false" }, { Items: [
+      item("magma_block", 0), item("arrow", 4, 32), item("enchanted_book", 8)
+    ] })
+    put(12, 0, 0, "dropper", { facing: "south", triggered: "false" }, { Items: [
+      item("sea_lantern", 2), item("stone", 6, 64)
+    ] })
+    put(14, 0, 0, "decorated_pot", { facing: "south", cracked: "false", waterlogged: "false" }, { Items: [
+      item("prismarine", 4, 16)
+    ] })
+
+    // hopper 5x1, and shelves which reuse the same gui
+    put(16, 0, 0, "hopper", { facing: "down", enabled: "true" }, { Items: [
+      item("magma_block", 0), item("enchanted_book", 2), item("diamond", 4, 64)
+    ] })
+    put(18, 0, 0, "oak_shelf", { facing: "south", powered: "false" }, { Items: [
+      item("sea_lantern", 0), item("magma_block", 1), item("stone", 2, 12)
+    ] })
+
+    // smaller inventories, which all land in whichever plain grid fits and sit
+    // centred when they don't fill it
+    put(20, 0, 0, "furnace", { facing: "south", lit: "true" }, { Items: [
+      item("raw_iron", 0, 16), item("coal", 1, 64), item("iron_ingot", 2, 7)
+    ] })
+    put(22, 0, 0, "blast_furnace", { facing: "south", lit: "true" }, { Items: [
+      item("magma_block", 0, 3), item("lava_bucket", 1), item("netherite_scrap", 2, 2)
+    ] })
+    put(24, 0, 0, "smoker", { facing: "south", lit: "true" }, { Items: [
+      item("porkchop", 0, 12), item("coal", 1, 32), item("cooked_porkchop", 2, 5)
+    ] })
+    put(26, 0, 0, "brewing_stand", { has_bottle_0: "true", has_bottle_1: "true", has_bottle_2: "true" }, { Items: [
+      item("potion", 0), item("splash_potion", 1), item("lingering_potion", 2),
+      item("nether_wart", 3, 16), item("blaze_powder", 4, 64)
+    ] })
+    put(28, 0, 0, "crafter", { orientation: "north_up", crafting: "false", triggered: "false" }, { Items: [
+      item("sea_lantern", 0), item("stone", 1, 64), item("prismarine", 2),
+      item("stick", 3, 12), item("magma_block", 4), item("stick", 5, 12),
+      item("enchanted_book", 6), item("stone", 7, 64), item("command_block", 8)
+    ] })
+    put(30, 0, 0, "campfire", { facing: "south", lit: "true", waterlogged: "false", signal_fire: "false" }, { Items: [
+      item("porkchop", 0), item("potato", 1, 2), item("cod", 2), item("beef", 3)
+    ] })
+    put(32, 0, 0, "chiseled_bookshelf", { facing: "south", slot_0_occupied: "true", slot_1_occupied: "true" }, { Items: [
+      item("book", 0), item("enchanted_book", 1), item("writable_book", 2),
+      item("written_book", 3), item("knowledge_book", 4), item("book", 5, 3)
+    ] })
+    // single-item holders: one slot centred rather than adrift in a 3x3. pots
+    // and lecterns store their stack under their own nbt key, like the game
+    put(34, 0, 0, "decorated_pot", { facing: "south", cracked: "false", waterlogged: "false" }, { item: { id: "minecraft:emerald", count: 12 } })
+    put(36, 0, 0, "lectern", { facing: "south", has_book: "true", powered: "false" }, { Book: { id: "minecraft:written_book", count: 1 } })
+    put(38, 0, 0, "jukebox", { has_record: "true" }, { Items: [item("music_disc_13", 0)] })
+    // and the empty variants, which show their own note
+    put(40, 0, 0, "decorated_pot", { facing: "south", cracked: "false", waterlogged: "false" })
+    put(42, 0, 0, "lectern", { facing: "south", has_book: "false", powered: "false" })
+
+    // item frames are entities rather than blocks, and hold one stack each
+    spawn("item_frame", [44.5, 0.5, 0.5], { Item: { id: "minecraft:magma_block", count: 1 } })
+    spawn("glow_item_frame", [46.5, 0.5, 0.5], { Item: { id: "minecraft:diamond_sword", count: 1, components: glint } })
+    spawn("item_frame", [48.5, 0.5, 0.5], { Item: { id: "minecraft:stone", count: 1 } })
+    spawn("item_frame", [50.5, 0.5, 0.5])
+
+    // empty ones, so the empty-gui path is covered too
+    put(52, 0, 0, "chest", chest())
+    put(54, 0, 0, "hopper", { facing: "down", enabled: "true" })
+
+    // a double chest with all 54 slots filled, every one a different item and
+    // every other one animated: the worst case for the player registry and for
+    // count text sitting over animated slots. "*" marks a forced glint
+    const animatedIds = [
+      "magma_block", "sea_lantern", "prismarine", "command_block", "chain_command_block",
+      "repeating_command_block", "enchanted_book", "*diamond_sword", "*iron_pickaxe",
+      "*golden_apple", "*bow", "*trident", "*netherite_axe", "*shield", "*elytra",
+      "*fishing_rod", "*turtle_helmet", "*stick", "*apple", "*bread", "*carrot",
+      "*emerald", "*diamond", "*paper", "*book", "*feather", "*bone"
+    ]
+    const stillIds = [
+      "stone", "dirt", "cobblestone", "oak_planks", "sand", "gravel", "iron_ingot",
+      "gold_ingot", "coal", "redstone", "lapis_lazuli", "quartz", "potato", "wheat",
+      "sugar", "string", "flint", "arrow", "egg", "clay_ball", "brick", "oak_log",
+      "birch_log", "glass", "white_wool", "torch", "ladder"
+    ]
+    const filled = []
+    for (let i = 0; i < 27; i++) filled.push(animatedIds[i], stillIds[i])
+    const half = from => filled.slice(from, from + 27).map((raw, i) => {
+      const g = raw.startsWith("*")
+      const count = i % 3 === 0 ? 1 : i % 3 === 1 ? 64 : i + 2
+      return item(g ? raw.slice(1) : raw, i, count, g ? glint : undefined)
+    })
+    // the "right" half provides the first 27 slots in game
+    put(56, 0, 0, "chest", { facing: "south", type: "right", waterlogged: "false" }, { Items: half(0) })
+    put(57, 0, 0, "chest", { facing: "south", type: "left", waterlogged: "false" }, { Items: half(27) })
     return finish()
   }
 

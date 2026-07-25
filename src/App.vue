@@ -28,6 +28,7 @@ import WalkOverlay from "./components/WalkOverlay.vue"
 import FpsCounter from "./components/FpsCounter.vue"
 import ContainerModal from "./components/ContainerModal.vue"
 import UsedBlocksModal from "./components/UsedBlocksModal.vue"
+import DebugModal from "./components/DebugModal.vue"
 import ContextMenu from "./components/ContextMenu.vue"
 import BuildProgress from "./components/BuildProgress.vue"
 import SplashScreen from "./components/SplashScreen.vue"
@@ -61,6 +62,7 @@ const worldState = useWorld().state
 
 const minimalReady = ref(!minimal)
 const notFound = ref("")
+const debugPicker = ref(false)
 // refreshed on pointerdown so the link always carries the current url state
 const mainSiteUrl = ref("")
 const homeUrl = location.origin + location.pathname
@@ -218,7 +220,9 @@ onMounted(async () => {
           : "None of the linked structures were found"
       }
       const structureFile = minimal || rels.length || debug != null || feature != null ? null : await restoreFile("structure")
-      if (debug != null) await loadDebug(debug)
+      // ?debug on its own lists the scenes rather than picking one
+      if (debug === "") debugPicker.value = true
+      else if (debug != null) await loadDebug(debug)
       else if (feature != null && feature.includes(",")) await loadFeatures(feature.split(","))
       else if (feature != null && params.get("field") != null) await loadFeatureField(feature, parseSeedParam(params.get("fseed")))
       else if (feature != null) await loadFeature(feature, parseSeedParam(params.get("fseed")))
@@ -284,6 +288,7 @@ onMounted(async () => {
       <FpsCounter v-if="!minimal" />
       <UsedBlocksModal ref="usedModal" />
       <ContainerModal />
+      <DebugModal v-if="debugPicker" @close="debugPicker = false" />
       <ContextMenu />
       <BuildProgress />
       <BuildWarning />
