@@ -5,8 +5,11 @@ const packs = usePacks()
 
 const strip = s => typeof s === "string" ? s.replace(/^minecraft:/, "") : s
 
+// every block that stores item stacks, so picking offers all of them. keep in
+// step with CAPACITY in useContainer.js, which decides the grid each one gets
 export const isContainer = name =>
-  /(^|_)(chest|barrel|shulker_box|dispenser|dropper|hopper|shelf)$/.test((name || "").replace(/^minecraft:/, ""))
+  /(^|_)(chest|barrel|shulker_box|dispenser|dropper|hopper|shelf|furnace|smoker|brewing_stand|crafter|campfire|chiseled_bookshelf|jukebox)$/
+    .test((name || "").replace(/^minecraft:/, ""))
 
 export const isInspectable = name =>
   isContainer(name) || /(^|_)(command_block|structure_block|jigsaw|lectern|decorated_pot)$/.test((name || "").replace(/^minecraft:/, ""))

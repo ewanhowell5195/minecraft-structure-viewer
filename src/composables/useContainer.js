@@ -25,11 +25,37 @@ const KINDS = {
   hopper: { tex: "hopper", texH: 133, cols: 5, rows: 1, ox: 43, oy: 19 }
 }
 
+const capOf = kind => kind.cols * kind.rows
+
+// how many stacks each block actually stores, from the block entity classes.
+// this is a viewer for contents, not a reproduction of the game's screens, so
+// everything lands in whichever plain grid fits rather than in its own gui with
+// oddly placed slots (furnace, brewing stand and crafter all have those)
+const CAPACITY = [
+  [/(^|_)shulker_box$/, 27],
+  [/^(chest|trapped_chest|barrel)$/, 27],
+  [/^(dispenser|dropper|crafter)$/, 9],
+  [/^chiseled_bookshelf$/, 6],
+  [/^(hopper|brewing_stand)$/, 5],
+  [/^(campfire|soul_campfire)$/, 4],
+  [/(^|_)shelf$/, 3],
+  [/^(furnace|blast_furnace|smoker)$/, 3],
+  [/^(decorated_pot|lectern|jukebox|suspicious_sand|suspicious_gravel)$/, 1]
+]
+
+function capacityOf(name) {
+  for (const [test, cap] of CAPACITY) if (test.test(name)) return cap
+  return 27
+}
+
+// the smallest grid the contents fit in, so a single item doesn't float in a
+// mostly empty 9x3
 function kindOf(name) {
   const n = name.replace(/^minecraft:/, "")
-  if (n === "dispenser" || n === "dropper" || n === "decorated_pot") return KINDS.dispenser
-  if (n === "hopper" || /(^|_)shelf$/.test(n)) return KINDS.hopper
   if (/shulker_box$/.test(n)) return KINDS.shulker
+  const cap = capacityOf(n)
+  if (cap <= 5) return KINDS.hopper
+  if (cap <= 9) return KINDS.dispenser
   return KINDS.generic
 }
 
@@ -329,10 +355,10 @@ function openEntity(e) {
     state.oddsBusy = false
     state.rolls = 0
     state.pileTotal = 0
-    state.kind = KINDS.dispenser
-    state.gui = KINDS.dispenser
+    state.kind = KINDS.hopper
+    state.gui = KINDS.hopper
     state.guiTitle = state.blockName
-    state.stacks = [{ id: it.id, count: Number(it.count ?? it.Count ?? 1), components: it.components, tag: it.tag, slot: 4 }]
+    state.stacks = [{ id: it.id, count: Number(it.count ?? it.Count ?? 1), components: it.components, tag: it.tag, slot: 2 }]
     openSeq++
     state.open = true
     return
@@ -483,7 +509,7 @@ async function open(block) {
       state.pileTotal = 0
       state.gui = state.kind
       state.guiTitle = state.blockName
-      state.stacks = it?.id ? [{ id: it.id, count: Number(it.count ?? it.Count ?? 1), components: it.components, tag: it.tag, slot: 4 }] : []
+      state.stacks = it?.id ? [{ id: it.id, count: Number(it.count ?? it.Count ?? 1), components: it.components, tag: it.tag, slot: 2 }] : []
       if (!it?.id) state.note = "This pot is empty."
       openSeq++
       state.open = true
@@ -499,10 +525,10 @@ async function open(block) {
     state.oddsBusy = false
     state.rolls = 0
     state.pileTotal = 0
-    state.kind = KINDS.dispenser
-    state.gui = KINDS.dispenser
+    state.kind = KINDS.hopper
+    state.gui = KINDS.hopper
     state.guiTitle = state.blockName
-    state.stacks = it?.id ? [{ id: it.id, count: Number(it.count ?? it.Count ?? 1), components: it.components, tag: it.tag, slot: 4 }] : []
+    state.stacks = it?.id ? [{ id: it.id, count: Number(it.count ?? it.Count ?? 1), components: it.components, tag: it.tag, slot: 2 }] : []
     if (!it?.id) state.note = "This lectern holds no book."
     openSeq++
     state.open = true
@@ -515,7 +541,7 @@ async function open(block) {
         : [{ nbt: partner.nbt, off: 0 }, { nbt: block.nbt, off: 27 }])
     : [{ nbt: block.nbt, off: 0 }]
   const kind = partner ? { ...KINDS.generic, rows: 6 } : kindOf(name)
-  const cap = partner ? 27 : kind.cols * kind.rows
+  const cap = partner ? 27 : capacityOf(bare)
   state.kind = kind
   state.tableId = [...new Set(parts.map(p => stripNs(p.nbt?.LootTable ?? "")).filter(Boolean))].join(" + ")
   state.table = null
@@ -534,6 +560,13 @@ async function open(block) {
   state.open = true
   try {
     const shelf = /(^|_)shelf$/.test(bare)
+    // contents that don't fill the grid sit centred in it rather than hugging
+    // the top left. padding moves in whole rows, so 6 books fill two rows of a
+    // 3x3 instead of straddling three; a single row centres within its row too
+    const usedRows = Math.ceil(cap / kind.cols)
+    const pad = partner
+      ? 0
+      : Math.floor((kind.rows - usedRows) / 2) * kind.cols + (usedRows === 1 ? Math.floor((kind.cols - cap) / 2) : 0)
     for (const part of parts) {
       if (part.nbt?.LootTable) {
         const table = await readLootTable(part.nbt.LootTable)
@@ -550,7 +583,7 @@ async function open(block) {
             count: it.count ?? it.Count ?? 1,
             components: it.components,
             tag: it.tag,
-            slot: part.off + (shelf ? 1 + Math.min(2, Math.max(0, it.Slot ?? 0)) : Math.min(cap - 1, Math.max(0, it.Slot ?? 0)))
+            slot: part.off + pad + Math.min(cap - 1, Math.max(0, it.Slot ?? 0))
           })
         }
       }
@@ -560,7 +593,7 @@ async function open(block) {
       await reroll()
     } else if (fixedStacks.length) {
       state.stacks = fixedStacks
-      state.note = "Fixed contents stored in the structure."
+      state.note = "Fixed contents stored in the block."
     } else if (shelf) {
       state.note = "This shelf is empty."
     } else {
@@ -607,7 +640,7 @@ const mergeRoll = loot => mergeInto(pile, loot)
 // single rolls scatter into random slots like the game fills a chest
 function display(scatter = false) {
   state.pileTotal = pile.reduce((a, s) => a + s.count, 0)
-  const ownCap = state.kind.cols * state.kind.rows
+  const ownCap = capOf(state.kind)
   if (scatter && pile.length <= ownCap) {
     state.gui = state.kind
     state.guiTitle = state.blockName
