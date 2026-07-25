@@ -1,6 +1,6 @@
 // Mojang's hosts send no CORS headers, so everything goes through the proxy.
 // each channel caches its jar under its own bucket so channels never evict each other
-const CORS = "https://cors.ewanhowell.com/"
+const CORS = "https://corsmc.ewanhowell.com/"
 const MANIFEST = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json"
 const KEY = "https://mc-jar.cache/"
 

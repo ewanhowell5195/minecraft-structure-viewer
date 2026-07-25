@@ -33,8 +33,31 @@ export function fetchRemote(url) {
   return proxyFetch(url)
 }
 
+const needsProxy = new Set()
+
+function originOf(url) {
+  try {
+    return new URL(url).origin
+  } catch {
+    return null
+  }
+}
+
+async function openRemote(url) {
+  const origin = originOf(url)
+  if (origin && !needsProxy.has(origin)) {
+    try {
+      return await fetch(url)
+    } catch (err) {
+      if (err.name !== "TypeError") throw err
+      needsProxy.add(origin)
+    }
+  }
+  return fetch(CORS_PROXY + url)
+}
+
 export async function proxyFetch(url, onProgress) {
-  const res = await fetch(CORS_PROXY + url)
+  const res = await openRemote(url)
   if (!res.ok) throw new Error(`${res.status} fetching ${url}`)
   if (!onProgress || !res.body) return new Uint8Array(await res.arrayBuffer())
   const total = Number(res.headers.get("Content-Length")) || 0
