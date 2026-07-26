@@ -43,6 +43,9 @@ function stop() {
 function start() {
   if (dead) return null
   if (!worker) {
+    // a virtual source is a function object and can't cross into a worker, so
+    // icons render on the main thread instead
+    if (packs().virtualSources()) return null
     const sources = packs().allSources()
     if (!sources.length) return null
     try {

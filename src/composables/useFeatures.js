@@ -34,7 +34,9 @@ let blockIndex = null, blockVocab = [], advPromise = null
 async function populate() {
   const lib = await loadLibrary()
   featurePath = new Map()
-  for (const src of Array.from(packs.featureSources()).reverse()) {
+  // a manual embed starts with nothing loaded, and readFile throws on empty assets
+  if (!packs.assets.value) return
+  for (const src of Array.from(packs.featureZipSources()).reverse()) {
     for (const k of lib.parseZip(src).keys()) {
       const m = k.match(FEATURE_RE)
       if (m) featurePath.set(m[1] + "/" + m[2], k)

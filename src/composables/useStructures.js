@@ -65,7 +65,7 @@ async function populate() {
   const lib = await loadLibrary()
   structPath = new Map()
   // lowest priority first so a higher pack's zip path wins the map slot
-  for (const src of Array.from(packs.allSources()).reverse()) {
+  for (const src of Array.from(packs.zipSources()).reverse()) {
     for (const k of lib.parseZip(src).keys()) {
       const m = k.match(STRUCT_RE)
       if (m) structPath.set(m[1] + "/" + m[2], k)
@@ -77,7 +77,7 @@ async function populate() {
 async function allZipKeys() {
   const lib = await loadLibrary()
   const keys = new Set()
-  for (const src of packs.allSources()) for (const k of lib.parseZip(src).keys()) keys.add(k)
+  for (const src of packs.zipSources()) for (const k of lib.parseZip(src).keys()) keys.add(k)
   return keys
 }
 

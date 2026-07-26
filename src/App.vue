@@ -15,6 +15,8 @@ import { useContainer } from "./composables/useContainer.js"
 import { useSlicers } from "./composables/useSlicers.js"
 import { tab } from "./composables/useTab.js"
 import { minimal } from "./minimal.js"
+import { manual } from "./manual.js"
+import { initEmbedApi, emit } from "./embed.js"
 import { isRemote, prefetchRemote } from "./remote.js"
 import PacksSection from "./components/PacksSection.vue"
 import StructuresSection from "./components/StructuresSection.vue"
@@ -38,7 +40,7 @@ import Modal from "./components/Modal.vue"
 const libError = ref("")
 const canvasEl = ref(null)
 const usedModal = ref(null)
-const { loadBase, restoreCachedPacks, addUrlPacks, state: packsState } = usePacks()
+const { loadBase, initSources, restoreCachedPacks, addUrlPacks, state: packsState } = usePacks()
 const structures = useStructures()
 const { state: current, structure, loadVanilla, loadDefault, loadMany, loadFile, loadDebug, loadFeature, loadFeatures, loadFeatureField, cancelReading } = useStructure()
 const { state: buildState, cancel: cancelBuild } = useBuild()
@@ -100,7 +102,9 @@ const splashCancelled = ref(false)
 let sawLoad = false
 watch(() => buildState.building || !!current.reading || !!buildState.status, active => {
   if (active) { sawLoad = true; splashCancelled.value = false; return }
-  if (!minimal || minimalReady.value || !sawLoad) return
+  // manual embeds have no blurb to fall back to: the parent drives everything,
+  // so an idle viewer is waiting rather than cancelled
+  if (!minimal || manual || minimalReady.value || !sawLoad) return
   setTimeout(() => {
     if (!minimalReady.value && !buildState.building && !current.reading && !buildState.status) splashCancelled.value = true
   }, 400)
@@ -115,15 +119,18 @@ function splashCancel() {
 // zero-width breaks so long structure paths wrap at their slashes
 const splashName = computed(() => current.name.replace(/\//g, "/\u200B"))
 
+const working = computed(() => packsState.busy || buildState.building || !!current.reading || !!buildState.status)
+
 // one splash screen, many states: minimal-mode landing/progress/error and the
 // stream world-prepare screen all reduce to a SplashScreen config here
 const splash = computed(() => {
   if (!minimalReady.value) {
     if (notFound.value) return { error: notFound.value, link: { label: "Open the full site", href: homeUrl } }
     if (splashCancelled.value) return { blurb: true, link: { label: "Open the full site", href: mainSiteUrl.value } }
+    if (manual && !working.value) return { status: "Waiting for the embedding page…" }
     return {
       name: splashName.value,
-      blurb: !splashName.value,
+      blurb: !splashName.value && !manual,
       spinner: true,
       status: splashStatus.value,
       cancel: (buildState.building || !!current.reading) && cancelReady.value
@@ -195,7 +202,7 @@ onMounted(async () => {
   const requested = await decodeStructureParam(structureParam)
   prefetchRemote(requested.filter(isRemote))
   const stop = watch(() => structures.state.names.length, async n => {
-    if (!n) return
+    if (!n || manual) return
     stop()
     beginInit()
     try {
@@ -236,8 +243,12 @@ onMounted(async () => {
   })
   const packUrls = (params.get("packs") ?? "").split(",").filter(Boolean)
   const urlPacks = packUrls.length ? addUrlPacks(packUrls) : undefined
-  if (!minimal) await restoreCachedPacks()
-  await loadBase(undefined, urlPacks)
+  if (manual) await initSources(urlPacks)
+  else {
+    if (!minimal) await restoreCachedPacks()
+    await loadBase(undefined, urlPacks)
+  }
+  initEmbedApi()
 })
 </script>
 

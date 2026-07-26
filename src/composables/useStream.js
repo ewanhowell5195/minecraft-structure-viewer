@@ -80,6 +80,9 @@ function stopWorkers() {
 
 function startBuildWorkers(file, dim, count = Math.min(3, Math.max(1, Math.floor(((navigator.hardwareConcurrency || 8) - 2) / 2)))) {
   if (new URLSearchParams(location.search).has("mainbuild")) return
+  // a virtual source can't cross into a worker, so tiles build on the main
+  // thread, the same as ?mainbuild
+  if (packs2().virtualSources()) return
   for (let i = 0; i < count; i++) {
     let w
     try {

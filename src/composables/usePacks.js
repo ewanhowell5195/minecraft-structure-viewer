@@ -8,6 +8,7 @@ import { useLock } from "./useLock.js"
 // index 0 = highest priority (prepareAssets first-wins order); pack bytes
 // stay outside the reactive state so large buffers aren't proxied
 const bytesById = new Map()
+let baseVirtual = false
 let baseBytes = null
 let builtinBytes = null
 let featureBytes = null
@@ -48,6 +49,10 @@ const { lock, locked } = useLock()
 
 let swapHandler = null
 const setSwapHandler = fn => { swapHandler = fn }
+
+// set by the embed API, which owns the channel a virtual source reads over
+let makeHandler = () => { throw new Error("virtual sources need the embed API") }
+const setHandlerFactory = fn => { makeHandler = fn }
 
 function setChannelParam(ch) {
   const u = new URL(location)
@@ -94,6 +99,100 @@ async function loadBase(swap, ready) {
   }
   try {
     await ready
+    await rebuildAssets(swap)
+  } finally {
+    state.busy = false
+    lock(false)
+  }
+}
+
+// the embed API's stack: no vanilla download, no pack cache writes, and one
+// rebuild however much the parent changes at once
+async function initSources(ready, swap) {
+  state.busy = true
+  lock(true)
+  state.baseStatus = ""
+  try {
+    await loadBuiltin()
+    await ready
+    await rebuildAssets(swap)
+  } finally {
+    state.busy = false
+    lock(false)
+  }
+}
+
+async function applyBase(base) {
+  baseVirtual = false
+  if (base === null) {
+    baseBytes = null
+    state.baseId = ""
+    state.baseStatus = ""
+    return
+  }
+  if (base?.handler) {
+    baseBytes = makeHandler(base.handler)
+    baseVirtual = true
+    state.baseId = ""
+    state.baseStatus = ""
+    return
+  }
+  if (typeof base === "string") {
+    const mb = n => (n / 1048576).toFixed(0)
+    state.baseFailed = false
+    try {
+      const r = await loadMojangJar(state.channel, (got, total, ver) => {
+        state.baseStatus = `downloading ${ver}… ${mb(got)}/${mb(total)}MB`
+      }, base)
+      baseBytes = r.bytes
+      state.baseId = r.id
+      state.baseStatus = ""
+    } catch (err) {
+      baseBytes = null
+      state.baseId = ""
+      state.baseStatus = ""
+      state.baseFailed = true
+      throw err
+    }
+    return
+  }
+  baseBytes = await toBytes(base)
+  state.baseId = ""
+  state.baseStatus = ""
+}
+
+async function toBytes(source) {
+  if (source instanceof Uint8Array) return source
+  if (source instanceof ArrayBuffer) return new Uint8Array(source)
+  if (typeof source === "string") return proxyFetch(source)
+  if (source?.arrayBuffer) return new Uint8Array(await source.arrayBuffer())
+  throw new Error("unsupported pack source")
+}
+
+async function setPacks(packs) {
+  const resolved = await Promise.all(packs.map(async entry => {
+    if (entry?.handler) {
+      return { name: entry.name ?? entry.handler, source: makeHandler(entry.handler), virtual: true }
+    }
+    const source = entry?.data ?? entry
+    const name = entry?.name ?? (typeof source === "string" ? remoteName(source) : "pack")
+    return { name, source: await toBytes(source) }
+  }))
+  for (const pack of state.packs) bytesById.delete(pack.id)
+  state.packs = resolved.map(({ name, source, virtual }) => {
+    const id = nextId++
+    bytesById.set(id, source)
+    return virtual ? { id, name, virtual } : { id, name }
+  })
+}
+
+async function loadPacks({ base, packs } = {}, swap) {
+  state.busy = true
+  lock(true)
+  try {
+    await loadBuiltin()
+    if (base !== undefined) await applyBase(base)
+    if (packs !== undefined) await setPacks(packs)
     await rebuildAssets(swap)
   } finally {
     state.busy = false
@@ -218,6 +317,14 @@ async function restoreCachedPacks() {
   }
 }
 
+const virtualSources = () => baseVirtual || state.packs.some(p => p.virtual)
+
+// virtual sources carry assets only, and can't be read as a zip or handed to a
+// worker; the callers that do either take these instead
+const zipOnly = list => list.filter(s => s instanceof Uint8Array)
+const zipSources = () => zipOnly(allSources())
+const featureZipSources = () => zipOnly(featureSources())
+
 const allSources = () => state.packs.map(p => bytesById.get(p.id)).concat(baseBytes, builtinBytes, featureBytes).filter(Boolean)
 
 // stable identity of the loaded source set, for keying persisted per-state
@@ -234,7 +341,9 @@ function fnvHash(bytes) {
   }
   return h
 }
-const sourcesIdentity = () => [
+// null means "don't persist": a virtual source has no bytes to hash, and a key
+// that didn't track its contents would import masks computed from other models
+const sourcesIdentity = () => virtualSources() ? null : [
   "v1",
   state.baseId || "nobase",
   ...state.packs.map(p => p.name + "~" + fnvHash(bytesById.get(p.id))),
@@ -247,5 +356,5 @@ const sourcesIdentity = () => [
 const featureSources = () => state.packs.map(p => bytesById.get(p.id)).concat(builtinBytes, featureBytes).filter(Boolean)
 
 export function usePacks() {
-  return { state: readonly(state), assets, loadBase, setChannel, addPacks, addUrlPacks, removePack, movePack, restoreCachedPacks, allSources, featureSources, sourcesIdentity, setSwapHandler }
+  return { state: readonly(state), assets, loadBase, initSources, loadPacks, setChannel, addPacks, addUrlPacks, removePack, movePack, restoreCachedPacks, allSources, featureSources, zipSources, featureZipSources, virtualSources, sourcesIdentity, setSwapHandler, setHandlerFactory }
 }

@@ -367,10 +367,11 @@ function answerMemWarn(ok) {
   memResolve = null
 }
 
-async function loadSelected() {
+async function loadSelected(force = false) {
   if (!world || !selected.size) return
   state.error = ""
-  if (loadForecast()) {
+  // the embed API answers the forecast itself: there is no modal to reach
+  if (!force && loadForecast()) {
     state.memWarn = true
     if (!await new Promise(r => { memResolve = r })) return
   }
