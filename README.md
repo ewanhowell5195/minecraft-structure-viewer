@@ -35,11 +35,6 @@ a standalone Vue 3 + Vite app.
 
 ## Dev
 
-```
-npm install
-npm run dev
-```
-
 The app loads the `block-model-renderer` library at runtime from
 `http://localhost:8080/src/web.js` (a static server on the library repo stands
 in for the CDN; it must send CORS headers). Override the URL with
