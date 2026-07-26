@@ -37,7 +37,7 @@ const mode = computed(() => {
   if (s.active) return "session"
   const sel = features.state.selected
   if (sel.length && !structures.state.selected.length && !(sel.length === 1 && features.isStatic(sel[0]))) return "feature"
-  if (buildState.hasStructureBlocks) return "toggle"
+  if (buildState.hasStructureBlocks && !buildState.manual) return "toggle"
   return null
 })
 

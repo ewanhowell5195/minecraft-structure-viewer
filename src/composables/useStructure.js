@@ -315,6 +315,7 @@ async function apply(refit = true) {
   const w = useWorld()
   if (!loaded.every(e => e.world || (e.rel && !e.feature && w.hasStructure(e.rel)))) await buildApi.clearMapArt()
   const features = useFeatures()
+  buildApi.state.manual = !loaded.every(e => e.rel && !e.feature && structures.has(e.rel))
   structures.stateMut.selected = loaded.filter(e => e.rel && !e.feature).map(e => e.rel)
   features.stateMut.selected = Array.from(new Set(loaded.filter(e => e.feature).map(e => e.rel)))
   if (state.field) {

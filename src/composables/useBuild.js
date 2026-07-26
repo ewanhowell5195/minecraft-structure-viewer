@@ -153,9 +153,10 @@ const state = reactive({
   fullbright: false,
   daytime: NOON,
   dimension: "overworld",
-  hideStructureBlocks: minimal ? false : localStorage.getItem("hideStructureBlocks") !== "false",
+  hideStructureBlocks: localStorage.getItem("hideStructureBlocks") !== "false",
   technical: minimal ? true : localStorage.getItem("technicalBlocks") !== "false",
   hasStructureBlocks: false,
+  manual: false,
   building: false,
   status: "",
   progress: null, // { phase: "build" | "optimise", done, total } while working
@@ -1406,6 +1407,7 @@ async function ensureOcclusionCache(lib, assets) {
   st.ready = (async () => {
     try {
       st.key = packs.sourcesIdentity()
+      if (!st.key) return
       const entries = await loadStateCache(st.key)
       if (entries) await lib.importOcclusionCache(assets, entries)
       st.saved = entries?.length ?? 0
@@ -1455,7 +1457,9 @@ async function build(structure = source, refit = true, slice = false, fresh = fa
       if (e?.Name && (JIGSAW.test(e.Name) || SB.test(e.Name))) techStates.add(i)
     })
     state.hasStructureBlocks = techStates.size > 0 && structure.blocks.some(b => techStates.has(b.state))
-    if (state.hideStructureBlocks) structure = stripStructureBlocks(structure)
+    // no toggle to reach in minimal or on a manual load, so the structure is
+    // shown as handed over rather than silently stripped
+    if (state.hideStructureBlocks && !minimal && !state.manual) structure = stripStructureBlocks(structure)
     // sliced blocks are dropped for real (solid cut faces); size and position stay the full structure's
     const unsliced = structure
     if (slice) structure = useSlicers().sliceStructure(structure)
