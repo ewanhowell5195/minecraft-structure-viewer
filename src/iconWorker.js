@@ -1,12 +1,3 @@
-// GUI icon renders (chest slots, item lists, block lists) run here so opening a
-// container full of distinct items doesn't stall the frame loop. Unlike the
-// stream workers there is no world and no shared atlas to sync: init with the
-// pack sources, then every request is independent.
-//
-// renders are upgradable, and animated ones keep their handle here until the
-// page hands over canvases to paint into. the upgrade reuses the retained
-// scene, so animating an icon costs no second render. one player covers every
-// place an item appears, since toAnimated takes the same array form as canvas.
 import { loadLibrary } from "./lib.js"
 import { renderIcon } from "./iconRender.js"
 
@@ -46,10 +37,6 @@ self.onmessage = async e => {
       }
       self.postMessage({ type: "icon", id: m.id, bitmap, animates }, [bitmap])
     } else if (m.type === "sync") {
-      // the canvases live here, so each one only ever crosses once and the page
-      // edits the set by token. an emptied set parks the player rather than
-      // disposing it, since there is no IntersectionObserver in a worker to
-      // stop it on its own
       let entry = players.get(m.iconKey)
       if (!entry) players.set(m.iconKey, entry = { player: null, canvases: new Map() })
       for (const token of m.remove) entry.canvases.delete(token)

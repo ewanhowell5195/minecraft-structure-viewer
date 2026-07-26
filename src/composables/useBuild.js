@@ -1235,8 +1235,6 @@ function shapeFor(e) {
   }
   if (/chest$/.test(name)) return [1, 0, 1, 15, 14, 15]
   if (name === "decorated_pot") return [1, 0, 1, 15, 16, 15]
-  // the game's own shapes: a campfire is only as tall as its logs, and a
-  // brewing stand is a base plate plus a centre post, ignoring the arms
   if (/campfire$/.test(name)) return [0, 0, 0, 16, 7, 16]
   if (name === "brewing_stand") return [1, 0, 1, 15, 14, 15]
   if (/(^|_)shelf$/.test(name)) {

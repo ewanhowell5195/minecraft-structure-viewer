@@ -1,6 +1,3 @@
-// every GUI icon goes through here: one lazily-started worker does the renders
-// and a bitmap cache keeps a distinct item to one render for the session, so
-// re-rolls and reopens are drawImage. Bitmaps are shared, never close them.
 import { loadLibrary } from "./lib.js"
 import { renderIcon } from "./iconRender.js"
 import { usePacks } from "./composables/usePacks.js"
@@ -40,15 +37,12 @@ function stop() {
     worker = null
   }
   ready = null
-  // in-flight requests resolve null so callers fall back rather than hang
   for (const id of Array.from(waiters.keys())) settle(id, null)
 }
 
 function start() {
   if (dead) return null
   if (!worker) {
-    // nothing to init against yet; the pack load bumps the version and clears
-    // whatever this renders in the meantime
     const sources = packs().allSources()
     if (!sources.length) return null
     try {
@@ -67,8 +61,6 @@ function start() {
   return ready
 }
 
-// a pack swap invalidates every rendered icon; the next request re-inits the
-// worker against the new sources
 function checkVersion() {
   const v = packs().state.assetsVersion
   if (v === version) return
@@ -104,8 +96,6 @@ async function renderMain(spec) {
   }
 }
 
-// stack components come out of reactive state, and a proxy can't be structured
-// cloned, so anything heading for the worker gets flattened to plain data first
 const plain = value => value == null ? value : JSON.parse(JSON.stringify(value))
 const plainSpec = spec => ({ ...spec, components: plain(spec.components), blockstates: plain(spec.blockstates) })
 
@@ -113,18 +103,12 @@ async function produce(spec, key) {
   spec = plainSpec(spec)
   const ok = await start()
   if (ok && worker) {
-    // the spec travels nested: it carries its own `id` and the envelope's is
-    // the request sequence
     const m = await call({ type: "icon", spec, key })
-    // a null message means the worker went away mid-request, so retry on main;
-    // an error is the render itself failing and retrying would fail the same
     if (m) {
       if (m.error || !m.bitmap) return null
       return { bitmap: m.bitmap, animates: !!m.animates }
     }
   }
-  // without the worker there's nowhere to hand canvases to, so main-thread
-  // fallback icons stay static
   return renderMain(spec)
 }
 
@@ -137,8 +121,6 @@ export function iconInfo(spec) {
     cache.set(key, hit)
     return hit
   }
-  // a failure is usually transient (assets or the worker not ready yet), and
-  // caching one leaves an icon permanently blank, so only successes stick
   const p = produce(spec, key).catch(() => null)
   p.then(v => { if (!v && cache.get(key) === p) cache.delete(key) })
   cache.set(key, p)
@@ -155,10 +137,6 @@ export function iconBitmap(spec) {
   return iconInfo(spec).then(v => v?.bitmap ?? null)
 }
 
-// one player per distinct item, however many places show it. the worker keeps
-// the canvases it has been handed, so a canvas only ever crosses once and the
-// set is edited by token: the grid, the list and the odds tab all feed the same
-// player, and switching tabs or re-rolling retargets it instead of rebuilding
 const anim = new Map()
 let tokenSeq = 0
 
@@ -202,7 +180,6 @@ async function sync(key) {
   try {
     worker.postMessage({ type: "sync", iconKey: key, spec: plainSpec(entry.spec), addTokens, addCanvases, remove }, transfer)
   } catch {
-    // one icon failing to hand over must not take down the caller
   }
 }
 
@@ -235,7 +212,6 @@ function dropTargets(key) {
   if (worker) worker.postMessage({ type: "drop", iconKey: key })
 }
 
-// one observer for every icon list, so long lists only render what scrolls in
 let observer = null
 const pending = new WeakMap()
 

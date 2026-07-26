@@ -279,8 +279,6 @@ async function drawItems() {
   }
 }
 
-// slots this grid currently holds of a shared player, released whenever the
-// slots change so the player is retargeted rather than rebuilt
 const animHeld = []
 function clearAnimations() {
   for (const [spec, token] of animHeld) releaseIcon(spec, token)
@@ -295,8 +293,7 @@ async function drawItemsInner(c, K, seq) {
   const font = await getFont()
   if (seq !== itemSeq) return
   const ctx = c.getContext("2d")
-  // a chest of one item is one render, blitted per slot, not a render per slot,
-  // and slots fill in as their renders land rather than waiting on the slowest
+  // a chest of one item is one render, blitted per slot, not a render per slot
   const byKey = new Map()
   for (const st of state.stacks) {
     const k = stackKey(st)
@@ -313,9 +310,6 @@ async function drawItemsInner(c, K, seq) {
     }
     const info = await iconInfo(spec)
     if (seq !== itemSeq || !info) return
-    // an animated item gets one player covering every slot it occupies, each
-    // painting its own canvas beneath this one; the slot is left transparent
-    // here so it shows through
     if (info.animates && animEl.value) {
       let placed = 0
       for (const st of stacks) {
@@ -330,7 +324,6 @@ async function drawItemsInner(c, K, seq) {
           return
         }
         const [ix, iy] = inner(K, st.slot)
-        // styled inline because scoped css never reaches elements made here
         got.canvas.style.cssText = `position:absolute;left:${ix * S}px;top:${iy * S}px;image-rendering:pixelated`
         animEl.value.append(got.canvas)
         animHeld.push([spec, token])

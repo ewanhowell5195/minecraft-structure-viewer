@@ -12,9 +12,6 @@ const props = defineProps({
 const packs = usePacks()
 const el = ref(null)
 const shown = ref(false)
-// the canvas is managed by hand rather than by the template: an animated icon
-// is painted by a player in the worker, and a canvas can only be handed over if
-// nothing has ever taken a context on it
 const token = nextToken()
 let held = null
 

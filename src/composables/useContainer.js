@@ -27,10 +27,6 @@ const KINDS = {
 
 const capOf = kind => kind.cols * kind.rows
 
-// how many stacks each block actually stores, from the block entity classes.
-// this is a viewer for contents, not a reproduction of the game's screens, so
-// everything lands in whichever plain grid fits rather than in its own gui with
-// oddly placed slots (furnace, brewing stand and crafter all have those)
 const CAPACITY = [
   [/(^|_)shulker_box$/, 27],
   [/^(chest|trapped_chest|barrel)$/, 27],
@@ -48,8 +44,6 @@ function capacityOf(name) {
   return 27
 }
 
-// the smallest grid the contents fit in, so a single item doesn't float in a
-// mostly empty 9x3
 function kindOf(name) {
   const n = name.replace(/^minecraft:/, "")
   if (/shulker_box$/.test(n)) return KINDS.shulker
@@ -560,9 +554,6 @@ async function open(block) {
   state.open = true
   try {
     const shelf = /(^|_)shelf$/.test(bare)
-    // contents that don't fill the grid sit centred in it rather than hugging
-    // the top left. padding moves in whole rows, so 6 books fill two rows of a
-    // 3x3 instead of straddling three; a single row centres within its row too
     const usedRows = Math.ceil(cap / kind.cols)
     const pad = partner
       ? 0

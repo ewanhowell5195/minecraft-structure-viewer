@@ -220,7 +220,6 @@ onMounted(async () => {
           : "None of the linked structures were found"
       }
       const structureFile = minimal || rels.length || debug != null || feature != null ? null : await restoreFile("structure")
-      // ?debug on its own lists the scenes rather than picking one
       if (debug === "") debugPicker.value = true
       else if (debug != null) await loadDebug(debug)
       else if (feature != null && feature.includes(",")) await loadFeatures(feature.split(","))
