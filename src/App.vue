@@ -71,6 +71,7 @@ const homeUrl = location.origin + location.pathname
 function refreshMainSiteUrl() {
   const u = new URL(location.href)
   u.searchParams.delete("minimal")
+  u.searchParams.delete("manual")
   mainSiteUrl.value = u.href
 }
 refreshMainSiteUrl()
