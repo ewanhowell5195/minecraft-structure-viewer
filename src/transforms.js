@@ -95,24 +95,29 @@ export function normState(v) {
   return v.properties ? { Name: v.id, Properties: v.properties } : { Name: v.id }
 }
 
-// keys the feature and processor json store block states under. int providers
-// reuse `data`, but those values have no `id`, so normState passes them through
+// keys the feature and processor json store block states under
 const STATE_FIELDS = new Set([
-  "base_block", "block_state", "contents", "data", "decor_state", "default_state",
+  "base_block", "block_state", "contents", "decor_state", "default_state",
   "hat_state", "high_states", "inner_placements", "low_states", "output_state",
   "pointed_block", "rim", "state", "states", "stem_state", "target",
   "valid_base_block"
 ])
 
-export function normStatesDeep(node) {
+// `data` is the generic weighted-list payload, and a structure ref reads exactly
+// like a default block state: it is only a state under `entries`, not under
+// `templates` (structure ref) or `features` (placed feature)
+const isStateKey = (k, container) => k === "data" ? container === "entries" : STATE_FIELDS.has(k)
+
+export function normStatesDeep(node, container = null) {
   if (Array.isArray(node)) {
-    for (let i = 0; i < node.length; i++) node[i] = normStatesDeep(node[i])
+    for (let i = 0; i < node.length; i++) node[i] = normStatesDeep(node[i], container)
     return node
   }
   if (!node || typeof node !== "object") return node
   for (const [k, v] of Object.entries(node)) {
-    if (!STATE_FIELDS.has(k)) { node[k] = normStatesDeep(v); continue }
-    node[k] = Array.isArray(v) ? v.map(e => normState(normStatesDeep(e))) : normState(normStatesDeep(v))
+    const inner = Array.isArray(v) ? k : null
+    if (!isStateKey(k, container)) { node[k] = normStatesDeep(v, inner); continue }
+    node[k] = Array.isArray(v) ? v.map(e => normState(normStatesDeep(e, inner))) : normState(normStatesDeep(v, inner))
   }
   return node
 }
