@@ -1553,7 +1553,8 @@ export async function generateFeature(name, json, rand, resolvePlaced, loadStruc
   const structure = {
     size: [maxX - minX + 1, maxY - minY + 1, maxZ - minZ + 1],
     palette, blocks, entities: [],
-    anchor: [-minX, 0, -minZ]
+    anchor: [-minX, 0, -minZ],
+    origin: [-minX, -minY, -minZ]
   }
   if (padded && pad.grass) {
     for (const e of palette) {

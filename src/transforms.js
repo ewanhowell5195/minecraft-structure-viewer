@@ -103,9 +103,8 @@ const STATE_FIELDS = new Set([
   "valid_base_block"
 ])
 
-// `data` is the generic weighted-list payload, and a structure ref reads exactly
-// like a default block state: it is only a state under `entries`, not under
-// `templates` (structure ref) or `features` (placed feature)
+// `data` is the generic weighted-list payload: a block state under `entries`, but
+// a structure ref under `templates` and a placed feature under `features`
 const isStateKey = (k, container) => k === "data" ? container === "entries" : STATE_FIELDS.has(k)
 
 export function normStatesDeep(node, container = null) {
@@ -254,7 +253,8 @@ export const inBox = (p, b) =>
 
 export const EMPTY = Symbol("empty_pool_element")
 
-// list_pool_element approximated by its first entry
+// list_pool_element approximated by its first entry; feature_pool_element comes
+// back as { feature } to generate rather than load
 export function poolTemplates(pool) {
   const out = []
   for (const e of pool?.elements ?? []) {
@@ -264,8 +264,9 @@ export function poolTemplates(pool) {
     let loc = null
     if (type === "empty_pool_element") loc = EMPTY
     else if (type === "list_pool_element") loc = el.elements?.[0]?.location
+    else if (type === "feature_pool_element") loc = typeof el.feature === "string" ? { feature: el.feature } : null
     else loc = el.location
-    if (loc !== EMPTY && typeof loc !== "string") continue
+    if (loc !== EMPTY && typeof loc !== "string" && !loc?.feature) continue
     if (typeof loc === "string") loc = strip(loc)
     for (let i = 0; i < w; i++) out.push(loc)
   }

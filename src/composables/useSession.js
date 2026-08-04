@@ -3,6 +3,8 @@ import * as THREE from "three"
 import { loadLibrary } from "../lib.js"
 import { usePacks } from "./usePacks.js"
 import { useStructures } from "./useStructures.js"
+import { useFeatures } from "./useFeatures.js"
+import { generateFeature } from "../features/index.js"
 import { useBuild } from "./useBuild.js"
 import { useScene } from "./useScene.js"
 import { useLock } from "./useLock.js"
@@ -18,6 +20,7 @@ import { PROC } from "../proc.js"
 // on the first ascent off it and stays fixed until you return to the base
 const packs = usePacks()
 const structures = useStructures()
+const features = useFeatures()
 const buildApi = useBuild()
 const sceneApi = useScene()
 const { lock, locked } = useLock()
@@ -83,6 +86,16 @@ async function loadPool(ref) {
   return buf ? JSON.parse(new TextDecoder().decode(buf)) : null
 }
 
+// feature_pool_element: rolled fresh per placement, and unpadded so village trees
+// skip the grass pad the Features tab draws
+async function loadFeature(ref, seed) {
+  const [ns, path] = nsSplit(ref)
+  const rel = ns + "/" + path
+  const json = await features.readFeature(rel)
+  if (!json) return null
+  return generateFeature(rel, json, rnd(seed), features.resolvePlaced, r => loadRaw(nsSplit(r).join("/")), null)
+}
+
 const generators = {
   igloo: runIgloo, end_city: runEndCity, mansion: runMansion,
   jungle_temple: runJungleTemple, desert_pyramid: runDesertPyramid, desert_well: runDesertWell, dungeon: runDungeon,
@@ -101,7 +114,7 @@ async function resolve(level) {
   else if (state.kind === "jigsaw") {
     // maxRadius mirrors the game's max_distance_from_center; the piece cap is a runaway backstop vanilla lacks
     res = await runJigsaw(base, {
-      loadStruct, loadPool,
+      loadStruct, loadPool, loadFeature,
       maxDepth: gl, maxPieces: 1024, maxRadius: baseRadius,
       levelSeed: l => mix(state.seed, l),
       onProgress: n => { buildApi.state.status = `loading… ${n} pieces` },

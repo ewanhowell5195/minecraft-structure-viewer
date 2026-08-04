@@ -5,7 +5,7 @@ import { combine } from "./combine.js"
 
 const nsName = s => s.includes(":") ? s : "minecraft:" + s
 
-export async function runJigsaw(start, { loadStruct, loadPool, maxDepth = 6, maxPieces = 48, maxRadius = 96, levelSeed, onProgress, keepJigsaws = true }) {
+export async function runJigsaw(start, { loadStruct, loadPool, loadFeature, maxDepth = 6, maxPieces = 48, maxRadius = 96, levelSeed, onProgress, keepJigsaws = true }) {
   const structs = new Map(), pools = new Map()
   async function getStruct(ref) {
     if (!structs.has(ref)) structs.set(ref, await Promise.resolve(loadStruct(ref)).catch(() => null))
@@ -47,11 +47,39 @@ export async function runJigsaw(start, { loadStruct, loadPool, maxDepth = 6, max
           const fb = await getPool(pool.fallback)
           if (fb) candidates = candidates.concat(shuffle(poolTemplates(fb), rand))
         }
+        const place = (struct, k, off) => {
+          const box = pieceBox(struct, k, off)
+          if (Math.hypot((box.x0 + box.x1) / 2, (box.z0 + box.z1) / 2) > maxRadius) return false
+          if (attachInside) {
+            if (box.x0 < src.box.x0 || box.x1 > src.box.x1 || box.z0 < src.box.z0 || box.z1 > src.box.z1) return false
+            if (src.onPlot.some(b => boxHit(box, b))) return false
+          } else if (boxes.some(b => boxHit(box, b))) return false
+          const piece = { struct, rot: k, off, depth: d + 1, box, onPlot: [] }
+          pieces.push(piece)
+          if (attachInside) src.onPlot.push(box)
+          else boxes.push(box)
+          next.push(piece)
+          if (!probe) onProgress?.(pieces.length)
+          return true
+        }
+
         const tried = new Set()
         jig: for (const loc of candidates) {
           if (loc === EMPTY) break // empty_pool_element won the roll: place nothing
-          if (tried.has(loc)) continue
-          tried.add(loc)
+          const key = typeof loc === "string" ? loc : loc.feature
+          if (tried.has(key)) continue
+          tried.add(key)
+          // feature_pool_element: the game gives it one jigsaw at the feature origin
+          // facing down, so it only joins an upward-facing one, and since
+          // 26.3-snapshot-6 that jigsaw takes whatever name the parent targets
+          if (typeof loc !== "string") {
+            if (!loadFeature || wj.front !== "up") continue
+            const feat = await loadFeature(loc.feature, Math.floor(rand() * 0x7fffffff)).catch(() => null)
+            if (!feat?.blocks?.length) continue
+            const org = feat.origin ?? [0, 0, 0]
+            if (place(feat, 0, [targetPos[0] - org[0], targetPos[1] - org[1], targetPos[2] - org[2]])) break jig
+            continue
+          }
           const child = await getStruct(loc)
           if (!child) continue
           const childJigs = jigsawsOf(child)
@@ -62,19 +90,7 @@ export async function runJigsaw(start, { loadStruct, loadPool, maxDepth = 6, max
               if (nsName(wj.target) !== nsName(cj.name)) continue
               const cp = rotPos(cj.pos, k)
               const off = [targetPos[0] - cp[0], targetPos[1] - cp[1], targetPos[2] - cp[2]]
-              const box = pieceBox(child, k, off)
-              if (Math.hypot((box.x0 + box.x1) / 2, (box.z0 + box.z1) / 2) > maxRadius) continue
-              if (attachInside) {
-                if (box.x0 < src.box.x0 || box.x1 > src.box.x1 || box.z0 < src.box.z0 || box.z1 > src.box.z1) continue
-                if (src.onPlot.some(b => boxHit(box, b))) continue
-              } else if (boxes.some(b => boxHit(box, b))) continue
-              const piece = { struct: child, rot: k, off, depth: d + 1, box, onPlot: [] }
-              pieces.push(piece)
-              if (attachInside) src.onPlot.push(box)
-              else boxes.push(box)
-              next.push(piece)
-              if (!probe) onProgress?.(pieces.length)
-              break jig
+              if (place(child, k, off)) break jig
             }
           }
         }
