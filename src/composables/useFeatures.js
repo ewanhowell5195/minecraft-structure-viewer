@@ -1,7 +1,7 @@
 import { reactive, readonly, watch } from "vue"
 import { loadLibrary } from "../lib.js"
 import { usePacks } from "./usePacks.js"
-import { numeric, strip, rnd } from "../transforms.js"
+import { numeric, strip, rnd, normStatesDeep } from "../transforms.js"
 import { matchIndex } from "../advfilter.js"
 import { generateFeature } from "../features/index.js"
 import { readStructure } from "../nbt.js"
@@ -142,7 +142,7 @@ watch(() => packs.state.assetsVersion, refresh)
 async function readJson(zipPath) {
   const lib = await loadLibrary()
   const buf = await lib.readFile(zipPath, packs.assets.value)
-  return buf ? JSON.parse(textDecoder.decode(buf)) : null
+  return buf ? normStatesDeep(JSON.parse(textDecoder.decode(buf))) : null
 }
 
 async function readFeature(rel) {

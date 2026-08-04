@@ -3,7 +3,7 @@ import { loadLibrary } from "../lib.js"
 import { usePacks } from "./usePacks.js"
 import { PROC } from "../proc.js"
 import { GENERATED } from "../generators/builtin.js"
-import { numeric, strip } from "../transforms.js"
+import { numeric, strip, normStatesDeep } from "../transforms.js"
 import { readStructure } from "../nbt.js"
 import { lootTableItems, readTrialSpawnerConfig } from "../loot.js"
 import { matchIndex } from "../advfilter.js"
@@ -42,7 +42,7 @@ function computeProcessors() {
     if (!assets) return
     const td = new TextDecoder()
     const readJson = async p => {
-      try { const b = await lib.readFile(p, assets); return b ? JSON.parse(td.decode(b)) : null } catch { return null }
+      try { const b = await lib.readFile(p, assets); return b ? normStatesDeep(JSON.parse(td.decode(b))) : null } catch { return null }
     }
     procIndex = await buildProcessorIndex(Array.from(await allZipKeys()), readJson, Array.from(structPath.keys()))
   })()
@@ -90,7 +90,7 @@ function computeWorldgen() {
     if (!assets) return
     const td = new TextDecoder()
     async function readJson(p) {
-      try { const b = await lib.readFile(p, assets); return b ? JSON.parse(td.decode(b)) : null } catch { return null }
+      try { const b = await lib.readFile(p, assets); return b ? normStatesDeep(JSON.parse(td.decode(b))) : null } catch { return null }
     }
     const SR = /^data\/([^/]+)\/worldgen\/structure\/(.+)\.json$/
     const PR = /^data\/([^/]+)\/worldgen\/template_pool\/(.+)\.json$/

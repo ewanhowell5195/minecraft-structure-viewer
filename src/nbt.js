@@ -1,3 +1,5 @@
+import { normState } from "./transforms.js"
+
 const TAG = {
   END: 0, BYTE: 1, SHORT: 2, INT: 3, LONG: 4, FLOAT: 5, DOUBLE: 6,
   BYTE_ARRAY: 7, STRING: 8, LIST: 9, COMPOUND: 10, INT_ARRAY: 11, LONG_ARRAY: 12
@@ -107,7 +109,7 @@ export async function readNBT(input, { littleEndian = false, skip } = {}) {
 export async function readStructure(input) {
   const root = await readNBT(input)
   const size = (root.size ?? [0, 0, 0]).map(Number)
-  const palette = root.palette ?? root.palettes?.[0] ?? []
+  const palette = (root.palette ?? root.palettes?.[0] ?? []).map(normState)
   const blocks = (root.blocks ?? []).map(b => ({
     state: Number(b.state),
     pos: b.pos.map(Number),

@@ -1,4 +1,5 @@
 import { readNBT } from "./nbt.js"
+import { normState } from "./transforms.js"
 
 const AIR = /(^|:)(air|cave_air|void_air)$/
 
@@ -228,6 +229,14 @@ const CHUNK_SKIP = new Set([
   "CarvingMasks", "Lights", "isLightOn", "TileTicks", "LiquidTicks", "ToBeTicked", "LiquidsToBeTicked"
 ])
 
+function normChunk(nbt) {
+  for (const s of nbt?.sections ?? []) {
+    const pal = s.block_states?.palette
+    if (pal) s.block_states.palette = pal.map(normState)
+  }
+  return nbt
+}
+
 async function readChunkFrom(bytes, index) {
   const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
   const loc = dv.getUint32(index * 4)
@@ -236,8 +245,8 @@ async function readChunkFrom(bytes, index) {
   const len = dv.getUint32(off)
   const method = bytes[off + 4]
   const payload = bytes.subarray(off + 5, off + 4 + len)
-  if (method === 3) return readNBT(payload, { skip: CHUNK_SKIP })
-  if (method === 1 || method === 2) return readNBT(await inflate(payload, method === 1 ? "gzip" : "deflate"), { skip: CHUNK_SKIP })
+  if (method === 3) return normChunk(await readNBT(payload, { skip: CHUNK_SKIP }))
+  if (method === 1 || method === 2) return normChunk(await readNBT(await inflate(payload, method === 1 ? "gzip" : "deflate"), { skip: CHUNK_SKIP }))
   throw new Error(`unsupported chunk compression ${method}`)
 }
 

@@ -83,6 +83,40 @@ export function parseState(str) {
   return { Name, Properties }
 }
 
+// 26.3-snapshot-7 renamed the block state fields Name -> id and Properties ->
+// properties, and writes a default state as the bare block id. older packs still
+// ship the old shape, so both get folded back to it
+const STATE_STR = /^[\w./-]+(?::[\w./-]+)?(?:\[.*\])?$/
+
+export function normState(v) {
+  if (typeof v === "string") return STATE_STR.test(v.trim()) ? parseState(v) : v
+  if (!v || typeof v !== "object" || Array.isArray(v)) return v
+  if (typeof v.id !== "string") return v
+  return v.properties ? { Name: v.id, Properties: v.properties } : { Name: v.id }
+}
+
+// keys the feature and processor json store block states under. int providers
+// reuse `data`, but those values have no `id`, so normState passes them through
+const STATE_FIELDS = new Set([
+  "base_block", "block_state", "contents", "data", "decor_state", "default_state",
+  "hat_state", "high_states", "inner_placements", "low_states", "output_state",
+  "pointed_block", "rim", "state", "states", "stem_state", "target",
+  "valid_base_block"
+])
+
+export function normStatesDeep(node) {
+  if (Array.isArray(node)) {
+    for (let i = 0; i < node.length; i++) node[i] = normStatesDeep(node[i])
+    return node
+  }
+  if (!node || typeof node !== "object") return node
+  for (const [k, v] of Object.entries(node)) {
+    if (!STATE_FIELDS.has(k)) { node[k] = normStatesDeep(v); continue }
+    node[k] = Array.isArray(v) ? v.map(e => normState(normStatesDeep(e))) : normState(normStatesDeep(v))
+  }
+  return node
+}
+
 const SIDES = ["north", "east", "south", "west"]
 
 export function rotateState(props, k) {

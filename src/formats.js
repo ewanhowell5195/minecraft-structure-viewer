@@ -1,5 +1,5 @@
 import { readNBT } from "./nbt.js"
-import { AIR, parseState } from "./transforms.js"
+import { AIR, parseState, normState } from "./transforms.js"
 
 function collector() {
   const palette = [], idx = new Map(), cells = []
@@ -46,7 +46,7 @@ export async function readLitematic(buf) {
     const size = region.Size, pos = region.Position
     const sx = Math.abs(size.x), sy = Math.abs(size.y), sz = Math.abs(size.z)
     const mx = pos.x + Math.min(size.x + 1, 0), my = pos.y + Math.min(size.y + 1, 0), mz = pos.z + Math.min(size.z + 1, 0)
-    const pal = region.BlockStatePalette ?? []
+    const pal = (region.BlockStatePalette ?? []).map(normState)
     const states = region.BlockStates ?? []
     const bits = Math.max(2, 32 - Math.clz32(Math.max(1, pal.length - 1)))
     const mask = (1n << BigInt(bits)) - 1n
