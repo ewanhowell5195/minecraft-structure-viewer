@@ -717,7 +717,7 @@ function refreshHover() {
 
 // grid march instead of a triangle raycast: scanning every merged triangle per event stutters on huge scenes
 const _ray = new THREE.Raycaster(), _ndc = new THREE.Vector2()
-let downX = 0, downY = 0, downT = 0
+let downX = 0, downY = 0, downT = 0, downId = null
 let hover = null
 
 function screenRay(e, canvas) {
@@ -797,8 +797,12 @@ function initPicking(canvas) {
     downX = e.clientX
     downY = e.clientY
     downT = performance.now()
+    downId = e.pointerId
   })
   canvas.addEventListener("pointerup", e => {
+    const pressed = downId === e.pointerId
+    downId = null
+    if (!pressed) return
     if (document.pointerLockElement || e.button !== 0 || useSlicers().busy() || walking()) return
     if (Math.hypot(e.clientX - downX, e.clientY - downY) > 4 || performance.now() - downT > 400) return
     if (state.open) return
