@@ -49,14 +49,14 @@ export async function readLitematic(buf) {
     const pal = (region.BlockStatePalette ?? []).map(normState)
     const states = region.BlockStates ?? []
     const bits = Math.max(2, 32 - Math.clz32(Math.max(1, pal.length - 1)))
-    const mask = (1n << BigInt(bits)) - 1n
+    const mask = bits === 32 ? 0xFFFFFFFF : (1 << bits) - 1
     const mapped = pal.map(e => AIR.test(e?.Name || "") ? -1 : stateFor(e.Name, strProps(e.Properties)))
     const vol = sx * sy * sz
     for (let n = 0; n < vol; n++) {
-      const bit = n * bits, li = Math.floor(bit / 64), off = BigInt(bit % 64)
-      let v = BigInt.asUintN(64, states[li]) >> off
-      if (Number(off) + bits > 64) v |= BigInt.asUintN(64, states[li + 1]) << (64n - off)
-      const state = mapped[Number(v & mask)]
+      const bit = n * bits, w = bit >>> 5, off = bit & 31
+      let v = states[w] >>> off
+      if (off + bits > 32) v |= states[w + 1] << (32 - off)
+      const state = mapped[(v & mask) >>> 0]
       if (state === undefined || state < 0) continue
       const x = n % sx, z = Math.floor(n / sx) % sz, y = Math.floor(n / (sx * sz))
       push(mx + x, my + y, mz + z, state)
