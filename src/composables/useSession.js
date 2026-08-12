@@ -43,16 +43,18 @@ let baseRadius = 96
 let genCap = Infinity
 let prevAnchorWorld = null
 
-// adopted by the FIRST session only; captured up front because loads rewrite the query string
+// adopted by the NEXT session to start, then cleared; captured up front because
+// loads rewrite the query string. going back to a session entry re-arms it
 let urlSeed = null, urlLevel = null
+function adoptUrlSession(hex, level) {
+  if (!hex || !/^[0-9a-f]{1,8}$/i.test(hex)) return
+  urlSeed = parseInt(hex, 16) >>> 0
+  const lvl = parseInt(level)
+  urlLevel = Number.isFinite(lvl) ? lvl : 2
+}
 {
   const sp = new URLSearchParams(location.search)
-  const hex = sp.get("seed")
-  if (hex && /^[0-9a-f]{1,8}$/i.test(hex)) {
-    urlSeed = parseInt(hex, 16) >>> 0
-    const lvl = parseInt(sp.get("level"))
-    urlLevel = Number.isFinite(lvl) ? lvl : 2
-  }
+  adoptUrlSession(sp.get("seed"), sp.get("level"))
 }
 
 function nsSplit(ref) {
@@ -325,7 +327,7 @@ async function rebase(structure, name) {
 export function useSession() {
   return {
     state: readonly(state),
-    startSession, endSession, rebase, probeDepth,
+    startSession, endSession, adoptUrlSession, rebase, probeDepth,
     next, all, undo, reset, reloadAll, fullReload, generate
   }
 }
