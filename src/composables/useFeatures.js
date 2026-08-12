@@ -145,9 +145,8 @@ async function readJson(zipPath) {
   return buf ? normStatesDeep(JSON.parse(textDecoder.decode(buf))) : null
 }
 
-// 26.3 renamed the registry folder from configured_feature to feature. the
-// older name is checked first on purpose: the bundled copy lives at the new
-// path, so asking for that first would answer 26.3 data off a 26.2 jar
+// the old registry folder goes first: the bundled copies live at the new path,
+// so asking for that first answers 26.3 data off an older jar
 async function readFeature(rel) {
   const slash = rel.indexOf("/")
   const ns = rel.slice(0, slash), name = rel.slice(slash + 1)

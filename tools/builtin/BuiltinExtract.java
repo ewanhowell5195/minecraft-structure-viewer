@@ -501,10 +501,7 @@ public class BuiltinExtract {
       if (rand.boolVal) rand.intVal = 1; // divergent run: floor rolls mossy
       c.fillWorld(-xs - 2, -2, -zs - 2, xs + 2, 5, zs + 2, Blocks.STONE.defaultBlockState());
       // the feature never carves an opening: ring cells that are already air
-      // survive the wall pass untouched, so the doorway is whatever a cave had
-      // eaten. this is a cave mouth clipping the north wall, widest at the
-      // floor and tapering up. only dy 0 cells whose neighbour above is also
-      // air count toward the 1..5 gate, so this scores 2
+      // survive the wall pass, so the doorway is whatever a cave had eaten
       for (int[] cell : DUNGEON_MOUTH) {
         c.world.put(new BlockPos(cell[0], cell[1], -zs - 1), Blocks.AIR.defaultBlockState());
       }
@@ -512,9 +509,8 @@ public class BuiltinExtract {
       noteFeature(room);
       if (!room.place(c.level(), null, rand, BlockPos.ZERO))
         throw new IllegalStateException("dungeon refused to place");
-      // ring cells that were already air are the ones the feature leaves alone,
-      // so nothing records them: write them out explicitly or the doorway ships
-      // as absent cells that placing the structure would never carve
+      // the feature leaves already-air cells alone, so nothing records them and
+      // the doorway would ship as absent cells rather than air
       for (int[] cell : DUNGEON_MOUTH) {
         BlockPos p = new BlockPos(cell[0], cell[1], -zs - 1);
         if (c.level().getBlockState(p).isAir()) c.set(p, Blocks.CAVE_AIR.defaultBlockState());

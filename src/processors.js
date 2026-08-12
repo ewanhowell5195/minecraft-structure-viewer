@@ -52,9 +52,8 @@ export async function buildProcessorIndex(keys, readJson, rels) {
       if (!index.has(base.loc)) index.set(base.loc, { procs: base.procs, overlays })
     }
   }
-  // a template feature can carry processors of its own, and that pairing lives
-  // nowhere else: the desert well appends its loot table to the suspicious sand
-  // this way, so the template alone ships without one
+  // a template feature can carry processors of its own, and nothing else
+  // records that pairing
   async function indexTemplates(node) {
     if (Array.isArray(node)) {
       for (const v of node) await indexTemplates(v)

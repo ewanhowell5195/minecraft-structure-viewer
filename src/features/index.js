@@ -1273,8 +1273,6 @@ Object.assign(TYPES, {
     }
   },
 
-  // the placement processors run here, not in the nbt: the raw template ships
-  // without them, so the desert well's sand only gets its loot table this way
   async template(world, json, rand, resolvePlaced, ox, oy, oz) {
     if (!world.loadStruct) throw new Error("templates need structure files")
     const entry = pickWeighted(json.templates, rand)

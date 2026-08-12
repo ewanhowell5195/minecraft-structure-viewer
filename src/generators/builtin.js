@@ -99,9 +99,8 @@ function fixDesertPyramid(s, masks, rand) {
 
 const DUNGEON_MOBS = ["minecraft:skeleton", "minecraft:zombie", "minecraft:zombie", "minecraft:spider"]
 
-// a cave mouth as columns of open wall: 1-3 wide, tallest at one of them and
-// tapering off either side. the floor row is never touched, since the feature
-// refuses to place unless the whole floor line is solid
+// columns of open wall. the floor row is never touched: the feature refuses to
+// place unless the whole floor line is solid
 export function dungeonMouth(rand, sy) {
   const side = ["north", "east", "south", "west"][Math.floor(rand() * 4)]
   const w = 1 + Math.floor(rand() * 3)
@@ -148,9 +147,7 @@ function fixDungeon(s, masks, rand, seed) {
     if (solidRender(at(p, f))) f = OPP[f]
     return f
   }
-  // the capture keeps its own mouth on the north wall, so seed 0 always loads
-  // that one; a re-roll walls it up and eats a fresh one into a random side.
-  // only the ring is scanned, so the room's own air never counts
+  // seed 0 keeps the capture's own north mouth; a re-roll moves it
   if (seed) {
     const wallCell = (d, t, y) => d === "north" ? [ox + t, y, 0]
       : d === "east" ? [sx - 1, y, oz + t]

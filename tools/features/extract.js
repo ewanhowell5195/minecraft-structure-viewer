@@ -35,9 +35,8 @@ async function main() {
 
   const files = new Map()
   for (const rel of walk(outDir).sort()) files.set(rel, fs.readFileSync(path.join(outDir, rel)))
-  // every configured feature of a type the builtin extractor captured is already
-  // offered under Structures, so it is dropped. the captures name their own
-  // types, which means a new one excludes its features without a list here
+  // a type the builtin extractor captured is already offered under Structures.
+  // the captures name their own types, so a new one needs no list here
   const capturedPath = path.join(root, "bundled/builtin/viewer/captured_features.json")
   if (!fs.existsSync(capturedPath)) throw new Error("run tools/builtin/extract.js first: " + capturedPath + " is missing")
   const captured = new Set(JSON.parse(fs.readFileSync(capturedPath, "utf8")).concat(RUNTIME_DUPES))
@@ -134,9 +133,8 @@ const isRef = x => typeof x === "string" || (x != null && typeof x === "object" 
 
 // fossils also stamp templates but their overlay processors do real
 // generation, so anything beyond a pure stamp stays a feature
-// a pure stamp shows nothing the structures tab doesn't already list, so it is
-// dropped. processors mean the placed result differs from the raw nbt (the
-// desert well appends the loot table to its suspicious sand), so those stay
+// a pure stamp shows nothing the structures tab doesn't already list. processors
+// mean the placed result differs from the raw nbt, so those stay
 async function stampsTemplates(ctx, json, seen) {
   const nodes = []
   await collectTemplates(ctx, json, seen, nodes)

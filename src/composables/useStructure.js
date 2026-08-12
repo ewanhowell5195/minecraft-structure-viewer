@@ -95,9 +95,7 @@ export function parseSeedParam(param) {
 }
 
 // start-up and popstate-driven loads replace instead of pushing, so history
-// never gains duplicate or looping entries. the gate is the init phase itself:
-// which route start-up took (a structure param, a session, the default) decides
-// whether any given writer runs, but all of them run inside it
+// never gains duplicate or looping entries
 let navigatingHistory = false
 
 // the implicit start-up structure keeps the URL pristine
@@ -106,9 +104,6 @@ let implicitLoad = false
 
 let initializing = false
 export function beginInit() { initializing = true; buildApi.setRestoreGate(true) }
-// whatever route start-up took (default structure, ?structure=, a session), the
-// entry the user arrived on is now real: navigating away has to push, not
-// replace, or that entry is lost
 export function endInit() { initializing = false; buildApi.setRestoreGate(false) }
 
 async function loadDefault() {
@@ -147,8 +142,7 @@ addEventListener("popstate", async () => {
   const params = new URLSearchParams(location.search)
   navigatingHistory = true
   try {
-    // the entry being restored may be mid-session; the load starts a fresh one,
-    // so hand it the seed and level before it does
+    // the load starts a fresh session, so hand it the seed before it does
     session.adoptUrlSession(params.get("seed"), params.get("level"))
     const debug = params.get("debug")
     if (debug != null) {

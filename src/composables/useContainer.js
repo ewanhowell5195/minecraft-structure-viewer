@@ -638,7 +638,6 @@ const mergeRoll = loot => mergeInto(pile, loot)
 // single rolls scatter into random slots like the game fills a chest
 function display(scatter = false) {
   state.pileTotal = pile.reduce((a, s) => a + s.count, 0)
-  // a block that holds fewer than the gui draws scatters within its own slots
   const only = lootParts.length === 1 ? lootParts[0] : null
   const ownCap = only ? only.cap : capOf(state.kind)
   const base = only ? only.off + only.pad : 0

@@ -43,8 +43,8 @@ let baseRadius = 96
 let genCap = Infinity
 let prevAnchorWorld = null
 
-// adopted by the NEXT session to start, then cleared; captured up front because
-// loads rewrite the query string. going back to a session entry re-arms it
+// adopted by the next session to start, then cleared; captured up front because
+// loads rewrite the query string
 let urlSeed = null, urlLevel = null
 function adoptUrlSession(hex, level) {
   if (!hex || !/^[0-9a-f]{1,8}$/i.test(hex)) return
