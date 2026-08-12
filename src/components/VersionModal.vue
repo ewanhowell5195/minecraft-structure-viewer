@@ -27,14 +27,25 @@ onMounted(async () => {
 
 const KINDS = [
   { id: "release", label: "Releases", match: v => v.type === "release" },
-  { id: "snapshot", label: "Snapshots", match: v => v.type === "snapshot" },
-  { id: "old", label: "Old", match: v => v.type !== "release" && v.type !== "snapshot" }
+  { id: "snapshot", label: "Snapshots", match: v => v.type === "snapshot" }
 ]
+
+const FIRST = "15w31a"
+const modern = id => {
+  const m = /^(\d+)\.(\d+)/.exec(id)
+  return !!m && (+m[1] > 1 || +m[2] >= 9)
+}
+
+const usable = computed(() => {
+  const cut = versions.value.findIndex(v => v.id === FIRST)
+  const rows = cut === -1 ? versions.value : versions.value.slice(0, cut + 1)
+  return rows.filter(v => v.type === "snapshot" || (v.type === "release" && modern(v.id)))
+})
 
 const shown = computed(() => {
   const q = query.value.trim().toLowerCase()
   const match = KINDS.find(k => k.id === kind.value).match
-  return versions.value.filter(v => match(v) && (!q || v.id.toLowerCase().includes(q)))
+  return usable.value.filter(v => match(v) && (!q || v.id.toLowerCase().includes(q)))
 })
 
 const DATE = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric" })
