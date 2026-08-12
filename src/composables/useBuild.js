@@ -539,12 +539,20 @@ const ENTITY_BOX = 14
 // egg-less mobs borrow a lookalike's egg
 const EGG_ALIASES = { giant: "zombie", evoker_fangs: "evoker", llama_spit: "llama", wither_skull: "wither", shulker_bullet: "shulker" }
 
-async function entityMarkerCanvas(lib, assets, name) {
+const STAND_INS = { item: "stick" }
+
+async function entityMarkerCanvas(lib, assets, name, item) {
   const c = document.createElement("canvas")
   c.width = 64
   c.height = 64
   let drawn = false
-  if (name === "mannequin") {
+  if (item?.id) {
+    try {
+      await lib.renderItem({ id: item.id, components: item.components ?? {}, assets, width: 64, height: 64, canvas: c })
+      drawn = true
+    } catch {}
+  }
+  if (!drawn && name === "mannequin") {
     try {
       const buf = await lib.readFile("assets/minecraft/textures/entity/player/wide/steve.png", assets)
       if (buf) {
@@ -557,7 +565,8 @@ async function entityMarkerCanvas(lib, assets, name) {
       }
     } catch {}
   }
-  if (!drawn) for (const item of [name + "_spawn_egg", (EGG_ALIASES[name] ?? name) + "_spawn_egg", name]) {
+  const fallbacks = STAND_INS[name] ? [STAND_INS[name]] : [name + "_spawn_egg", (EGG_ALIASES[name] ?? name) + "_spawn_egg", name]
+  if (!drawn) for (const item of fallbacks) {
     try {
       if (!await lib.readFile(`assets/minecraft/items/${item}.json`, assets)) continue
       await lib.renderItem({ id: item, assets, width: 64, height: 64, canvas: c })
@@ -807,7 +816,8 @@ async function attachEntities(structure, lib, assets) {
       await attachEntityTag(e.nbt, wx, noBox ? wy + 8 : box.max.y, wz)
       continue
     }
-    sprites.push({ e, name, wx, wy, wz })
+    const item = name === "item" ? e.nbt.Item : null
+    sprites.push({ e, name, item, key: item?.id ? `${item.id}|${JSON.stringify(item.components ?? {})}` : name, wx, wy, wz })
   }
 
   const clusters = []
@@ -825,11 +835,11 @@ async function attachEntities(structure, lib, assets) {
     }
   }
   for (const c of clusters) {
-    for (const s of c) if (!texCache.has(s.name)) texCache.set(s.name, await entityMarkerCanvas(lib, assets, s.name))
+    for (const s of c) if (!texCache.has(s.key)) texCache.set(s.key, await entityMarkerCanvas(lib, assets, s.name, s.item))
     const cx = c.reduce((a, s) => a + s.wx, 0) / c.length
     const cy = c.reduce((a, s) => a + s.wy, 0) / c.length
     const cz = c.reduce((a, s) => a + s.wz, 0) / c.length
-    let canvas = texCache.get(c[0].name)
+    let canvas = texCache.get(c[0].key)
     let px = 64
     if (canvas && c.length > 1) {
       const off = 4 // one icon pixel at the 64px render scale
@@ -839,7 +849,7 @@ async function attachEntities(structure, lib, assets) {
       const ctx = canvas.getContext("2d")
       ctx.imageSmoothingEnabled = false
       for (let i = c.length - 1; i >= 0; i--) {
-        const t = texCache.get(c[i].name)
+        const t = texCache.get(c[i].key)
         if (t) ctx.drawImage(t, (c.length - 1 - i) * off, (c.length - 1 - i) * off, 64, 64)
       }
     }

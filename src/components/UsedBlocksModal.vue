@@ -167,6 +167,14 @@ function findBlocks(id, props, entries) {
   close()
 }
 
+function itemOf(g) {
+  if (stripNs(g.id) !== "item") return null
+  const first = g.list[0]?.nbt?.Item
+  if (!first?.id) return null
+  const key = json(first)
+  return g.list.every(e => json(e.nbt?.Item) === key) ? first : null
+}
+
 function findEntities(g) {
   find.start(g.list, stripNs(g.id), e => build.boxForEntityData(e))
   close()
@@ -259,7 +267,8 @@ defineExpose({ open })
     <div class="body" v-else>
       <div v-for="g in entityRows" :key="g.id" class="item-row group">
         <div class="line row click" @click="clickEntity(g)">
-          <UsedIcon kind="entity" :id="g.id" :size="32" />
+          <UsedIcon v-if="itemOf(g)" kind="item" :id="itemOf(g).id" :components="itemOf(g).components" :size="32" />
+          <UsedIcon v-else kind="entity" :id="g.id" :size="32" />
           <span class="nm">{{ stripNs(g.id) }}</span>
           <span v-if="g.allSame" class="material-symbols-outlined data">open_in_new</span>
           <button class="find" title="Find in scene" @click.stop="findEntities(g)">

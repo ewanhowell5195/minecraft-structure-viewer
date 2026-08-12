@@ -7,8 +7,11 @@ const props = defineProps({
   kind: { type: String, default: "block" },
   id: String,
   blockstates: Object,
+  components: Object,
   size: { type: Number, default: 32 }
 })
+
+const STAND_INS = { cushion: "red_cushion", item: "stick" }
 
 const el = ref(null)
 let rendered = false
@@ -23,8 +26,10 @@ async function render() {
   const size = props.size
   const bare = props.id.replace(/^minecraft:/, "")
   const spec = props.kind === "entity"
-    ? { kind: "entity", candidates: bare === "cushion" ? ["red_cushion"] : [bare + "_spawn_egg", bare], size }
-    : { kind: "block", id: props.id, blockstates: props.blockstates ?? {}, size }
+    ? { kind: "entity", candidates: STAND_INS[bare] ? [STAND_INS[bare]] : [bare + "_spawn_egg", bare], size }
+    : props.kind === "item"
+      ? { kind: "item", id: props.id, components: props.components ?? {}, size }
+      : { kind: "block", id: props.id, blockstates: props.blockstates ?? {}, size }
   const got = await acquireIcon(spec, token, size)
   if (el.value !== host) {
     if (got?.animated) releaseIcon(spec, token)
