@@ -17,7 +17,7 @@ export function seedFor(name) {
 
 const POOL_RE = /^data\/([^/]+)\/worldgen\/template_pool\/.+\.json$/
 const STRUCT_RE = /^data\/([^/]+)\/worldgen\/structure\/.+\.json$/
-const FEATURE_RE = /^data\/([^/]+)\/worldgen\/feature\/.+\.json$/
+const FEATURE_RE = /^data\/([^/]+)\/worldgen\/(?:configured_)?feature\/.+\.json$/
 
 // template -> the processors and list-element overlays the game applies when
 // placing it, from the template pools; zombie pools only claim a template no

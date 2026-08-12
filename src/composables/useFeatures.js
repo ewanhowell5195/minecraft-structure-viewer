@@ -145,11 +145,18 @@ async function readJson(zipPath) {
   return buf ? normStatesDeep(JSON.parse(textDecoder.decode(buf))) : null
 }
 
+// 26.3 renamed the registry folder from configured_feature to feature. the
+// older name is checked first on purpose: the bundled copy lives at the new
+// path, so asking for that first would answer 26.3 data off a 26.2 jar
 async function readFeature(rel) {
-  const zp = featurePath.get(rel)
-  if (zp) return readJson(zp)
   const slash = rel.indexOf("/")
-  return readJson(`data/${rel.slice(0, slash)}/worldgen/feature/${rel.slice(slash + 1)}.json`)
+  const ns = rel.slice(0, slash), name = rel.slice(slash + 1)
+  const legacy = await readJson(`data/${ns}/worldgen/configured_feature/${name}.json`)
+  if (legacy) return legacy
+  const current = await readJson(`data/${ns}/worldgen/feature/${name}.json`)
+  if (current) return current
+  const zp = featurePath.get(rel)
+  return zp ? readJson(zp) : null
 }
 
 const nsPath = ref => ref.includes(":") ? ref.replace(":", "/") : "minecraft/" + ref
