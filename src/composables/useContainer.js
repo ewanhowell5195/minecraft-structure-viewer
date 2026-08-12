@@ -565,7 +565,7 @@ async function open(block) {
           state.error = "loot table not found: " + stripNs(part.nbt.LootTable)
           return
         }
-        lootParts.push({ table, off: part.off, cap })
+        lootParts.push({ table, off: part.off, cap, pad })
       } else if (Array.isArray(part.nbt?.Items)) {
         for (const it of part.nbt.Items) {
           if (!it?.id) continue
@@ -631,7 +631,10 @@ const mergeRoll = loot => mergeInto(pile, loot)
 // single rolls scatter into random slots like the game fills a chest
 function display(scatter = false) {
   state.pileTotal = pile.reduce((a, s) => a + s.count, 0)
-  const ownCap = capOf(state.kind)
+  // a block that holds fewer than the gui draws scatters within its own slots
+  const only = lootParts.length === 1 ? lootParts[0] : null
+  const ownCap = only ? only.cap : capOf(state.kind)
+  const base = only ? only.off + only.pad : 0
   if (scatter && pile.length <= ownCap) {
     state.gui = state.kind
     state.guiTitle = state.blockName
@@ -640,7 +643,7 @@ function display(scatter = false) {
       const j = Math.random() * (i + 1) | 0
       ;[slots[i], slots[j]] = [slots[j], slots[i]]
     }
-    state.stacks = pile.map((s, i) => ({ id: s.id, components: s.components, count: s.count, slot: slots[i] }))
+    state.stacks = pile.map((s, i) => ({ id: s.id, components: s.components, count: s.count, slot: base + slots[i] }))
   } else {
     state.gui = { ...KINDS.generic, rows: Math.max(3, Math.ceil(pile.length / KINDS.generic.cols)) }
     state.guiTitle = state.blockName
@@ -673,7 +676,7 @@ async function reroll() {
         const j = Math.random() * (i + 1) | 0
         ;[slots[i], slots[j]] = [slots[j], slots[i]]
       }
-      r.merged.forEach((s, i) => stacks.push({ id: s.id, components: s.components, count: s.count, slot: r.p.off + slots[i] }))
+      r.merged.forEach((s, i) => stacks.push({ id: s.id, components: s.components, count: s.count, slot: r.p.off + r.p.pad + slots[i] }))
     }
     state.stacks = stacks
   } else display()
