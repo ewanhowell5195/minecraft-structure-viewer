@@ -341,6 +341,13 @@ function init(canvasEl) {
   canvas = canvasEl
   renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: false })
   renderer.debug.checkShaderErrors = false
+  // three re-asks for WEBGL_multi_draw on every BatchedMesh draw and warns when
+  // it's missing, so Firefox logs once per door batch per frame
+  const ext = renderer.extensions
+  if (!ext.has("WEBGL_multi_draw")) {
+    const get = ext.get.bind(ext)
+    ext.get = name => name === "WEBGL_multi_draw" ? null : get(name)
+  }
   renderer.setPixelRatio(Math.min(window.devicePixelRatio * 2, 4))
   renderer.localClippingEnabled = true
   controls = new OrbitControls(camera, canvas)
