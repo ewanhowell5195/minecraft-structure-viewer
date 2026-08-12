@@ -1005,6 +1005,15 @@ function boxForEntity(m) {
   return _aimBox
 }
 
+// entities can share a marker (overlapping ones cluster into one), so the box
+// for a structure entity comes from whichever marker carries it
+function boxForEntityData(e) {
+  const id = e.nbt?.id
+  const same = x => x === e || (x.nbt?.id === id && x.pos?.every((v, i) => v === e.pos[i]))
+  const m = entityMarkers.find(m => m.stack?.some(same))
+  return m ? boxForEntity(m) : null
+}
+
 const _markerV = new THREE.Vector3()
 function markerUnderRay(ray, maxDist) {
   let best = null, bestD = maxDist
@@ -1987,6 +1996,6 @@ async function clearMapArt() {
 export function useBuild() {
   return {
     state, current, build, cancel, answerWarn, setRestoreGate, restoreGateCheck, getRoot, getTemplates, getNonSolid, showFull, restoreFull,
-    blockAt, blockEntryAt, boxForBlock, boxForEntity, markerUnderRay, rayHit, interact, aimDoor, blockBoxes, ringBell, exportCurrent, clearMapArt
+    blockAt, blockEntryAt, boxForBlock, boxForEntity, boxForEntityData, markerUnderRay, rayHit, interact, aimDoor, blockBoxes, ringBell, exportCurrent, clearMapArt
   }
 }

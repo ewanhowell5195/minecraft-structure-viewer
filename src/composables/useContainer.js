@@ -58,6 +58,7 @@ const state = reactive({
   open: false,
   pick: null,
   aim: null,
+  hovering: false,
   blockName: "",
   tableId: "",
   table: null,
@@ -772,6 +773,7 @@ function aimFor(h) {
 function clearHover(canvas) {
   hover?.hide()
   state.aim = null
+  state.hovering = false
   if (!useSlicers().busy()) canvas.style.cursor = ""
 }
 
@@ -785,6 +787,7 @@ function hoverCheck(e, canvas) {
   state.aim = aimFor(h)
   const u = h?.entity ? { marker: h.entity } : h?.container ? { block: h.container } : null
   const box = u?.marker ? buildApi.boxForEntity(u.marker) : u?.block ? (h.box ?? buildApi.boxForBlock(u.block)) : null
+  state.hovering = !!box
   if (box) {
     hover ??= sceneApi.makeHighlight()
     hover.show(box)

@@ -27,6 +27,7 @@ import SlicersSection from "./components/SlicersSection.vue"
 import SceneSection from "./components/SceneSection.vue"
 import LevelMenu from "./components/LevelMenu.vue"
 import WalkOverlay from "./components/WalkOverlay.vue"
+import FindOverlay from "./components/FindOverlay.vue"
 import FpsCounter from "./components/FpsCounter.vue"
 import ContainerModal from "./components/ContainerModal.vue"
 import UsedBlocksModal from "./components/UsedBlocksModal.vue"
@@ -294,6 +295,7 @@ onMounted(async () => {
           <span class="material-symbols-outlined">list_alt</span>
           {{ usedLabel }}
         </button>
+        <FindOverlay />
       </template>
       <WalkOverlay />
       <FpsCounter v-if="!minimal" />

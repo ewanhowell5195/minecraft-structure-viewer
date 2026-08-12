@@ -2,6 +2,7 @@
 import { computed, reactive, watch, onMounted, onBeforeUnmount } from "vue"
 import { useBuild } from "../composables/useBuild.js"
 import { useContainer } from "../composables/useContainer.js"
+import { useFind } from "../composables/useFind.js"
 import { isInspectable } from "../loot.js"
 import Modal from "./Modal.vue"
 import UsedIcon from "./UsedIcon.vue"
@@ -9,6 +10,7 @@ import UsedIcon from "./UsedIcon.vue"
 const AIR = /(^|:)(air|cave_air|void_air|structure_void)$/
 const build = useBuild()
 const container = useContainer()
+const find = useFind()
 
 const state = reactive({
   open: false,
@@ -23,6 +25,13 @@ const stripNs = id => id.replace(/^minecraft:/, "")
 const json = v => JSON.stringify(v, (k, x) => typeof x === "bigint" ? x.toString() + "n" : x)
 const isDataName = name => isInspectable(name) || /(^|[:_])spawner$/.test(stripNs(name))
 
+// waterlogged=false is hidden, so strip it before keying or its states would duplicate
+function shownProps(props) {
+  if (props?.waterlogged !== "false") return props ?? null
+  const { waterlogged, ...rest } = props
+  return Object.keys(rest).length ? rest : null
+}
+
 function compute() {
   const s = build.current.value
   if (!s) return null
@@ -35,12 +44,7 @@ function compute() {
     let g = groups.get(e.Name)
     if (!g) groups.set(e.Name, g = { id: e.Name, count: 0, states: new Map() })
     g.count++
-    // waterlogged=false is hidden, so strip it before keying or its states would duplicate
-    let props = e.Properties ?? null
-    if (props?.waterlogged === "false") {
-      const { waterlogged, ...rest } = props
-      props = Object.keys(rest).length ? rest : null
-    }
+    const props = shownProps(e.Properties)
     const key = JSON.stringify(props)
     let st = g.states.get(key)
     if (!st) g.states.set(key, st = { props, count: 0, blocks: null })
@@ -146,6 +150,28 @@ function clickState(g, st) {
   state.expandedState[key] = !state.expandedState[key]
 }
 
+function findBlocks(id, props, entries) {
+  const s = build.current.value
+  if (!s) return
+  const key = props === undefined ? null : JSON.stringify(props)
+  const hits = []
+  for (const b of s.blocks) {
+    const e = s.palette[b.state]
+    if (e?.Name !== id) continue
+    if (key !== null && JSON.stringify(shownProps(e.Properties)) !== key) continue
+    hits.push(b)
+  }
+  if (!hits.length) return
+  const text = props ? (entries ?? Object.entries(props)).map(([k, v]) => `${k}=${v}`).join(" ") : ""
+  find.start(hits, text ? `${stripNs(id)} ${text}` : stripNs(id), b => build.boxForBlock(b))
+  close()
+}
+
+function findEntities(g) {
+  find.start(g.list, stripNs(g.id), e => build.boxForEntityData(e))
+  close()
+}
+
 function clickEntity(g) {
   if (g.allSame) return container.openEntity(g.list[0])
   state.expanded["e:" + g.id] = !state.expanded["e:" + g.id]
@@ -199,6 +225,9 @@ defineExpose({ open })
         <div class="line row" :class="{ click: expandable(g) }" @click="clickBlock(g)">
           <UsedIcon :id="g.id" :size="32" />
           <span class="nm">{{ stripNs(g.id) }}</span>
+          <button class="find" title="Find in scene" @click.stop="findBlocks(g.id)">
+            <span class="material-symbols-outlined">my_location</span>
+          </button>
           <span class="count">×{{ g.count }}<small>{{ fmtPct(g.count) }}</small></span>
           <span v-if="anyBlockExpandable" class="material-symbols-outlined chev" :class="{ hidden: !expandable(g), open: state.expanded[g.id] }">chevron_right</span>
         </div>
@@ -211,6 +240,9 @@ defineExpose({ open })
               </span>
               <span v-else class="nm mono">default</span>
               <span v-if="hasData(st)" class="material-symbols-outlined data">{{ sameData(st) ? "open_in_new" : "unfold_more" }}</span>
+              <button class="find" title="Find in scene" @click.stop="findBlocks(g.id, st.props, st.entries)">
+                <span class="material-symbols-outlined">my_location</span>
+              </button>
               <span class="count">×{{ st.count }}<small>{{ fmtPct(st.count) }}</small></span>
             </div>
             <template v-if="hasData(st) && !sameData(st) && state.expandedState[g.id + '|' + JSON.stringify(st.props)]">
@@ -230,6 +262,9 @@ defineExpose({ open })
           <UsedIcon kind="entity" :id="g.id" :size="32" />
           <span class="nm">{{ stripNs(g.id) }}</span>
           <span v-if="g.allSame" class="material-symbols-outlined data">open_in_new</span>
+          <button class="find" title="Find in scene" @click.stop="findEntities(g)">
+            <span class="material-symbols-outlined">my_location</span>
+          </button>
           <span class="count">×{{ g.count }}</span>
           <span v-if="anyEntityExpandable" class="material-symbols-outlined chev" :class="{ hidden: g.allSame, open: state.expanded['e:' + g.id] }">chevron_right</span>
         </div>
@@ -350,4 +385,21 @@ defineExpose({ open })
   color: var(--text-dim);
   flex-shrink: 0;
 }
+
+.find {
+  display: flex;
+  padding: 3px;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+
+.find:hover:not(:disabled) {
+  background: #ffffff14;
+  color: var(--text);
+}
+
+.find .material-symbols-outlined { font-size: 16px; }
 </style>
