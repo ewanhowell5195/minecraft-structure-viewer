@@ -1,15 +1,6 @@
 {
-  "base_block": {
-    "Name": "minecraft:sulfur"
-  },
-  "pointed_block": {
-    "Properties": {
-      "waterlogged": "false",
-      "vertical_direction": "up",
-      "thickness": "tip"
-    },
-    "Name": "minecraft:sulfur_spike"
-  },
+  "base_block": "minecraft:sulfur",
+  "pointed_block": "minecraft:sulfur_spike",
   "replaceable_blocks": "#minecraft:sulfur_spike_replaceable_blocks",
   "floor_to_ceiling_search_range": 12,
   "height": {

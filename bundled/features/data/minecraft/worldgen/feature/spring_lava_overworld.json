@@ -1,9 +1,9 @@
 {
   "state": {
-    "Properties": {
+    "properties": {
       "falling": "true"
     },
-    "Name": "minecraft:lava"
+    "id": "minecraft:lava"
   },
   "valid_blocks": [
     "minecraft:stone",

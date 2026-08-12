@@ -36,9 +36,7 @@
         ],
         "predicate_type": "minecraft:any_of"
       },
-      "state": {
-        "Name": "minecraft:lapis_ore"
-      }
+      "state": "minecraft:lapis_ore"
     },
     {
       "target": {
@@ -76,9 +74,7 @@
         ],
         "predicate_type": "minecraft:any_of"
       },
-      "state": {
-        "Name": "minecraft:deepslate_lapis_ore"
-      }
+      "state": "minecraft:deepslate_lapis_ore"
     }
   ],
   "size": 7,

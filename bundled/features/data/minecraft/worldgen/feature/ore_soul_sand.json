@@ -5,9 +5,7 @@
         "block": "minecraft:netherrack",
         "predicate_type": "minecraft:block_match"
       },
-      "state": {
-        "Name": "minecraft:soul_sand"
-      }
+      "state": "minecraft:soul_sand"
     }
   ],
   "size": 12,

@@ -5,9 +5,7 @@
         "block": "minecraft:netherrack",
         "predicate_type": "minecraft:block_match"
       },
-      "state": {
-        "Name": "minecraft:magma_block"
-      }
+      "state": "minecraft:magma_block"
     }
   ],
   "size": 33,

@@ -25,20 +25,15 @@
       "provider": {
         "entries": [
           {
-            "data": {
-              "Properties": {
-                "berries": "false"
-              },
-              "Name": "minecraft:cave_vines_plant"
-            },
+            "data": "minecraft:cave_vines_plant",
             "weight": 4
           },
           {
             "data": {
-              "Properties": {
+              "properties": {
                 "berries": "true"
               },
-              "Name": "minecraft:cave_vines_plant"
+              "id": "minecraft:cave_vines_plant"
             },
             "weight": 1
           }
@@ -52,22 +47,16 @@
         "source": {
           "entries": [
             {
-              "data": {
-                "Properties": {
-                  "berries": "false",
-                  "age": "0"
-                },
-                "Name": "minecraft:cave_vines"
-              },
+              "data": "minecraft:cave_vines",
               "weight": 4
             },
             {
               "data": {
-                "Properties": {
+                "properties": {
                   "berries": "true",
                   "age": "0"
                 },
-                "Name": "minecraft:cave_vines"
+                "id": "minecraft:cave_vines"
               },
               "weight": 1
             }

@@ -36,9 +36,7 @@
         ],
         "predicate_type": "minecraft:any_of"
       },
-      "state": {
-        "Name": "minecraft:copper_ore"
-      }
+      "state": "minecraft:copper_ore"
     },
     {
       "target": {
@@ -76,9 +74,7 @@
         ],
         "predicate_type": "minecraft:any_of"
       },
-      "state": {
-        "Name": "minecraft:deepslate_copper_ore"
-      }
+      "state": "minecraft:deepslate_copper_ore"
     }
   ],
   "size": 20,

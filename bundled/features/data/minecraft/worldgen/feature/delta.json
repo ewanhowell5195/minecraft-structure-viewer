@@ -1,13 +1,6 @@
 {
-  "contents": {
-    "Properties": {
-      "level": "0"
-    },
-    "Name": "minecraft:lava"
-  },
-  "rim": {
-    "Name": "minecraft:magma_block"
-  },
+  "contents": "minecraft:lava",
+  "rim": "minecraft:magma_block",
   "size": {
     "min_inclusive": 3,
     "max_inclusive": 7,

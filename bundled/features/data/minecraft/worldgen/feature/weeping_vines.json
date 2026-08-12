@@ -3,9 +3,7 @@
     {
       "feature": {
         "block": {
-          "state": {
-            "Name": "minecraft:nether_wart_block"
-          },
+          "state": "minecraft:nether_wart_block",
           "type": "minecraft:simple_state_provider"
         },
         "accepted_neighbors": [
@@ -63,9 +61,7 @@
               "type": "minecraft:weighted_list"
             },
             "provider": {
-              "state": {
-                "Name": "minecraft:weeping_vines_plant"
-              },
+              "state": "minecraft:weeping_vines_plant",
               "type": "minecraft:simple_state_provider"
             }
           },
@@ -73,12 +69,7 @@
             "height": 1,
             "provider": {
               "source": {
-                "state": {
-                  "Properties": {
-                    "age": "0"
-                  },
-                  "Name": "minecraft:weeping_vines"
-                },
+                "state": "minecraft:weeping_vines",
                 "type": "minecraft:simple_state_provider"
               },
               "property": "age",

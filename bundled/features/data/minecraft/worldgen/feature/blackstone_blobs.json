@@ -1,10 +1,6 @@
 {
-  "target": {
-    "Name": "minecraft:netherrack"
-  },
-  "state": {
-    "Name": "minecraft:blackstone"
-  },
+  "target": "minecraft:netherrack",
+  "state": "minecraft:blackstone",
   "radius": {
     "min_inclusive": 3,
     "max_inclusive": 7,

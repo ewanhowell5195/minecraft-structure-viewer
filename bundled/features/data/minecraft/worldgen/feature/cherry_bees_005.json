@@ -1,11 +1,6 @@
 {
   "trunk_provider": {
-    "state": {
-      "Properties": {
-        "axis": "y"
-      },
-      "Name": "minecraft:cherry_log"
-    },
+    "state": "minecraft:cherry_log",
     "type": "minecraft:simple_state_provider"
   },
   "trunk_placer": {
@@ -46,14 +41,7 @@
     "type": "minecraft:cherry_trunk_placer"
   },
   "foliage_provider": {
-    "state": {
-      "Properties": {
-        "waterlogged": "false",
-        "persistent": "false",
-        "distance": "7"
-      },
-      "Name": "minecraft:cherry_leaves"
-    },
+    "state": "minecraft:cherry_leaves",
     "type": "minecraft:simple_state_provider"
   },
   "foliage_placer": {
@@ -88,9 +76,7 @@
           "type": "minecraft:not"
         },
         "then": {
-          "state": {
-            "Name": "minecraft:dirt"
-          },
+          "state": "minecraft:dirt",
           "type": "minecraft:simple_state_provider"
         }
       }

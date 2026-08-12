@@ -36,9 +36,7 @@
         ],
         "predicate_type": "minecraft:any_of"
       },
-      "state": {
-        "Name": "minecraft:diamond_ore"
-      }
+      "state": "minecraft:diamond_ore"
     },
     {
       "target": {
@@ -76,9 +74,7 @@
         ],
         "predicate_type": "minecraft:any_of"
       },
-      "state": {
-        "Name": "minecraft:deepslate_diamond_ore"
-      }
+      "state": "minecraft:deepslate_diamond_ore"
     }
   ],
   "size": 4,

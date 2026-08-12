@@ -4,12 +4,7 @@
       "data": {
         "feature": {
           "block": {
-            "state": {
-              "Properties": {
-                "axis": "y"
-              },
-              "Name": "minecraft:basalt"
-            },
+            "state": "minecraft:basalt",
             "type": "minecraft:simple_state_provider"
           },
           "continue_through": {
@@ -66,12 +61,7 @@
       "data": {
         "feature": {
           "block": {
-            "state": {
-              "Properties": {
-                "axis": "y"
-              },
-              "Name": "minecraft:basalt"
-            },
+            "state": "minecraft:basalt",
             "type": "minecraft:simple_state_provider"
           },
           "continue_through": {

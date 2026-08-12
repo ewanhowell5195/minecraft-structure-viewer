@@ -1,6 +1,7 @@
 import fs from "node:fs"
 import { readZip, unzipEntry } from "../builtin/zip.js"
 import { readStructure } from "../../src/nbt.js"
+import { normStatesDeep } from "../../src/transforms.js"
 
 export function featureFilesFromZip(zipPath) {
   const files = new Map()
@@ -15,7 +16,7 @@ export function buildGenCtx(files, clientJarPath) {
   const featureByRel = new Map()
   for (const [rel, bytes] of files) {
     const m = rel.match(FEATURE_RE)
-    if (m) featureByRel.set(m[1] + "/" + m[2], JSON.parse(bytes.toString()))
+    if (m) featureByRel.set(m[1] + "/" + m[2], normStatesDeep(JSON.parse(bytes.toString())))
   }
   const placedByRel = new Map()
   let clientZip = null
@@ -23,7 +24,7 @@ export function buildGenCtx(files, clientJarPath) {
     clientZip = readZip(fs.readFileSync(clientJarPath))
     for (const [entry, e] of clientZip) {
       const m = entry.match(/^data\/([^/]+)\/worldgen\/placed_feature\/(.+)\.json$/)
-      if (m) placedByRel.set(m[1] + "/" + m[2], JSON.parse(Buffer.from(unzipEntry(e)).toString()))
+      if (m) placedByRel.set(m[1] + "/" + m[2], normStatesDeep(JSON.parse(Buffer.from(unzipEntry(e)).toString())))
     }
   }
   const nsPath = ref => ref.includes(":") ? ref.replace(":", "/") : "minecraft/" + ref

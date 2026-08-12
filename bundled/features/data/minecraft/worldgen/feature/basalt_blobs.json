@@ -1,13 +1,6 @@
 {
-  "target": {
-    "Name": "minecraft:netherrack"
-  },
-  "state": {
-    "Properties": {
-      "axis": "y"
-    },
-    "Name": "minecraft:basalt"
-  },
+  "target": "minecraft:netherrack",
+  "state": "minecraft:basalt",
   "radius": {
     "min_inclusive": 3,
     "max_inclusive": 7,

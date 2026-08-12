@@ -5,9 +5,7 @@
         "tag": "minecraft:base_stone_overworld",
         "predicate_type": "minecraft:tag_match"
       },
-      "state": {
-        "Name": "minecraft:clay"
-      }
+      "state": "minecraft:clay"
     }
   ],
   "size": 33,

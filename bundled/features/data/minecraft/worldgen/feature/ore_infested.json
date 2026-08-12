@@ -36,9 +36,7 @@
         ],
         "predicate_type": "minecraft:any_of"
       },
-      "state": {
-        "Name": "minecraft:infested_stone"
-      }
+      "state": "minecraft:infested_stone"
     },
     {
       "target": {
@@ -76,12 +74,7 @@
         ],
         "predicate_type": "minecraft:any_of"
       },
-      "state": {
-        "Properties": {
-          "axis": "y"
-        },
-        "Name": "minecraft:infested_deepslate"
-      }
+      "state": "minecraft:infested_deepslate"
     }
   ],
   "size": 9,

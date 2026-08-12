@@ -36,9 +36,7 @@
         ],
         "predicate_type": "minecraft:any_of"
       },
-      "state": {
-        "Name": "minecraft:emerald_ore"
-      }
+      "state": "minecraft:emerald_ore"
     },
     {
       "target": {
@@ -76,9 +74,7 @@
         ],
         "predicate_type": "minecraft:any_of"
       },
-      "state": {
-        "Name": "minecraft:deepslate_emerald_ore"
-      }
+      "state": "minecraft:deepslate_emerald_ore"
     }
   ],
   "size": 3,

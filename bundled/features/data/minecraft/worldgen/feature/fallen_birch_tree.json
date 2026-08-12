@@ -1,11 +1,6 @@
 {
   "trunk_provider": {
-    "state": {
-      "Properties": {
-        "axis": "y"
-      },
-      "Name": "minecraft:birch_log"
-    },
+    "state": "minecraft:birch_log",
     "type": "minecraft:simple_state_provider"
   },
   "log_length": {
@@ -20,15 +15,11 @@
       "block_provider": {
         "entries": [
           {
-            "data": {
-              "Name": "minecraft:red_mushroom"
-            },
+            "data": "minecraft:red_mushroom",
             "weight": 2
           },
           {
-            "data": {
-              "Name": "minecraft:brown_mushroom"
-            },
+            "data": "minecraft:brown_mushroom",
             "weight": 1
           }
         ],

@@ -1,11 +1,6 @@
 {
   "state_provider": {
-    "state": {
-      "Properties": {
-        "layers": "1"
-      },
-      "Name": "minecraft:snow"
-    },
+    "state": "minecraft:snow",
     "type": "minecraft:simple_state_provider"
   },
   "type": "minecraft:block_pile"

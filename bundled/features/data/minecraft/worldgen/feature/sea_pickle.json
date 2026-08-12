@@ -1,13 +1,7 @@
 {
   "to_place": {
     "source": {
-      "state": {
-        "Properties": {
-          "waterlogged": "true",
-          "pickles": "1"
-        },
-        "Name": "minecraft:sea_pickle"
-      },
+      "state": "minecraft:sea_pickle",
       "type": "minecraft:simple_state_provider"
     },
     "property": "pickles",

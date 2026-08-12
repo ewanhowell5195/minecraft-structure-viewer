@@ -5,9 +5,7 @@
         "block": "minecraft:netherrack",
         "predicate_type": "minecraft:block_match"
       },
-      "state": {
-        "Name": "minecraft:nether_gold_ore"
-      }
+      "state": "minecraft:nether_gold_ore"
     }
   ],
   "size": 10,

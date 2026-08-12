@@ -36,9 +36,7 @@
         ],
         "predicate_type": "minecraft:any_of"
       },
-      "state": {
-        "Name": "minecraft:iron_ore"
-      }
+      "state": "minecraft:iron_ore"
     },
     {
       "target": {
@@ -76,9 +74,7 @@
         ],
         "predicate_type": "minecraft:any_of"
       },
-      "state": {
-        "Name": "minecraft:deepslate_iron_ore"
-      }
+      "state": "minecraft:deepslate_iron_ore"
     }
   ],
   "size": 9,

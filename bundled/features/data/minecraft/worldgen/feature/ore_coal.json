@@ -36,9 +36,7 @@
         ],
         "predicate_type": "minecraft:any_of"
       },
-      "state": {
-        "Name": "minecraft:coal_ore"
-      }
+      "state": "minecraft:coal_ore"
     },
     {
       "target": {
@@ -76,9 +74,7 @@
         ],
         "predicate_type": "minecraft:any_of"
       },
-      "state": {
-        "Name": "minecraft:deepslate_coal_ore"
-      }
+      "state": "minecraft:deepslate_coal_ore"
     }
   ],
   "size": 17,

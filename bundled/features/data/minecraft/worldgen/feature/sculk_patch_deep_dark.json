@@ -14,12 +14,7 @@
     {
       "feature": {
         "to_place": {
-          "state": {
-            "Properties": {
-              "bloom": "false"
-            },
-            "Name": "minecraft:sculk_catalyst"
-          },
+          "state": "minecraft:sculk_catalyst",
           "type": "minecraft:simple_state_provider"
         },
         "type": "minecraft:simple_block"

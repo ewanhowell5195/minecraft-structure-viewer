@@ -6,45 +6,38 @@
           "entries": [
             {
               "data": {
-                "Properties": {
+                "properties": {
                   "waterlogged": "false",
                   "half": "lower",
                   "facing": "east"
                 },
-                "Name": "minecraft:small_dripleaf"
+                "id": "minecraft:small_dripleaf"
               },
               "weight": 1
             },
             {
               "data": {
-                "Properties": {
+                "properties": {
                   "waterlogged": "false",
                   "half": "lower",
                   "facing": "west"
                 },
-                "Name": "minecraft:small_dripleaf"
+                "id": "minecraft:small_dripleaf"
               },
               "weight": 1
             },
             {
-              "data": {
-                "Properties": {
-                  "waterlogged": "false",
-                  "half": "lower",
-                  "facing": "north"
-                },
-                "Name": "minecraft:small_dripleaf"
-              },
+              "data": "minecraft:small_dripleaf",
               "weight": 1
             },
             {
               "data": {
-                "Properties": {
+                "properties": {
                   "waterlogged": "false",
                   "half": "lower",
                   "facing": "south"
                 },
-                "Name": "minecraft:small_dripleaf"
+                "id": "minecraft:small_dripleaf"
               },
               "weight": 1
             }
@@ -78,11 +71,11 @@
             },
             "provider": {
               "state": {
-                "Properties": {
+                "properties": {
                   "waterlogged": "false",
                   "facing": "east"
                 },
-                "Name": "minecraft:big_dripleaf_stem"
+                "id": "minecraft:big_dripleaf_stem"
               },
               "type": "minecraft:simple_state_provider"
             }
@@ -91,12 +84,12 @@
             "height": 1,
             "provider": {
               "state": {
-                "Properties": {
+                "properties": {
                   "waterlogged": "false",
                   "tilt": "none",
                   "facing": "east"
                 },
-                "Name": "minecraft:big_dripleaf"
+                "id": "minecraft:big_dripleaf"
               },
               "type": "minecraft:simple_state_provider"
             }
@@ -144,11 +137,11 @@
             },
             "provider": {
               "state": {
-                "Properties": {
+                "properties": {
                   "waterlogged": "false",
                   "facing": "west"
                 },
-                "Name": "minecraft:big_dripleaf_stem"
+                "id": "minecraft:big_dripleaf_stem"
               },
               "type": "minecraft:simple_state_provider"
             }
@@ -157,12 +150,12 @@
             "height": 1,
             "provider": {
               "state": {
-                "Properties": {
+                "properties": {
                   "waterlogged": "false",
                   "tilt": "none",
                   "facing": "west"
                 },
-                "Name": "minecraft:big_dripleaf"
+                "id": "minecraft:big_dripleaf"
               },
               "type": "minecraft:simple_state_provider"
             }
@@ -210,11 +203,11 @@
             },
             "provider": {
               "state": {
-                "Properties": {
+                "properties": {
                   "waterlogged": "false",
                   "facing": "south"
                 },
-                "Name": "minecraft:big_dripleaf_stem"
+                "id": "minecraft:big_dripleaf_stem"
               },
               "type": "minecraft:simple_state_provider"
             }
@@ -223,12 +216,12 @@
             "height": 1,
             "provider": {
               "state": {
-                "Properties": {
+                "properties": {
                   "waterlogged": "false",
                   "tilt": "none",
                   "facing": "south"
                 },
-                "Name": "minecraft:big_dripleaf"
+                "id": "minecraft:big_dripleaf"
               },
               "type": "minecraft:simple_state_provider"
             }
@@ -275,27 +268,14 @@
               "type": "minecraft:weighted_list"
             },
             "provider": {
-              "state": {
-                "Properties": {
-                  "waterlogged": "false",
-                  "facing": "north"
-                },
-                "Name": "minecraft:big_dripleaf_stem"
-              },
+              "state": "minecraft:big_dripleaf_stem",
               "type": "minecraft:simple_state_provider"
             }
           },
           {
             "height": 1,
             "provider": {
-              "state": {
-                "Properties": {
-                  "waterlogged": "false",
-                  "tilt": "none",
-                  "facing": "north"
-                },
-                "Name": "minecraft:big_dripleaf"
-              },
+              "state": "minecraft:big_dripleaf",
               "type": "minecraft:simple_state_provider"
             }
           }

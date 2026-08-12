@@ -1,7 +1,7 @@
 {
   "cap_provider": {
     "state": {
-      "Properties": {
+      "properties": {
         "west": "true",
         "up": "true",
         "south": "true",
@@ -9,13 +9,13 @@
         "east": "true",
         "down": "false"
       },
-      "Name": "minecraft:red_mushroom_block"
+      "id": "minecraft:red_mushroom_block"
     },
     "type": "minecraft:simple_state_provider"
   },
   "stem_provider": {
     "state": {
-      "Properties": {
+      "properties": {
         "west": "true",
         "up": "false",
         "south": "true",
@@ -23,7 +23,7 @@
         "east": "true",
         "down": "false"
       },
-      "Name": "minecraft:mushroom_stem"
+      "id": "minecraft:mushroom_stem"
     },
     "type": "minecraft:simple_state_provider"
   },

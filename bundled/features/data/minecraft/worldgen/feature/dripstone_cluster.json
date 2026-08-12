@@ -1,15 +1,6 @@
 {
-  "base_block": {
-    "Name": "minecraft:dripstone_block"
-  },
-  "pointed_block": {
-    "Properties": {
-      "waterlogged": "false",
-      "vertical_direction": "up",
-      "thickness": "tip"
-    },
-    "Name": "minecraft:pointed_dripstone"
-  },
+  "base_block": "minecraft:dripstone_block",
+  "pointed_block": "minecraft:pointed_dripstone",
   "replaceable_blocks": "#minecraft:dripstone_replaceable_blocks",
   "floor_to_ceiling_search_range": 12,
   "height": {

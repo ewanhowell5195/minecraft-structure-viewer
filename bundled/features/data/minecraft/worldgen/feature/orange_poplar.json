@@ -1,11 +1,6 @@
 {
   "trunk_provider": {
-    "state": {
-      "Properties": {
-        "axis": "y"
-      },
-      "Name": "minecraft:poplar_log"
-    },
+    "state": "minecraft:poplar_log",
     "type": "minecraft:simple_state_provider"
   },
   "trunk_placer": {
@@ -21,14 +16,7 @@
     "type": "minecraft:poplar_trunk_placer"
   },
   "foliage_provider": {
-    "state": {
-      "Properties": {
-        "waterlogged": "false",
-        "persistent": "false",
-        "distance": "7"
-      },
-      "Name": "minecraft:orange_poplar_leaves"
-    },
+    "state": "minecraft:orange_poplar_leaves",
     "type": "minecraft:simple_state_provider"
   },
   "foliage_placer": {
@@ -84,9 +72,7 @@
           "type": "minecraft:not"
         },
         "then": {
-          "state": {
-            "Name": "minecraft:dirt"
-          },
+          "state": "minecraft:dirt",
           "type": "minecraft:simple_state_provider"
         }
       }

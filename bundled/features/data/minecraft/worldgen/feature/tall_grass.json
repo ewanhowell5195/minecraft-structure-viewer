@@ -1,11 +1,6 @@
 {
   "to_place": {
-    "state": {
-      "Properties": {
-        "half": "lower"
-      },
-      "Name": "minecraft:tall_grass"
-    },
+    "state": "minecraft:tall_grass",
     "type": "minecraft:simple_state_provider"
   },
   "type": "minecraft:simple_block"

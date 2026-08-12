@@ -1,8 +1,6 @@
 {
   "block": {
-    "state": {
-      "Name": "minecraft:glowstone"
-    },
+    "state": "minecraft:glowstone",
     "type": "minecraft:simple_state_provider"
   },
   "accepted_neighbors": "minecraft:glowstone",

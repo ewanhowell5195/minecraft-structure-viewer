@@ -1,11 +1,6 @@
 {
   "trunk_provider": {
-    "state": {
-      "Properties": {
-        "axis": "y"
-      },
-      "Name": "minecraft:mangrove_log"
-    },
+    "state": "minecraft:mangrove_log",
     "type": "minecraft:simple_state_provider"
   },
   "trunk_placer": {
@@ -27,14 +22,7 @@
     "type": "minecraft:upwards_branching_trunk_placer"
   },
   "foliage_provider": {
-    "state": {
-      "Properties": {
-        "waterlogged": "false",
-        "persistent": "false",
-        "distance": "7"
-      },
-      "Name": "minecraft:mangrove_leaves"
-    },
+    "state": "minecraft:mangrove_leaves",
     "type": "minecraft:simple_state_provider"
   },
   "foliage_placer": {
@@ -51,19 +39,12 @@
       "type": "minecraft:uniform"
     },
     "root_provider": {
-      "state": {
-        "Properties": {
-          "waterlogged": "false"
-        },
-        "Name": "minecraft:mangrove_roots"
-      },
+      "state": "minecraft:mangrove_roots",
       "type": "minecraft:simple_state_provider"
     },
     "above_root_placement": {
       "above_root_provider": {
-        "state": {
-          "Name": "minecraft:moss_carpet"
-        },
+        "state": "minecraft:moss_carpet",
         "type": "minecraft:simple_state_provider"
       },
       "above_root_placement_chance": 0.5
@@ -75,12 +56,7 @@
         "minecraft:muddy_mangrove_roots"
       ],
       "muddy_roots_provider": {
-        "state": {
-          "Properties": {
-            "axis": "y"
-          },
-          "Name": "minecraft:muddy_mangrove_roots"
-        },
+        "state": "minecraft:muddy_mangrove_roots",
         "type": "minecraft:simple_state_provider"
       },
       "max_root_width": 8,
@@ -106,13 +82,13 @@
       "block_provider": {
         "source": {
           "state": {
-            "Properties": {
+            "properties": {
               "waterlogged": "false",
               "stage": "0",
               "hanging": "true",
               "age": "0"
             },
-            "Name": "minecraft:mangrove_propagule"
+            "id": "minecraft:mangrove_propagule"
           },
           "type": "minecraft:simple_state_provider"
         },
@@ -147,9 +123,7 @@
           "type": "minecraft:not"
         },
         "then": {
-          "state": {
-            "Name": "minecraft:dirt"
-          },
+          "state": "minecraft:dirt",
           "type": "minecraft:simple_state_provider"
         }
       }

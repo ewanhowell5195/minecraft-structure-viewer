@@ -1,19 +1,8 @@
 {
-  "valid_base_block": {
-    "Name": "minecraft:warped_nylium"
-  },
-  "stem_state": {
-    "Properties": {
-      "axis": "y"
-    },
-    "Name": "minecraft:warped_stem"
-  },
-  "hat_state": {
-    "Name": "minecraft:warped_wart_block"
-  },
-  "decor_state": {
-    "Name": "minecraft:shroomlight"
-  },
+  "valid_base_block": "minecraft:warped_nylium",
+  "stem_state": "minecraft:warped_stem",
+  "hat_state": "minecraft:warped_wart_block",
+  "decor_state": "minecraft:shroomlight",
   "replaceable_blocks": {
     "blocks": [
       "minecraft:oak_sapling",

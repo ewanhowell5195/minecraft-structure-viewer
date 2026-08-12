@@ -36,12 +36,7 @@
         ],
         "predicate_type": "minecraft:any_of"
       },
-      "state": {
-        "Properties": {
-          "lit": "false"
-        },
-        "Name": "minecraft:redstone_ore"
-      }
+      "state": "minecraft:redstone_ore"
     },
     {
       "target": {
@@ -79,12 +74,7 @@
         ],
         "predicate_type": "minecraft:any_of"
       },
-      "state": {
-        "Properties": {
-          "lit": "false"
-        },
-        "Name": "minecraft:deepslate_redstone_ore"
-      }
+      "state": "minecraft:deepslate_redstone_ore"
     }
   ],
   "size": 8,

@@ -1,8 +1,6 @@
 {
   "state_provider": {
-    "state": {
-      "Name": "minecraft:gravel"
-    },
+    "state": "minecraft:gravel",
     "type": "minecraft:simple_state_provider"
   },
   "target": {

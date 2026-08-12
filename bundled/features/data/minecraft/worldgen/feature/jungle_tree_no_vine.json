@@ -1,11 +1,6 @@
 {
   "trunk_provider": {
-    "state": {
-      "Properties": {
-        "axis": "y"
-      },
-      "Name": "minecraft:jungle_log"
-    },
+    "state": "minecraft:jungle_log",
     "type": "minecraft:simple_state_provider"
   },
   "trunk_placer": {
@@ -15,14 +10,7 @@
     "type": "minecraft:straight_trunk_placer"
   },
   "foliage_provider": {
-    "state": {
-      "Properties": {
-        "waterlogged": "false",
-        "persistent": "false",
-        "distance": "7"
-      },
-      "Name": "minecraft:jungle_leaves"
-    },
+    "state": "minecraft:jungle_leaves",
     "type": "minecraft:simple_state_provider"
   },
   "foliage_placer": {
@@ -47,9 +35,7 @@
           "type": "minecraft:not"
         },
         "then": {
-          "state": {
-            "Name": "minecraft:dirt"
-          },
+          "state": "minecraft:dirt",
           "type": "minecraft:simple_state_provider"
         }
       }

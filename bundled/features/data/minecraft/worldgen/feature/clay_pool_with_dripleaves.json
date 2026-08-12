@@ -1,9 +1,7 @@
 {
   "replaceable": "#minecraft:lush_ground_replaceable",
   "ground_state": {
-    "state": {
-      "Name": "minecraft:clay"
-    },
+    "state": "minecraft:clay",
     "type": "minecraft:simple_state_provider"
   },
   "vegetation_feature": {

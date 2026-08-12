@@ -1,11 +1,6 @@
 {
   "trunk_provider": {
-    "state": {
-      "Properties": {
-        "axis": "y"
-      },
-      "Name": "minecraft:spruce_log"
-    },
+    "state": "minecraft:spruce_log",
     "type": "minecraft:simple_state_provider"
   },
   "trunk_placer": {
@@ -15,14 +10,7 @@
     "type": "minecraft:straight_trunk_placer"
   },
   "foliage_provider": {
-    "state": {
-      "Properties": {
-        "waterlogged": "false",
-        "persistent": "false",
-        "distance": "7"
-      },
-      "Name": "minecraft:spruce_leaves"
-    },
+    "state": "minecraft:spruce_leaves",
     "type": "minecraft:simple_state_provider"
   },
   "foliage_placer": {
@@ -53,9 +41,7 @@
           "type": "minecraft:not"
         },
         "then": {
-          "state": {
-            "Name": "minecraft:dirt"
-          },
+          "state": "minecraft:dirt",
           "type": "minecraft:simple_state_provider"
         }
       }

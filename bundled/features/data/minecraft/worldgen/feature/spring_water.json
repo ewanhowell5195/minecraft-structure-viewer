@@ -1,9 +1,9 @@
 {
   "state": {
-    "Properties": {
+    "properties": {
       "falling": "true"
     },
-    "Name": "minecraft:water"
+    "id": "minecraft:water"
   },
   "valid_blocks": [
     "minecraft:stone",
