@@ -116,7 +116,6 @@ async function main() {
 // already offered under Structures (extracted builtins)
 const STRUCTURE_DUPES = [
   "bonus_chest",
-  "desert_well",
   "monster_room",
   "end_gateway_delayed",
   "end_gateway_return",

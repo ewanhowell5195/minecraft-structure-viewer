@@ -39,7 +39,6 @@ import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.level.chunk.PalettedContainerFactory;
 import net.minecraft.world.level.chunk.UpgradeData;
 import net.minecraft.world.level.levelgen.feature.BonusChestFeature;
-import net.minecraft.world.level.levelgen.feature.DesertWellFeature;
 import net.minecraft.world.level.levelgen.feature.EndGatewayFeature;
 import net.minecraft.world.level.levelgen.feature.EndPlatformFeature;
 import net.minecraft.world.level.levelgen.feature.EndPodiumFeature;
@@ -294,7 +293,7 @@ public class BuiltinExtract {
     root.put("entities", entities);
     root.putInt("DataVersion", SharedConstants.getCurrentVersion().dataVersion().version());
 
-    Path file = OUT.resolve("data/minecraft/structure/builtin/" + name + ".nbt");
+    Path file = OUT.resolve("data/minecraft/structure/" + name + ".nbt");
     Files.createDirectories(file.getParent());
     NbtIo.writeCompressed(root, file);
 
@@ -323,7 +322,7 @@ public class BuiltinExtract {
         json.append("]");
       }
       json.append("\n}\n");
-      Files.writeString(OUT.resolve("data/minecraft/structure/builtin/" + name + ".rand.json"), json.toString());
+      Files.writeString(OUT.resolve("data/minecraft/structure/" + name + ".rand.json"), json.toString());
     }
 
     System.out.println("[builtin] " + name + ": " + blocks.size() + " blocks, " + bb.getXSpan() + "x" + bb.getYSpan() + "x" + bb.getZSpan()
@@ -422,7 +421,7 @@ public class BuiltinExtract {
       return localY == 0 ? "collapsed_roof" : localY == -1 ? "stair_variant" : null;
     });
     masks.put("suspicious_sand", new ArrayList<>(keep[0].getPotentialSuspiciousSandWorldPositions()));
-    write("desert_pyramid", cap, null, false, masks);
+    write("builtin/desert_pyramid", cap, null, false, masks);
   }
 
   static void jungleTemple() throws Exception {
@@ -434,7 +433,7 @@ public class BuiltinExtract {
       piece.postProcess(c.level(), null, null, rand, WORLD_BB, new ChunkPos(0, 0), BlockPos.ZERO);
       return piece;
     }, masks, p -> "moss");
-    write("jungle_temple", cap, null, false, masks);
+    write("builtin/jungle_temple", cap, null, false, masks);
   }
 
   static void swampHut() throws Exception {
@@ -454,24 +453,7 @@ public class BuiltinExtract {
     BlockPos wp = southWorldPos(bb, 2, 2, 5);
     cap.entities.add(entityTag("minecraft:witch", wp.getX() + 0.5, wp.getY(), wp.getZ() + 0.5));
     cap.entities.add(entityTag("minecraft:cat", wp.getX() + 0.5, wp.getY(), wp.getZ() + 0.5));
-    write("swamp_hut", cap, null, false);
-  }
-
-  static void desertWell() throws Exception {
-    Capture cap = new Capture();
-    cap.random = runA();
-    cap.groundY = 0;
-    cap.ground = Blocks.SAND.defaultBlockState();
-    BlockPos origin = new BlockPos(0, 0, 0);
-    new DesertWellFeature().place(cap.level(), null, cap.random, origin);
-    // the canonical random put both suspicious sands in the centre column;
-    // restore them and mask the five water columns for the fixer (it re-rolls
-    // one at depth 1 and one at depth 2, like the game)
-    BlockPos well = origin.below(); // the feature probes down one into the sand
-    cap.set(well.below(1), Blocks.SAND.defaultBlockState());
-    cap.set(well.below(2), Blocks.SANDSTONE.defaultBlockState());
-    List<BlockPos> cols = new ArrayList<>(List.of(well, well.east(), well.south(), well.west(), well.north()));
-    write("desert_well", cap, null, false, new LinkedHashMap<>(Map.of("well_water", cols)));
+    write("builtin/swamp_hut", cap, null, false);
   }
 
   static void bonusChest() throws Exception {
@@ -486,13 +468,16 @@ public class BuiltinExtract {
       BlockState g = cap.world.get(below);
       if (g != null && !cap.placed.containsKey(below)) cap.placed.put(below, g);
     }
-    write("bonus_chest", cap, null, false);
+    write("features/bonus_chest", cap, null, false);
   }
 
   // dungeon (MonsterRoomFeature): a Feature whose walls are pre-existing
   // terrain. each size variant is extracted inside a stone pocket with one
   // doorway hole; the viewer's generator picks the variant and re-rolls the
   // floor, spawner mob and chests per seed like the game
+  // x/y offsets of the cave mouth on a wall, relative to the wall's centre
+  static final int[][] DUNGEON_MOUTH = { { -1, 0 }, { 0, 0 }, { 1, 0 }, { 0, 1 }, { 1, 1 }, { 1, 2 } };
+
   static void dungeon(int xs, int zs) throws Exception {
     int xr = xs - 2, zr = zs - 2; // the nextInt(2) rolls behind each size
     Map<String, List<BlockPos>> masks = new LinkedHashMap<>();
@@ -500,16 +485,26 @@ public class BuiltinExtract {
       rand.script(xr, zr);
       if (rand.boolVal) rand.intVal = 1; // divergent run: floor rolls mossy
       c.fillWorld(-xs - 2, -2, -zs - 2, xs + 2, 5, zs + 2, Blocks.STONE.defaultBlockState());
-      // one wall opening so the hole-count gate passes (1..5 needed)
-      c.world.put(new BlockPos(xs + 1, 0, 0), Blocks.AIR.defaultBlockState());
-      c.world.put(new BlockPos(xs + 1, 1, 0), Blocks.AIR.defaultBlockState());
+      // the feature never carves an opening: ring cells that are already air
+      // survive the wall pass untouched, so the doorway is whatever a cave had
+      // eaten. this is a cave mouth clipping the north wall, widest at the
+      // floor and tapering up. only dy 0 cells whose neighbour above is also
+      // air count toward the 1..5 gate, so this scores 2
+      for (int[] cell : DUNGEON_MOUTH) {
+        c.world.put(new BlockPos(cell[0], cell[1], -zs - 1), Blocks.AIR.defaultBlockState());
+      }
       if (!new net.minecraft.world.level.levelgen.feature.MonsterRoomFeature().place(c.level(), null, rand, BlockPos.ZERO))
         throw new IllegalStateException("dungeon refused to place");
-      // the untouched stone ceiling caps the room like the cave roof in game
-      c.includeWorld(-xs - 1, 4, -zs - 1, xs + 1, 4, zs + 1);
+      // ring cells that were already air are the ones the feature leaves alone,
+      // so nothing records them: write them out explicitly or the doorway ships
+      // as absent cells that placing the structure would never carve
+      for (int[] cell : DUNGEON_MOUTH) {
+        BlockPos p = new BlockPos(cell[0], cell[1], -zs - 1);
+        if (c.level().getBlockState(p).isAir()) c.set(p, Blocks.CAVE_AIR.defaultBlockState());
+      }
       return null;
     }, masks, p -> p.getY() == -1 ? "floor" : null);
-    write("dungeon/" + (xs * 2 + 1) + "x" + (zs * 2 + 1), cap, null, false, masks);
+    write("features/dungeon/" + (xs * 2 + 1) + "x" + (zs * 2 + 1), cap, null, false, masks);
   }
 
   static void buriedTreasure() throws Exception {
@@ -529,8 +524,7 @@ public class BuiltinExtract {
       cap.placed.put(chestPos, cap.placed.get(chestPos)
         .setValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.HORIZONTAL_FACING, Direction.NORTH));
     }
-    cap.includeWorld(-2, -4, -2, 2, -1, 2);
-    write("buried_treasure", cap, null, false);
+    write("builtin/buried_treasure", cap, null, false);
   }
 
   // ---------------------------------------------------------- nether fortress
@@ -549,7 +543,7 @@ public class BuiltinExtract {
     cap.random = runA();
     cap.groundY = piece.getBoundingBox().minY(); // support pillars stop at the box
     piece.postProcess(cap.level(), null, null, cap.random, WORLD_BB, new ChunkPos(0, 0), BlockPos.ZERO);
-    write("nether_fortress/" + name, cap, piece.getBoundingBox(), false);
+    write("builtin/nether_fortress/" + name, cap, piece.getBoundingBox(), false);
   }
 
   static void netherFortress() throws Exception {
@@ -588,7 +582,7 @@ public class BuiltinExtract {
     } catch (Exception e) {
       System.out.println("[builtin] " + name + " postProcess stopped early: " + e);
     }
-    write("mineshaft/" + name, cap, null, false);
+    write("builtin/mineshaft/" + name, cap, null, false);
   }
 
   // only the crossings are extracted: the corridors and the room are random
@@ -633,7 +627,7 @@ public class BuiltinExtract {
     CannedRandom rand = new CannedRandom(0.9f, false);
     rand.script(script);
     StructurePiece piece = make.make(rand);
-    write("stronghold/" + name, cap, piece.getBoundingBox(), false, masks);
+    write("builtin/stronghold/" + name, cap, piece.getBoundingBox(), false, masks);
   }
 
   static void stronghold() throws Exception {
@@ -670,13 +664,13 @@ public class BuiltinExtract {
   static void endPlatform() throws Exception {
     Capture cap = new Capture();
     EndPlatformFeature.createEndPlatform(cap.level(), new BlockPos(0, 0, 0), false);
-    write("end/platform", cap, null, false);
+    write("features/end/platform", cap, null, false);
   }
 
   static void endGateway() throws Exception {
     Capture cap = new Capture();
     new EndGatewayFeature(Optional.empty(), false).place(cap.level(), null, new CannedRandom(0.9f), new BlockPos(0, 0, 0));
-    write("end/gateway", cap, null, false);
+    write("features/end/gateway", cap, null, false);
   }
 
   // the game builds the platform chunk by chunk; running the feature once
@@ -689,7 +683,7 @@ public class BuiltinExtract {
         feature.place(cap.level(), null, cap.random, new BlockPos(cx * 16, 0, cz * 16));
       }
     }
-    write("void_start_platform", cap, null, false);
+    write("features/void_start_platform", cap, null, false);
   }
 
   static void exitPortal(boolean active) throws Exception {
@@ -698,7 +692,7 @@ public class BuiltinExtract {
     new EndPodiumFeature(active).place(cap.level(), null, new CannedRandom(0.9f), origin);
     // the first dragon fight leaves the egg on the pillar (EnderDragonFight)
     if (active) cap.set(origin.above(4), Blocks.DRAGON_EGG.defaultBlockState());
-    write(active ? "end/exit_portal/active" : "end/exit_portal/inactive", cap, null, false);
+    write(active ? "features/end/exit_portal/active" : "features/end/exit_portal/inactive", cap, null, false);
   }
 
   public static void main(String[] args) throws Exception {
@@ -712,7 +706,6 @@ public class BuiltinExtract {
     desertPyramid();
     jungleTemple();
     swampHut();
-    desertWell();
     bonusChest();
     buriedTreasure();
     dungeon(2, 2);

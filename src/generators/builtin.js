@@ -13,7 +13,7 @@ export const GENERATED = {
 }
 for (let size = 0; size < 10; size++) {
   const caged = size === 1 || size === 2 ? "_caged" : ""
-  GENERATED[`minecraft/builtin/end/spike_${76 + size * 3}${caged}`] = makeEndSpikeSize(size)
+  GENERATED[`minecraft/features/end/spike_${76 + size * 3}${caged}`] = makeEndSpikeSize(size)
 }
 for (const type of ["normal", "mesa"]) {
   for (const len of [10, 15, 20]) {
@@ -31,7 +31,7 @@ const AIRISH = /(^|:)(cave_)?air$/
 export async function readMasks(name) {
   const packs = usePacks()
   const lib = await loadLibrary()
-  const buf = await lib.readFile(`data/minecraft/structure/builtin/${name}.rand.json`, packs.assets.value)
+  const buf = await lib.readFile(`data/minecraft/structure/${name}.rand.json`, packs.assets.value)
   return buf ? JSON.parse(new TextDecoder().decode(buf)) : null
 }
 
@@ -95,27 +95,32 @@ function fixDesertPyramid(s, masks, rand) {
   sus(masks.collapsed_roof[Math.floor(rand() * masks.collapsed_roof.length)])
 }
 
-// ---- desert well
-
-function fixDesertWell(s, masks, rand) {
-  const cells = cellMap(s), stateFor = statePicker(s)
-  for (const depth of [1, 2]) {
-    const [x, y, z] = masks.well_water[Math.floor(rand() * masks.well_water.length)]
-    setCell(s, cells, stateFor, [x, y - depth, z], "minecraft:suspicious_sand", undefined,
-      { LootTable: "minecraft:archaeology/desert_well" })
-  }
-}
-
 // ---- dungeon (MonsterRoomFeature)
 
 const DUNGEON_MOBS = ["minecraft:skeleton", "minecraft:zombie", "minecraft:zombie", "minecraft:spider"]
 
-function fixDungeon(s, masks, rand) {
+// a cave mouth as columns of open wall: 1-3 wide, tallest at one of them and
+// tapering off either side. the floor row is never touched, since the feature
+// refuses to place unless the whole floor line is solid
+export function dungeonMouth(rand, sy) {
+  const side = ["north", "east", "south", "west"][Math.floor(rand() * 4)]
+  const w = 1 + Math.floor(rand() * 3)
+  const peak = Math.floor(rand() * w)
+  const top = 2 + Math.floor(rand() * 3)
+  const cells = []
+  for (let i = 0; i < w; i++) {
+    const h = Math.max(1, Math.min(sy - 1, top - Math.abs(i - peak)))
+    for (let y = 1; y <= h; y++) cells.push([i - (w >> 1), y])
+  }
+  return { side, cells }
+}
+
+function fixDungeon(s, masks, rand, seed) {
   const cells = cellMap(s), stateFor = statePicker(s)
   for (const p of masks.floor) {
     setCell(s, cells, stateFor, p, Math.floor(rand() * 4) !== 0 ? "minecraft:mossy_cobblestone" : "minecraft:cobblestone")
   }
-  const [sx, , sz] = s.size
+  const [sx, sy, sz] = s.size
   const ox = (sx - 1) / 2, oz = (sz - 1) / 2, xr = (sx - 3) / 2, zr = (sz - 3) / 2
   const STEP = { north: [0, -1], south: [0, 1], west: [-1, 0], east: [1, 0] }
   const CW = { north: "east", east: "south", south: "west", west: "north" }
@@ -142,6 +147,21 @@ function fixDungeon(s, masks, rand) {
     if (solidRender(at(p, f))) f = CW[f]
     if (solidRender(at(p, f))) f = OPP[f]
     return f
+  }
+  // the capture keeps its own mouth on the north wall, so seed 0 always loads
+  // that one; a re-roll walls it up and eats a fresh one into a random side.
+  // only the ring is scanned, so the room's own air never counts
+  if (seed) {
+    const wallCell = (d, t, y) => d === "north" ? [ox + t, y, 0]
+      : d === "east" ? [sx - 1, y, oz + t]
+      : d === "south" ? [ox - t, y, sz - 1]
+      : [0, y, oz - t]
+    // walls are always plain cobblestone; only the floor row rolls mossy
+    for (let y = 1; y < sy; y++) for (let x = 0; x < sx; x++) {
+      if (empty([x, y, 0])) setCell(s, cells, stateFor, [x, y, 0], "minecraft:cobblestone")
+    }
+    const { side, cells: mouth } = dungeonMouth(rand, sy)
+    for (const [t, y] of mouth) setCell(s, cells, stateFor, wallCell(side, t, y), "minecraft:cave_air")
   }
   for (let attempt = 0; attempt < 2; attempt++) {
     for (let i = 0; i < 3; i++) {
@@ -176,13 +196,12 @@ function fixDungeon(s, masks, rand) {
 }
 
 const FIXERS = {
-  "minecraft/builtin/jungle_temple": ["jungle_temple", fixJungleTemple],
-  "minecraft/builtin/desert_pyramid": ["desert_pyramid", fixDesertPyramid],
-  "minecraft/builtin/desert_well": ["desert_well", fixDesertWell],
-  "minecraft/builtin/dungeon/5x5": ["dungeon/5x5", fixDungeon],
-  "minecraft/builtin/dungeon/7x5": ["dungeon/7x5", fixDungeon],
-  "minecraft/builtin/dungeon/5x7": ["dungeon/5x7", fixDungeon],
-  "minecraft/builtin/dungeon/7x7": ["dungeon/7x7", fixDungeon]
+  "minecraft/builtin/jungle_temple": ["builtin/jungle_temple", fixJungleTemple],
+  "minecraft/builtin/desert_pyramid": ["builtin/desert_pyramid", fixDesertPyramid],
+  "minecraft/features/dungeon/5x5": ["features/dungeon/5x5", fixDungeon],
+  "minecraft/features/dungeon/7x5": ["features/dungeon/7x5", fixDungeon],
+  "minecraft/features/dungeon/5x7": ["features/dungeon/5x7", fixDungeon],
+  "minecraft/features/dungeon/7x7": ["features/dungeon/7x7", fixDungeon]
 }
 
 // applied by every load of a builtin structure (fresh roll each time)
@@ -190,7 +209,7 @@ export async function fixBuiltin(rel, structure, seed = (Math.random() * 0x10000
   const entry = FIXERS[rel]
   if (!entry) return structure
   const masks = await readMasks(entry[0])
-  if (masks) entry[1](structure, masks, rnd(seed))
+  if (masks) entry[1](structure, masks, rnd(seed), seed)
   return structure
 }
 
@@ -201,15 +220,15 @@ export const rerollGen = rel => async (loadStruct, { seed } = {}) => {
 
 export const runJungleTemple = rerollGen("minecraft/builtin/jungle_temple")
 export const runDesertPyramid = rerollGen("minecraft/builtin/desert_pyramid")
-export const runDesertWell = rerollGen("minecraft/builtin/desert_well")
 
 // the dungeon also re-rolls its size, like the game's two nextInt(2) calls
 export async function runDungeon(loadStruct, { seed } = {}) {
-  const rand = rnd(seed ?? (Math.random() * 0x100000000) >>> 0)
+  const rolled = seed ?? (Math.random() * 0x100000000) >>> 0
+  const rand = rnd(rolled)
   const size = `${Math.floor(rand() * 2) * 2 + 5}x${Math.floor(rand() * 2) * 2 + 5}`
-  const rel = `minecraft/builtin/dungeon/${size}`
+  const rel = `minecraft/features/dungeon/${size}`
   const s = await loadStruct(rel.replace(/^minecraft\//, ""))
-  const masks = await readMasks(`dungeon/${size}`)
-  if (masks) fixDungeon(s, masks, rand)
+  const masks = await readMasks(`features/dungeon/${size}`)
+  if (masks) fixDungeon(s, masks, rand, rolled)
   return { structure: s, maxDepth: 1 }
 }

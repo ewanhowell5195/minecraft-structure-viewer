@@ -107,7 +107,7 @@ export async function runStronghold(loadStruct, { maxDepth = Infinity, seed } = 
   for (const name of NBTS) {
     tpl[name] = await loadStruct("builtin/stronghold/" + name)
     if (!tpl[name]) return { structure: combine([]), maxDepth: 0 }
-    masks[name] = (await readMasks("stronghold/" + name))?.stone ?? []
+    masks[name] = (await readMasks("builtin/stronghold/" + name))?.stone ?? []
   }
 
   // whole-layout retry until a portal room places (StrongholdStructure)

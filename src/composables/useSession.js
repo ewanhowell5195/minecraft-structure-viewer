@@ -13,7 +13,7 @@ import { AIR, EMPTY, JIGSAW, mix, parseState, poolTemplates, rand32, rnd } from 
 import { hasDataMarkers, processDataMarkers } from "../markers.js"
 import { applyProcessors, seedFor } from "../processors.js"
 import { runJigsaw } from "../jigsaw.js"
-import { mineshaftPieceGens, rerollGen, runDesertPyramid, runDesertWell, runDungeon, runEndCity, runEndSpikes, runEndSpikesActive, runFortress, runIgloo, runJungleTemple, runMansion, runMineshaft, runMineshaftMesa, runMonument, runStronghold } from "../generators/index.js"
+import { mineshaftPieceGens, rerollGen, runDesertPyramid, runDungeon, runEndCity, runEndSpikes, runEndSpikesActive, runFortress, runIgloo, runJungleTemple, runMansion, runMineshaft, runMineshaftMesa, runMonument, runStronghold } from "../generators/index.js"
 import { PROC } from "../proc.js"
 
 // level is 0-based (the UI shows level + 1). the base is seedless; a seed rolls
@@ -98,10 +98,10 @@ async function loadFeature(ref, seed) {
 
 const generators = {
   igloo: runIgloo, end_city: runEndCity, mansion: runMansion,
-  jungle_temple: runJungleTemple, desert_pyramid: runDesertPyramid, desert_well: runDesertWell, dungeon: runDungeon,
-  dungeon_7x5: rerollGen("minecraft/builtin/dungeon/7x5"),
-  dungeon_5x7: rerollGen("minecraft/builtin/dungeon/5x7"),
-  dungeon_7x7: rerollGen("minecraft/builtin/dungeon/7x7"),
+  jungle_temple: runJungleTemple, desert_pyramid: runDesertPyramid, dungeon: runDungeon,
+  dungeon_7x5: rerollGen("minecraft/features/dungeon/7x5"),
+  dungeon_5x7: rerollGen("minecraft/features/dungeon/5x7"),
+  dungeon_7x7: rerollGen("minecraft/features/dungeon/7x7"),
   fortress: runFortress, end_spikes: runEndSpikes, end_spikes_active: runEndSpikesActive, stronghold: runStronghold,
   mineshaft: runMineshaft, mineshaft_mesa: runMineshaftMesa, monument: runMonument,
   ...mineshaftPieceGens

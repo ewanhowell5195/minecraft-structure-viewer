@@ -1100,34 +1100,6 @@ Object.assign(TYPES, {
     world.set(ox, oy, oz, { Name: "minecraft:spawner" })
   },
 
-  async desert_well(world, json, rand, resolvePlaced, ox, oy, oz) {
-    const SANDSTONE = { Name: "minecraft:sandstone" }
-    const SLAB = { Name: "minecraft:sandstone_slab", Properties: { type: "bottom", waterlogged: "false" } }
-    const WATER = { Name: "minecraft:water", Properties: { level: "0" } }
-    for (let dy = -2; dy <= 0; dy++) for (let dx = -2; dx <= 2; dx++) for (let dz = -2; dz <= 2; dz++) {
-      world.set(ox + dx, oy + dy, oz + dz, SANDSTONE)
-    }
-    world.set(ox, oy, oz, WATER)
-    for (const n of HORIZ) world.set(ox + DIR[n][0], oy, oz + DIR[n][2], WATER)
-    world.set(ox, oy - 1, oz, { Name: "minecraft:sand" })
-    for (const n of HORIZ) world.set(ox + DIR[n][0], oy - 1, oz + DIR[n][2], { Name: "minecraft:sand" })
-    for (let dx = -2; dx <= 2; dx++) for (let dz = -2; dz <= 2; dz++) {
-      if (dx === -2 || dx === 2 || dz === -2 || dz === 2) world.set(ox + dx, oy + 1, oz + dz, SANDSTONE)
-    }
-    for (const [dx, dz] of [[2, 0], [-2, 0], [0, 2], [0, -2]]) world.set(ox + dx, oy + 1, oz + dz, SLAB)
-    for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) {
-      world.set(ox + dx, oy + 4, oz + dz, dx === 0 && dz === 0 ? SANDSTONE : SLAB)
-    }
-    for (let dy = 1; dy <= 3; dy++) for (const [dx, dz] of [[-1, -1], [-1, 1], [1, -1], [1, 1]]) {
-      world.set(ox + dx, oy + dy, oz + dz, SANDSTONE)
-    }
-    const spots = [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]
-    for (const depth of [1, 2]) {
-      const [dx, dz] = spots[nextInt(rand, spots.length)]
-      world.set(ox + dx, oy - depth, oz + dz, { Name: "minecraft:suspicious_sand", Properties: { dusted: "0" } })
-    }
-  },
-
   async end_gateway(world, json, rand, resolvePlaced, ox, oy, oz) {
     for (let dx = -1; dx <= 1; dx++) for (let dy = -2; dy <= 2; dy++) for (let dz = -1; dz <= 1; dz++) {
       const sameX = dx === 0, sameY = dy === 0, sameZ = dz === 0

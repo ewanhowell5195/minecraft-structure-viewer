@@ -1,7 +1,7 @@
 export { runIgloo } from "./igloo.js"
 export { runEndCity } from "./endcity.js"
 export { runMansion } from "./mansion.js"
-export { fixBuiltin, rerollGen, runDesertPyramid, runDesertWell, runDungeon, runJungleTemple } from "./builtin.js"
+export { fixBuiltin, rerollGen, runDesertPyramid, runDungeon, runJungleTemple } from "./builtin.js"
 export { runFortress } from "./fortress.js"
 export { runEndSpikes, runEndSpikesActive } from "./endspikes.js"
 export { runStronghold } from "./stronghold.js"
