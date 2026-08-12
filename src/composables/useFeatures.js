@@ -180,6 +180,14 @@ async function resolvePlaced(ref) {
   return readFeature(rel)
 }
 
+async function resolvePlacedRel(ref) {
+  const rel = nsPath(ref)
+  const placed = await readJson(`data/${rel.replace("/", "/worldgen/placed_feature/")}.json`)
+  const inner = placed?.feature
+  if (typeof inner === "string") return nsPath(inner)
+  return placed ? null : rel
+}
+
 async function resolveFeatureRef(ref) {
   if (ref == null) return null
   if (typeof ref === "object") return ref.type === undefined && ref.feature !== undefined ? resolveFeatureRef(ref.feature) : ref
@@ -207,5 +215,5 @@ const grassBiome = rel => biomes[rel] ?? null
 const advVocab = () => blockVocab
 
 export function useFeatures() {
-  return { state: readonly(state), stateMut: state, refresh, computeAdvIndex, advVocab, readFeature, resolvePlaced, loadProcessors, filteredNames, visibleNames, defaultSeed, isStatic, has, folderOf, grassBiome }
+  return { state: readonly(state), stateMut: state, refresh, computeAdvIndex, advVocab, readFeature, resolvePlaced, resolvePlacedRel, loadProcessors, filteredNames, visibleNames, defaultSeed, isStatic, has, folderOf, grassBiome }
 }

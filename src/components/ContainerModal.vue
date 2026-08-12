@@ -78,10 +78,11 @@ function close() {
 }
 
 const structureApi = useStructure()
-function loadPoolStructure(rel) {
+function loadPoolEntry(p) {
   container.close()
   if (walk.state.on) walk.exit()
-  structureApi.loadVanilla(rel)
+  if (p.feature) structureApi.loadFeature(p.feature)
+  else structureApi.loadVanilla(p.rel)
 }
 
 const poolLeaf = label => label.startsWith(state.poolId + "/") ? label.slice(state.poolId.length + 1) : label
@@ -420,7 +421,7 @@ watch(() => [state.open, state.stacks, state.gui], () => {
               </div>
               <div v-for="(p, i) in state.poolEntries ?? []" :key="i" class="item-row pe"
                 :class="{ clickable: p.clickable }" :title="p.clickable ? 'Load ' + p.label : ''"
-                @click="p.clickable && loadPoolStructure(p.rel)">
+                @click="p.clickable && loadPoolEntry(p)">
                 <span class="nm mono-nm">{{ poolLeaf(p.label) }}</span>
                 <span class="meter"><i :style="{ width: Math.max(p.pct, 1.5) + '%' }"></i></span>
                 <span class="pctv">{{ p.pct >= 99.95 ? "100" : p.pct.toFixed(1) }}%</span>

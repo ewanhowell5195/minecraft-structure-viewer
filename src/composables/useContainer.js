@@ -6,6 +6,7 @@ import { useScene } from "./useScene.js"
 import { useBuild } from "./useBuild.js"
 import { useSlicers } from "./useSlicers.js"
 import { useStructures } from "./useStructures.js"
+import { useFeatures } from "./useFeatures.js"
 import { readLootTable, readTrialSpawnerConfig, rollLoot, sampleTable, stackKey, prettyName, isInspectable } from "../loot.js"
 import { parseState } from "../transforms.js"
 import { useBooks } from "./useBooks.js"
@@ -183,7 +184,7 @@ async function loadPoolEntries(poolId) {
       if (type === "list_pool_element") {
         for (const c of el.elements ?? []) collect(c, weight)
       } else if (type === "feature_pool_element") {
-        out.push({ label: "feature: " + stripNs(el.feature), weight })
+        out.push({ label: "feature: " + stripNs(el.feature), placed: typeof el.feature === "string" ? el.feature : null, weight })
       } else if (typeof el?.location === "string") {
         out.push({ label: stripNs(el.location), rel: el.location.replace(":", "/"), weight })
       } else {
@@ -193,11 +194,17 @@ async function loadPoolEntries(poolId) {
     for (const e of json.elements ?? []) collect(e.element, e.weight ?? 1)
     const total = out.reduce((a, o) => a + o.weight, 0) || 1
     out.sort((a, b) => b.weight - a.weight || a.label.localeCompare(b.label))
+    const features = useFeatures()
+    for (const o of out) {
+      if (!o.placed) continue
+      const rel = await features.resolvePlacedRel(o.placed)
+      if (rel && await features.readFeature(rel)) o.feature = rel
+    }
     if (seq !== poolSeq || oseq !== openSeq || !state.open) return
     state.poolEntries = out.map(o => ({
       ...o,
       pct: o.weight / total * 100,
-      clickable: !!o.rel && structures.has(o.rel)
+      clickable: (!!o.rel && structures.has(o.rel)) || !!o.feature
     }))
     const fb = stripNs(json.fallback ?? "")
     state.poolFallback = fb && fb !== "empty" ? fb : ""
