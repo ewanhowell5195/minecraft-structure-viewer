@@ -492,7 +492,7 @@ async function featureEntry(rel, seed) {
     const lib = await loadLibrary()
     return readStructure(await lib.readFile(zp, packs.assets.value))
   }
-  const s = await generateFeature(rel, json, rnd(useSeed), features.resolvePlaced, loadStruct, { grass: features.grassBiome(rel) })
+  const s = await generateFeature(rel, json, rnd(useSeed), features.resolvePlaced, loadStruct, { grass: features.grassBiome(rel) }, features.loadProcessors)
   return s.blocks.length ? { structure: s, name: rel, rel, feature: true, seed: useSeed } : null
 }
 

@@ -44,5 +44,14 @@ export function buildGenCtx(files, clientJarPath) {
     if (placed?.feature !== undefined) return resolveFeatureRef(placed.feature)
     return featureByRel.get(nsPath(ref)) ?? null
   }
-  return { featureByRel, placedByRel, resolvePlaced, loadStruct }
+  const loadProcessors = async ref => {
+    const rel = ref.includes(":") ? ref.replace(":", "/") : "minecraft/" + ref
+    const [ns, ...rest] = rel.split("/")
+    const bytes = files.get(`data/${ns}/worldgen/processor_list/${rest.join("/")}.json`)
+      ?? (clientZip && clientZip.has(`data/${ns}/worldgen/processor_list/${rest.join("/")}.json`)
+        ? Buffer.from(unzipEntry(clientZip.get(`data/${ns}/worldgen/processor_list/${rest.join("/")}.json`))) : null)
+    if (!bytes) return []
+    try { return normStatesDeep(JSON.parse(bytes.toString()))?.processors ?? [] } catch { return [] }
+  }
+  return { featureByRel, placedByRel, resolvePlaced, loadStruct, loadProcessors }
 }

@@ -23,7 +23,7 @@ let ok = 0, empty = 0
 for (const [rel, json] of ctx.featureByRel) {
   for (const seed of [0, 3]) {
     try {
-      const s = await generateFeature(rel, json, rnd(seed), ctx.resolvePlaced, ctx.loadStruct)
+      const s = await generateFeature(rel, json, rnd(seed), ctx.resolvePlaced, ctx.loadStruct, null, ctx.loadProcessors)
       if (!s.blocks.length) { if (seed === 0) { empty++; console.log("EMPTY  ", rel, json.type) } }
       else if (seed === 0) ok++
     } catch (e) {

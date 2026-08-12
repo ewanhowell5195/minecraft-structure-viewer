@@ -1280,7 +1280,9 @@ Object.assign(TYPES, {
     const entry = pickWeighted(json.templates, rand)
     const s = await world.loadStruct(entry.data.id ?? entry.data)
     if (!s) throw new Error(`missing structure ${entry.data.id ?? entry.data}`)
-    const procs = Array.isArray(json.processors) ? json.processors : json.processors?.processors
+    // processors is a namespaced id or an inline list (26.3 added the field)
+    const ref = json.processors
+    const procs = typeof ref === "string" ? await world.loadProcessors?.(ref) : Array.isArray(ref) ? ref : ref?.processors
     const placed = procs?.length ? await applyProcessors(s, { procs, overlays: [] }, rand, () => null) : s
     mergeStructure(world, placed, ox, oy, oz, 1, rand)
   }
@@ -1469,9 +1471,10 @@ function mushroomCap(provider, rand, faces) {
 
 export const SUPPORTED = new Set(Object.keys(TYPES))
 
-export async function generateFeature(name, json, rand, resolvePlaced, loadStruct, pad) {
+export async function generateFeature(name, json, rand, resolvePlaced, loadStruct, pad, loadProcessors) {
   const world = makeWorld()
   world.loadStruct = loadStruct
+  world.loadProcessors = loadProcessors
   // empty-world adaptation: the bonemeal scatter is gated on nylium below, so
   // seed the pad it would be bonemealing (crimson west half, warped east)
   if (name?.endsWith("nylium_bonemeal")) {

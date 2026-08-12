@@ -204,7 +204,7 @@ async function sampleRolls(ctx) {
       const rolls = []
       let firstKey = null, allSame = true, allSingle = true
       for (let seed = 0; seed < DEFAULT_SAMPLES; seed++) {
-        const s = await generateFeature(rel, json, rnd(seed), ctx.resolvePlaced, ctx.loadStruct)
+        const s = await generateFeature(rel, json, rnd(seed), ctx.resolvePlaced, ctx.loadStruct, null, ctx.loadProcessors)
         rolls.push({ seed, n: s.blocks.length })
         if (allSingle && s.blocks.length > 1 && !isDoublePlant(s)) allSingle = false
         if (allSame) {

@@ -106,7 +106,7 @@ async function computeAdvIndex() {
       const names = new Set()
       collectBlockNames(j, names)
       try {
-        const s = await generateFeature(rel, j, rnd(defaultSeed(rel)), resolvePlaced, loadStruct, {})
+        const s = await generateFeature(rel, j, rnd(defaultSeed(rel)), resolvePlaced, loadStruct, {}, loadProcessors)
         for (const e of s.palette) if (typeof e?.Name === "string") names.add(strip(e.Name))
       } catch {}
       for (const b of names) {
@@ -161,6 +161,11 @@ async function readFeature(rel) {
 
 const nsPath = ref => ref.includes(":") ? ref.replace(":", "/") : "minecraft/" + ref
 
+async function loadProcessors(ref) {
+  const j = await readJson(`data/${nsPath(ref).replace("/", "/worldgen/processor_list/")}.json`)
+  return j?.processors ?? []
+}
+
 // a placed feature's inner ref targets the FEATURE registry; ids collide across
 // registries (birch_bees_0002 is both), so the placed lookup would loop forever
 async function resolvePlaced(ref) {
@@ -202,5 +207,5 @@ const grassBiome = rel => biomes[rel] ?? null
 const advVocab = () => blockVocab
 
 export function useFeatures() {
-  return { state: readonly(state), stateMut: state, refresh, computeAdvIndex, advVocab, readFeature, resolvePlaced, filteredNames, visibleNames, defaultSeed, isStatic, has, folderOf, grassBiome }
+  return { state: readonly(state), stateMut: state, refresh, computeAdvIndex, advVocab, readFeature, resolvePlaced, loadProcessors, filteredNames, visibleNames, defaultSeed, isStatic, has, folderOf, grassBiome }
 }

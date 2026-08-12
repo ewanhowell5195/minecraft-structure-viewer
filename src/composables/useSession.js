@@ -93,7 +93,7 @@ async function loadFeature(ref, seed) {
   const rel = ns + "/" + path
   const json = await features.readFeature(rel)
   if (!json) return null
-  return generateFeature(rel, json, rnd(seed), features.resolvePlaced, r => loadRaw(nsSplit(r).join("/")), null)
+  return generateFeature(rel, json, rnd(seed), features.resolvePlaced, r => loadRaw(nsSplit(r).join("/")), null, features.loadProcessors)
 }
 
 const generators = {
