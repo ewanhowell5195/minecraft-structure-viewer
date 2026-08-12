@@ -31,6 +31,5 @@
   "mushrooms": ["huge_brown_mushroom", "huge_red_mushroom"],
   "vegetation": ["bamboo_no_podzol", "bamboo_some_podzol", "bamboo_vegetation", "cactus", "forest_flowers", "sugar_cane", "vines", "pale_moss_patch", "pale_moss_patch_bonemeal"],
   "piles": ["pile_hay", "pile_ice", "pile_melon", "pile_pumpkin", "pile_snow"],
-  "fossils": ["fossil_coal", "fossil_diamonds"],
-  "misc": ["forest_rock"]
+  "fossils": ["fossil_coal", "fossil_diamonds"]
 }

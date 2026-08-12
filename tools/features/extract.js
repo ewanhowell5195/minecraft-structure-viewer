@@ -13,6 +13,7 @@ import { rnd } from "../../src/transforms.js"
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const cache = path.resolve(here, "../builtin/.cache")
+const root = path.resolve(here, "../..")
 const log = (...a) => console.log("[features]", ...a)
 
 async function main() {
@@ -34,11 +35,24 @@ async function main() {
 
   const files = new Map()
   for (const rel of walk(outDir).sort()) files.set(rel, fs.readFileSync(path.join(outDir, rel)))
-  for (const name of STRUCTURE_DUPES) {
-    const key = `data/minecraft/worldgen/feature/${name}.json`
-    if (files.has(key)) files.delete(key)
-    else log(`note: structure dupe "${name}" no longer exists in this version, prune it from STRUCTURE_DUPES`)
+  // every configured feature of a type the builtin extractor captured is already
+  // offered under Structures, so it is dropped. the captures name their own
+  // types, which means a new one excludes its features without a list here
+  const capturedPath = path.join(root, "bundled/builtin/viewer/captured_features.json")
+  if (!fs.existsSync(capturedPath)) throw new Error("run tools/builtin/extract.js first: " + capturedPath + " is missing")
+  const captured = new Set(JSON.parse(fs.readFileSync(capturedPath, "utf8")).concat(RUNTIME_DUPES))
+  const structureDupes = []
+  for (const [rel, bytes] of Array.from(files)) {
+    const m = rel.match(/^data\/minecraft\/worldgen\/feature\/(.+)\.json$/)
+    if (!m) continue
+    let type
+    try { type = JSON.parse(bytes.toString()).type } catch { continue }
+    if (!captured.has(type)) continue
+    structureDupes.push("minecraft/" + m[1])
+    files.delete(rel)
   }
+  structureDupes.sort()
+  log(`${structureDupes.length} features dropped as structure dupes of ${captured.size} captured types`)
   const clientJarPath = await prepareClient(verDir, id, log)
   const ctx = buildGenCtx(files, clientJarPath)
 
@@ -81,7 +95,7 @@ async function main() {
   if (keptSingles.length) files.set("viewer/hidden_features.json", Buffer.from(JSON.stringify(keptSingles, null, 2)))
   if (keptSelectors.length) files.set("viewer/redundant_selectors.json", Buffer.from(JSON.stringify(keptSelectors, null, 2)))
   // a tools-side record only: the viewer no longer reads it
-  const dupes = STRUCTURE_DUPES.map(n => "minecraft/" + n).concat(templateBased).sort()
+  const dupes = structureDupes.concat(templateBased).sort()
   files.set("viewer/structure_dupes.json", Buffer.from(JSON.stringify(dupes, null, 2)))
 
   files.set("viewer/default_seeds.json", Buffer.from(JSON.stringify(defaults, null, 2)))
@@ -107,41 +121,40 @@ async function main() {
   const treeBiomes = await computeTreeBiomes(ctx, clientJarPath)
   if (Object.keys(treeBiomes).length) files.set("viewer/feature_biomes.json", Buffer.from(JSON.stringify(treeBiomes, null, 2)))
 
-  const root = path.resolve(here, "../..")
   writeBundle(path.join(root, "bundled/features"), files)
   packBundle(path.join(root, "bundled/features"), path.join(root, "public/features.zip"))
   log(`wrote bundled/features + public/features.zip: ${ctx.featureByRel.size} features, ${singles.length} single-block + ${selectors.length} ref-only selectors delisted (${removed.length} unreferenced, removed), ${templateBased.length} template stampers excluded, ${statics.length} static`)
 }
 
-// already offered under Structures (extracted builtins)
-const STRUCTURE_DUPES = [
-  "bonus_chest",
-  "monster_room",
-  "end_gateway_delayed",
-  "end_gateway_return",
-  "end_platform",
-  "end_spike",
-  "end_podium_active",
-  "end_podium_inactive",
-  "void_start_platform"
-]
+// the end spikes are the one duplicate the viewer builds at runtime rather than
+// capturing, so no extractor run can name them
+const RUNTIME_DUPES = ["minecraft:end_spike"]
 
 const isRef = x => typeof x === "string" || (x != null && typeof x === "object" && x.type === undefined && x.feature !== undefined && !(x.placement?.length) && isRef(x.feature))
 
 // fossils also stamp templates but their overlay processors do real
 // generation, so anything beyond a pure stamp stays a feature
+// a pure stamp shows nothing the structures tab doesn't already list, so it is
+// dropped. processors mean the placed result differs from the raw nbt (the
+// desert well appends the loot table to its suspicious sand), so those stay
 async function stampsTemplates(ctx, json, seen) {
-  if (json == null) return false
+  const nodes = []
+  await collectTemplates(ctx, json, seen, nodes)
+  return nodes.length > 0 && !nodes.some(n => n.processors)
+}
+
+async function collectTemplates(ctx, json, seen, out) {
+  if (json == null) return
   if (typeof json === "string") {
-    if (seen.has(json)) return false
+    if (seen.has(json)) return
     seen.add(json)
     const inner = await ctx.resolvePlaced(json)
-    return inner && typeof inner === "object" ? stampsTemplates(ctx, inner, seen) : false
+    if (inner && typeof inner === "object") await collectTemplates(ctx, inner, seen, out)
+    return
   }
-  if (typeof json !== "object") return false
-  if (!Array.isArray(json) && /^(minecraft:)?template$/.test(json.type ?? "")) return true
-  for (const v of Object.values(json)) if (await stampsTemplates(ctx, v, seen)) return true
-  return false
+  if (typeof json !== "object") return
+  if (!Array.isArray(json) && /^(minecraft:)?template$/.test(json.type ?? "")) out.push(json)
+  for (const v of Object.values(json)) await collectTemplates(ctx, v, seen, out)
 }
 
 function selectorEntries(json) {

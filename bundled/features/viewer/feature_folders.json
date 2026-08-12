@@ -161,6 +161,5 @@
   "minecraft/pile_pumpkin": "piles",
   "minecraft/pile_snow": "piles",
   "minecraft/fossil_coal": "fossils",
-  "minecraft/fossil_diamonds": "fossils",
-  "minecraft/forest_rock": "misc"
+  "minecraft/fossil_diamonds": "fossils"
 }

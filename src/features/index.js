@@ -3,6 +3,7 @@ import { nextInt, sampleFloat, sampleInt, sampleState, pickWeighted, intBounds }
 import { generateTree, generateFallenTree } from "./tree.js"
 import { runEndSpike } from "../generators/endspikes.js"
 import { DIR, HORIZ, OPP, shuffle, statePicker } from "../transforms.js"
+import { applyProcessors } from "../processors.js"
 
 const strip = t => (t ?? "").replace("minecraft:", "")
 
@@ -1272,12 +1273,16 @@ Object.assign(TYPES, {
     }
   },
 
+  // the placement processors run here, not in the nbt: the raw template ships
+  // without them, so the desert well's sand only gets its loot table this way
   async template(world, json, rand, resolvePlaced, ox, oy, oz) {
     if (!world.loadStruct) throw new Error("templates need structure files")
     const entry = pickWeighted(json.templates, rand)
     const s = await world.loadStruct(entry.data.id ?? entry.data)
     if (!s) throw new Error(`missing structure ${entry.data.id ?? entry.data}`)
-    mergeStructure(world, s, ox, oy, oz, 1, rand)
+    const procs = Array.isArray(json.processors) ? json.processors : json.processors?.processors
+    const placed = procs?.length ? await applyProcessors(s, { procs, overlays: [] }, rand, () => null) : s
+    mergeStructure(world, placed, ox, oy, oz, 1, rand)
   }
 })
 
@@ -1393,6 +1398,11 @@ function applyPlacement(world, mods, rand, x, y, z) {
         case "block_predicate_filter":
           if (testPredicate(world, mod.predicate, px, py, pz)) next.push([px, py, pz])
           break
+        case "randomly_selected": {
+          const list = mod.placements ?? []
+          if (list.length) next.push(...applyPlacement(world, [list[nextInt(rand, list.length)]], rand, px, py, pz))
+          break
+        }
         case "environment_scan": {
           const step = strip(mod.direction_of_search) === "down" ? -1 : 1
           for (let i = 0; i <= (mod.max_steps ?? 10); i++) {
@@ -1419,7 +1429,8 @@ function mergeStructure(world, s, ox, oy, oz, keepChance, rand, mapState) {
     const e = s.palette[b.state]
     if (!e?.Name || STRUCT_AIR.test(e.Name)) continue
     if (rand() >= keepChance) continue
-    world.set(ox + b.pos[0] - cx, oy + b.pos[1], oz + b.pos[2] - cz, mapState ? mapState(e) : e)
+    const state = mapState ? mapState(e) : e
+    world.set(ox + b.pos[0] - cx, oy + b.pos[1], oz + b.pos[2] - cz, b.nbt ? { ...state, nbt: b.nbt } : state)
   }
 }
 
@@ -1520,7 +1531,9 @@ export async function generateFeature(name, json, rand, resolvePlaced, loadStruc
   const blocks = []
   for (const [k, state] of world.cells) {
     const [x, y, z] = k.split(",").map(Number)
-    blocks.push({ state: stateFor(state.Name, state.Properties), pos: [x - minX, y - minY, z - minZ] })
+    const block = { state: stateFor(state.Name, state.Properties), pos: [x - minX, y - minY, z - minZ] }
+    if (state.nbt) block.nbt = state.nbt
+    blocks.push(block)
   }
   const structure = {
     size: [maxX - minX + 1, maxY - minY + 1, maxZ - minZ + 1],

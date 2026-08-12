@@ -39,6 +39,7 @@ import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.level.chunk.PalettedContainerFactory;
 import net.minecraft.world.level.chunk.UpgradeData;
 import net.minecraft.world.level.levelgen.feature.BonusChestFeature;
+import net.minecraft.world.level.levelgen.feature.Feature;
 import net.minecraft.world.level.levelgen.feature.EndGatewayFeature;
 import net.minecraft.world.level.levelgen.feature.EndPlatformFeature;
 import net.minecraft.world.level.levelgen.feature.EndPodiumFeature;
@@ -225,6 +226,18 @@ public class BuiltinExtract {
     }
     return e;
   }
+
+  // 26.3 registers feature types by codec, so a placed instance can name itself.
+  // the end platform is a static helper with no instance, so it says so directly
+  static final TreeSet<String> CAPTURED_FEATURES = new TreeSet<>();
+
+  static void noteFeature(Feature f) {
+    var key = BuiltInRegistries.FEATURE_TYPE.getKey(f.codec());
+    if (key == null) throw new IllegalStateException("unregistered feature: " + f.getClass().getSimpleName());
+    CAPTURED_FEATURES.add(key.toString());
+  }
+
+  static void noteFeature(String id) { CAPTURED_FEATURES.add(id); }
 
   static void write(String name, Capture cap, BoundingBox bb, boolean northFlip) throws Exception {
     write(name, cap, bb, northFlip, null);
@@ -461,7 +474,9 @@ public class BuiltinExtract {
     cap.random = runA();
     cap.heightmapY = 0;
     cap.fillWorld(-1, -1, -1, 16, -1, 16, Blocks.GRASS_BLOCK.defaultBlockState());
-    new BonusChestFeature().place(cap.level(), null, cap.random, new BlockPos(0, 0, 0));
+    BonusChestFeature bonus = new BonusChestFeature();
+    noteFeature(bonus);
+    bonus.place(cap.level(), null, cap.random, new BlockPos(0, 0, 0));
     // keep the grass the chest and torches stand on
     for (BlockPos p : new ArrayList<>(cap.placed.keySet())) {
       BlockPos below = p.below();
@@ -493,7 +508,9 @@ public class BuiltinExtract {
       for (int[] cell : DUNGEON_MOUTH) {
         c.world.put(new BlockPos(cell[0], cell[1], -zs - 1), Blocks.AIR.defaultBlockState());
       }
-      if (!new net.minecraft.world.level.levelgen.feature.MonsterRoomFeature().place(c.level(), null, rand, BlockPos.ZERO))
+      net.minecraft.world.level.levelgen.feature.MonsterRoomFeature room = new net.minecraft.world.level.levelgen.feature.MonsterRoomFeature();
+      noteFeature(room);
+      if (!room.place(c.level(), null, rand, BlockPos.ZERO))
         throw new IllegalStateException("dungeon refused to place");
       // ring cells that were already air are the ones the feature leaves alone,
       // so nothing records them: write them out explicitly or the doorway ships
@@ -663,13 +680,16 @@ public class BuiltinExtract {
 
   static void endPlatform() throws Exception {
     Capture cap = new Capture();
+    noteFeature("minecraft:end_platform");
     EndPlatformFeature.createEndPlatform(cap.level(), new BlockPos(0, 0, 0), false);
     write("features/end/platform", cap, null, false);
   }
 
   static void endGateway() throws Exception {
     Capture cap = new Capture();
-    new EndGatewayFeature(Optional.empty(), false).place(cap.level(), null, new CannedRandom(0.9f), new BlockPos(0, 0, 0));
+    EndGatewayFeature gateway = new EndGatewayFeature(Optional.empty(), false);
+    noteFeature(gateway);
+    gateway.place(cap.level(), null, new CannedRandom(0.9f), new BlockPos(0, 0, 0));
     write("features/end/gateway", cap, null, false);
   }
 
@@ -678,6 +698,7 @@ public class BuiltinExtract {
   static void voidStartPlatform() throws Exception {
     Capture cap = new Capture();
     VoidStartPlatformFeature feature = new VoidStartPlatformFeature();
+    noteFeature(feature);
     for (int cx = -1; cx <= 1; cx++) {
       for (int cz = -1; cz <= 1; cz++) {
         feature.place(cap.level(), null, cap.random, new BlockPos(cx * 16, 0, cz * 16));
@@ -689,7 +710,9 @@ public class BuiltinExtract {
   static void exitPortal(boolean active) throws Exception {
     Capture cap = new Capture();
     BlockPos origin = new BlockPos(0, 0, 0);
-    new EndPodiumFeature(active).place(cap.level(), null, new CannedRandom(0.9f), origin);
+    EndPodiumFeature podium = new EndPodiumFeature(active);
+    noteFeature(podium);
+    podium.place(cap.level(), null, new CannedRandom(0.9f), origin);
     // the first dragon fight leaves the egg on the pillar (EnderDragonFight)
     if (active) cap.set(origin.above(4), Blocks.DRAGON_EGG.defaultBlockState());
     write(active ? "features/end/exit_portal/active" : "features/end/exit_portal/inactive", cap, null, false);
@@ -721,6 +744,15 @@ public class BuiltinExtract {
     voidStartPlatform();
     exitPortal(false);
     exitPortal(true);
+
+    StringBuilder feats = new StringBuilder("[\n");
+    int fi = 0;
+    for (String id : CAPTURED_FEATURES) {
+      feats.append("  \"").append(id).append("\"").append(++fi < CAPTURED_FEATURES.size() ? "," : "").append("\n");
+    }
+    Files.createDirectories(OUT.resolve("viewer"));
+    Files.writeString(OUT.resolve("viewer/captured_features.json"), feats.append("]\n").toString());
+    System.out.println("[builtin] captured features: " + CAPTURED_FEATURES);
     System.out.println("[builtin] done");
   }
 }

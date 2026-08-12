@@ -17,6 +17,7 @@ export function seedFor(name) {
 
 const POOL_RE = /^data\/([^/]+)\/worldgen\/template_pool\/.+\.json$/
 const STRUCT_RE = /^data\/([^/]+)\/worldgen\/structure\/.+\.json$/
+const FEATURE_RE = /^data\/([^/]+)\/worldgen\/feature\/.+\.json$/
 
 // template -> the processors and list-element overlays the game applies when
 // placing it, from the template pools; zombie pools only claim a template no
@@ -51,6 +52,28 @@ export async function buildProcessorIndex(keys, readJson, rels) {
       if (!index.has(base.loc)) index.set(base.loc, { procs: base.procs, overlays })
     }
   }
+  // a template feature can carry processors of its own, and that pairing lives
+  // nowhere else: the desert well appends its loot table to the suspicious sand
+  // this way, so the template alone ships without one
+  async function indexTemplates(node) {
+    if (Array.isArray(node)) {
+      for (const v of node) await indexTemplates(v)
+      return
+    }
+    if (!node || typeof node !== "object") return
+    if (strip(node.type ?? "") === "template") {
+      const procs = await resolve(node.processors)
+      if (procs.length) {
+        for (const t of node.templates ?? []) {
+          const loc = nsify(t?.data?.id ?? t?.data)
+          if (loc && !index.has(loc)) index.set(loc, { procs, overlays: [] })
+        }
+      }
+    }
+    for (const v of Object.values(node)) await indexTemplates(v)
+  }
+  for (const k of keys.filter(k => FEATURE_RE.test(k)).sort()) await indexTemplates(await readJson(k))
+
   for (const k of keys.filter(k => STRUCT_RE.test(k)).sort()) {
     const j = await readJson(k)
     if (strip(j?.type ?? "") !== "ruined_portal" || !j.setups?.length) continue
