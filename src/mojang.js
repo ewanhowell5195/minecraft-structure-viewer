@@ -4,6 +4,11 @@ const CORS = "https://corsmc.ewanhowell.com/"
 const MANIFEST = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json"
 const KEY = "https://mc-jar.cache/"
 
+// snapshots before 15w43a still download from the legacy host, which the proxy
+// refuses; it sends ACAO: * so it needs no proxy
+const DIRECT = /^https:\/\/(launcher|launchermeta)\.mojang\.com\//
+const via = url => DIRECT.test(url) ? url : CORS + url
+
 let manifestPromise = null
 function loadManifest() {
   return manifestPromise ??= fetch(CORS + MANIFEST).then(r => r.json())
@@ -19,7 +24,7 @@ export async function loadMojangJar(channel = "release", onProgress, version) {
   const id = version || manifest.latest[channel]
   const ver = manifest.versions.find(v => v.id === id)
   if (!ver) throw new Error(`version not found: ${id}`)
-  const { url, size } = (await fetch(CORS + ver.url).then(r => r.json())).downloads.client
+  const { url, size } = (await fetch(via(ver.url)).then(r => r.json())).downloads.client
 
   const bucket = version ? "pinned" : channel
   const key = `${KEY}${bucket}/${id}`, mine = `${KEY}${bucket}/`
@@ -31,7 +36,7 @@ export async function loadMojangJar(channel = "release", onProgress, version) {
   const hit = await cache.match(key)
   if (hit) return { id, channel, type: ver.type, bytes: new Uint8Array(await hit.arrayBuffer()) }
 
-  const res = await fetch(CORS + url)
+  const res = await fetch(via(url))
   if (!res.ok) throw new Error(`client.jar fetch failed (${res.status})`)
   const total = +res.headers.get("content-length") || size
   const reader = res.body.getReader()
