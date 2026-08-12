@@ -803,7 +803,7 @@ async function attachEntities(structure, lib, assets) {
       const noBox = box.isEmpty()
       entityMarkers.push(noBox
         ? { stack: [e], x: wx, y: wy - 8, z: wz }
-        : { stack: [e], x: wx, y: box.min.y, z: wz, h: box.max.y - box.min.y, ...(frame ? { box } : null) })
+        : { stack: [e], x: wx, y: box.min.y, z: wz, h: box.max.y - box.min.y, box })
       await attachEntityTag(e.nbt, wx, noBox ? wy + 8 : box.max.y, wz)
       continue
     }
