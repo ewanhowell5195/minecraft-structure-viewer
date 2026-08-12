@@ -35,7 +35,9 @@ const state = reactive({
   channel: new URLSearchParams(location.search).get("channel") === "snapshot" ? "snapshot" : "release",
   version: new URLSearchParams(location.search).get("version") || "",
   baseId: "",
+  baseType: "",
   baseStatus: "loading…",
+  baseProgress: 0,
   baseFailed: false,
   packs: [],
   busy: false,
@@ -43,6 +45,14 @@ const state = reactive({
   remoteStatus: "",
   remoteError: ""
 })
+
+if (state.version) {
+  const u = new URL(location)
+  if (u.searchParams.has("channel")) {
+    u.searchParams.delete("channel")
+    history.replaceState(null, "", u)
+  }
+}
 
 const assets = shallowRef(null)
 const { lock, locked } = useLock()
@@ -81,14 +91,18 @@ async function loadBase(swap, ready) {
   state.busy = true
   lock(true)
   state.baseFailed = false
+  state.baseStatus = "loading…"
+  state.baseProgress = 0
   try {
     await loadBuiltin()
     const mb = n => (n / 1048576).toFixed(0)
     const r = await loadMojangJar(state.channel, (got, total, ver) => {
       state.baseStatus = `downloading ${ver}… ${mb(got)}/${mb(total)}MB`
+      state.baseProgress = total ? got / total : 0
     }, state.version)
     baseBytes = r.bytes
     state.baseId = r.id
+    state.baseType = r.type
     state.baseStatus = ""
   } catch (err) {
     console.warn("couldn't load the vanilla jar:", err)
@@ -97,6 +111,7 @@ async function loadBase(swap, ready) {
     state.baseStatus = /^version not found/.test(err?.message) ? err.message : "vanilla download failed"
     state.baseFailed = true
   }
+  state.baseProgress = 0
   try {
     await ready
     await rebuildAssets(swap)
@@ -146,6 +161,7 @@ async function applyBase(base) {
       }, base)
       baseBytes = r.bytes
       state.baseId = r.id
+      state.baseType = r.type
       state.baseStatus = ""
     } catch (err) {
       baseBytes = null
@@ -198,6 +214,18 @@ async function loadPacks({ base, packs } = {}, swap) {
     state.busy = false
     lock(false)
   }
+}
+
+async function setVersion(id, swap) {
+  if (state.busy || locked.value || id === state.version) return
+  state.version = id
+  const u = new URL(location)
+  if (id) {
+    u.searchParams.set("version", id)
+    u.searchParams.delete("channel")
+  } else u.searchParams.delete("version")
+  history.replaceState(null, "", u)
+  await loadBase(swap)
 }
 
 async function setChannel(channel, swap) {
@@ -356,5 +384,5 @@ const sourcesIdentity = () => virtualSources() ? null : [
 const featureSources = () => state.packs.map(p => bytesById.get(p.id)).concat(builtinBytes, featureBytes).filter(Boolean)
 
 export function usePacks() {
-  return { state: readonly(state), assets, loadBase, initSources, loadPacks, setChannel, addPacks, addUrlPacks, removePack, movePack, restoreCachedPacks, allSources, featureSources, zipSources, featureZipSources, virtualSources, sourcesIdentity, setSwapHandler, setHandlerFactory }
+  return { state: readonly(state), assets, loadBase, initSources, loadPacks, setChannel, setVersion, addPacks, addUrlPacks, removePack, movePack, restoreCachedPacks, allSources, featureSources, zipSources, featureZipSources, virtualSources, sourcesIdentity, setSwapHandler, setHandlerFactory }
 }

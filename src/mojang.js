@@ -4,8 +4,18 @@ const CORS = "https://corsmc.ewanhowell.com/"
 const MANIFEST = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json"
 const KEY = "https://mc-jar.cache/"
 
+let manifestPromise = null
+function loadManifest() {
+  return manifestPromise ??= fetch(CORS + MANIFEST).then(r => r.json())
+}
+
+export async function listVersions() {
+  const m = await loadManifest()
+  return { latest: m.latest, versions: m.versions.map(v => ({ id: v.id, type: v.type, releaseTime: v.releaseTime })) }
+}
+
 export async function loadMojangJar(channel = "release", onProgress, version) {
-  const manifest = await fetch(CORS + MANIFEST).then(r => r.json())
+  const manifest = await loadManifest()
   const id = version || manifest.latest[channel]
   const ver = manifest.versions.find(v => v.id === id)
   if (!ver) throw new Error(`version not found: ${id}`)
@@ -19,7 +29,7 @@ export async function loadMojangJar(channel = "release", onProgress, version) {
     else if (k.url.startsWith(mine) && k.url !== key) await cache.delete(k)
   }
   const hit = await cache.match(key)
-  if (hit) return { id, channel, bytes: new Uint8Array(await hit.arrayBuffer()) }
+  if (hit) return { id, channel, type: ver.type, bytes: new Uint8Array(await hit.arrayBuffer()) }
 
   const res = await fetch(CORS + url)
   if (!res.ok) throw new Error(`client.jar fetch failed (${res.status})`)
@@ -38,5 +48,5 @@ export async function loadMojangJar(channel = "release", onProgress, version) {
   let off = 0
   for (const c of chunks) { bytes.set(c, off); off += c.length }
   await cache.put(key, new Response(bytes))
-  return { id, channel, bytes }
+  return { id, channel, type: ver.type, bytes }
 }

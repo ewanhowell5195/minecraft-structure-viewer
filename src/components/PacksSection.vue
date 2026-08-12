@@ -2,12 +2,22 @@
 import { computed, ref } from "vue"
 import { usePacks } from "../composables/usePacks.js"
 import { useLock } from "../composables/useLock.js"
+import VersionModal from "./VersionModal.vue"
 
 const { state, setChannel, addPacks, removePack, movePack } = usePacks()
 const { locked } = useLock()
 const busy = computed(() => state.busy || locked.value)
 const fileInput = ref(null)
 const collapsed = ref(false)
+const versionModal = ref(false)
+
+const TYPES = { release: "Release", snapshot: "Snapshot", old_beta: "Beta", old_alpha: "Alpha" }
+
+const baseLabel = computed(() => {
+  if (state.baseStatus || !state.baseId) return state.baseStatus
+  const kind = TYPES[state.baseType] ?? "Version"
+  return `${state.version ? "" : "Latest "}${kind} · ${state.baseId}`
+})
 
 function onFiles(e) {
   addPacks(Array.from(e.target.files))
@@ -26,7 +36,13 @@ function onFiles(e) {
         @click="setChannel('release')">Release</button>
       <button :class="{ active: !state.version && state.channel === 'snapshot' }" :disabled="busy"
         @click="setChannel('snapshot')">Snapshot</button>
+      <button class="pin" :class="{ active: !!state.version }" :disabled="busy"
+        :title="state.version ? `Pinned to ${state.version}` : 'Pick an exact version'"
+        @click="versionModal = true">
+        <span class="material-symbols-outlined">tune</span>
+      </button>
     </div>
+    <VersionModal v-if="versionModal" @close="versionModal = false" />
     <div class="pack-list">
       <div v-for="(p, i) in state.packs" :key="p.id" class="pack">
         <span class="material-symbols-outlined kind">folder_zip</span>
@@ -42,7 +58,8 @@ function onFiles(e) {
       </div>
       <div class="pack base" :class="{ failed: state.baseFailed }">
         <span class="material-symbols-outlined kind">deployed_code</span>
-        <span class="name">{{ state.baseId ? `Vanilla ${state.baseId}` : state.baseStatus }}</span>
+        <span class="name">{{ baseLabel }}</span>
+        <span v-if="state.baseProgress" class="bar" :style="{ transform: `scaleX(${state.baseProgress})` }"></span>
       </div>
     </div>
     <button class="add" :disabled="busy" @click="fileInput.click()">
@@ -56,7 +73,7 @@ function onFiles(e) {
 <style scoped>
 .channel {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 1fr auto;
   gap: 6px;
 }
 
@@ -65,6 +82,14 @@ function onFiles(e) {
   border-color: transparent;
   color: #fff;
 }
+
+.pin {
+  display: flex;
+  align-items: center;
+  padding-inline: 8px;
+}
+
+.pin .material-symbols-outlined { font-size: 18px; }
 
 .pack-list {
   display: flex;
@@ -98,8 +123,24 @@ function onFiles(e) {
   font-size: 13px;
 }
 
+.pack.base {
+  position: relative;
+  overflow: hidden;
+}
+
 .pack.base .name { color: var(--text-dim); }
 .pack.base.failed .name { color: var(--red); }
+
+.pack.base .bar {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 2px;
+  background: var(--green);
+  transform-origin: left;
+  transition: transform 0.15s linear;
+}
 
 button.icon {
   padding: 0;
