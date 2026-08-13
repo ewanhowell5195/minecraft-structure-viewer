@@ -42,9 +42,11 @@ a standalone Vue 3 + Vite app.
 - `?version=<id>` pin an exact game version instead of tracking the latest, e.g.
   `26.1.2` or `26.3-snapshot-8`; anything from 15w31a on. Replaces `?channel=`
 - `?seed=<hex>&level=<n>` restore a jigsaw/procedural session
-- `?background=<colour>` paint the viewport behind the structure with any CSS
-  colour, e.g. `white`, `rgb(20 20 30)` or `2f6fa8` (a bare hex needs no `#`,
-  which would start the fragment). Anything that isn't a colour is ignored
+- `?background=<css>` paint the viewport behind the structure with any CSS
+  background: a colour like `white` or `2f6fa8` (a bare hex needs no `#`, which
+  would start the fragment), or something like
+  `linear-gradient(160deg, %232f6fa8, black)`. Images are ignored, as is
+  anything CSS doesn't parse as a background
 - `?minimal` strip the chrome for embedding: no sidebar, walk button,
   structure-blocks menu, or progress bars; the splash stays up with loading
   status until the structure finishes loading, and the info chip drops its

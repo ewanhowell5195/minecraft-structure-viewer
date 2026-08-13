@@ -1,7 +1,8 @@
-// ?background=<css colour> paints behind the transparent canvas. a bare hex is
-// accepted because a literal # in the url would start the fragment, and the
-// value has to pass as a colour so the param can't smuggle in other css
+// a bare hex is accepted because a literal # in the url would start the fragment
 const raw = new URLSearchParams(location.search).get("background")
 const value = raw && /^[0-9a-f]{3,8}$/i.test(raw) ? "#" + raw : raw
+const fetches = /\b(url|image-set|image|cross-fade|element)\s*\(/i
 
-export const background = value && CSS.supports("color", value) ? value : ""
+if (value && !fetches.test(value) && CSS.supports("background", value)) {
+  document.body.style.background = value
+}

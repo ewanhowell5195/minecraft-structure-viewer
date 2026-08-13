@@ -15,7 +15,6 @@ import { useContainer } from "./composables/useContainer.js"
 import { useSlicers } from "./composables/useSlicers.js"
 import { tab } from "./composables/useTab.js"
 import { minimal } from "./minimal.js"
-import { background } from "./background.js"
 import { manual } from "./manual.js"
 import { initEmbedApi, emit } from "./embed.js"
 import { isRemote, prefetchRemote } from "./remote.js"
@@ -273,7 +272,7 @@ onMounted(async () => {
         <SceneSection />
       </template>
     </aside>
-    <main class="viewport" :style="background ? { background } : null">
+    <main class="viewport">
       <canvas id="view" ref="canvasEl"></canvas>
       <!-- walking hides the viewport chrome: only the crosshair + hint show -->
       <template v-if="!walkState.on">
