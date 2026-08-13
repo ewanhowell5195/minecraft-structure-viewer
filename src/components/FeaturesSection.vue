@@ -103,7 +103,7 @@ function onRootMenu(e) {
       </select>
     </div>
     <div v-if="advMode" class="controls">
-      <input v-model="stateMut.advQuery" :disabled="locked || advIndexing" list="feat-vocab"
+      <input v-model="stateMut.advQuery" :disabled="locked" list="feat-vocab"
         placeholder="Blocks, e.g. oak log, diamond ore…">
       <datalist id="feat-vocab">
         <option v-for="v in vocab" :key="v" :value="v" />

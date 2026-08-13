@@ -129,7 +129,7 @@ function onFile(e) {
       </select>
     </div>
     <div v-if="advMode" class="controls">
-      <input v-model="stateMut.advQuery" :disabled="locked || advIndexing" list="adv-vocab"
+      <input v-model="stateMut.advQuery" :disabled="locked" list="adv-vocab"
         :placeholder="advPlaceholder">
       <datalist id="adv-vocab">
         <option v-for="v in vocab" :key="v" :value="v" />
