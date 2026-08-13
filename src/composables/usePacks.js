@@ -3,6 +3,7 @@ import { loadLibrary } from "../lib.js"
 import { loadMojangJar } from "../mojang.js"
 import { cachePack, uncachePack, setPackOrder, restorePacks } from "../userCache.js"
 import { proxyFetch, remoteName } from "../remote.js"
+import { warmIcons } from "../icons.js"
 import { useLock } from "./useLock.js"
 
 // index 0 = highest priority (prepareAssets first-wins order); pack bytes
@@ -85,6 +86,7 @@ async function rebuildAssets(swap) {
   } finally {
     if (prev && prev !== assets.value) lib.disposeCache(prev)
   }
+  if (assets.value) warmIcons()
 }
 
 async function loadBase(swap, ready) {

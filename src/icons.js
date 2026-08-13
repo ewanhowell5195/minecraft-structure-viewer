@@ -140,6 +140,15 @@ export function iconBitmap(spec) {
   return iconInfo(spec).then(v => v?.bitmap ?? null)
 }
 
+const idle = globalThis.requestIdleCallback ?? (fn => setTimeout(fn, 200))
+
+export function warmIcons() {
+  idle(() => {
+    checkVersion()
+    start()
+  })
+}
+
 const anim = new Map()
 let tokenSeq = 0
 
