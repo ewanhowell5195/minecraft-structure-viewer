@@ -66,6 +66,12 @@ const worldState = useWorld().state
 const minimalReady = ref(!minimal)
 const notFound = ref("")
 const debugPicker = ref(false)
+
+// narrow screens turn both panels into drawers
+const drawer = ref("")
+const toggleDrawer = side => { drawer.value = drawer.value === side ? "" : side }
+// picking something is the end of what the left drawer is for, so it gets out of the way
+const closeOnPick = e => { if (e.target.closest(".tree-file")) drawer.value = "" }
 // refreshed on pointerdown so the link always carries the current url state
 const mainSiteUrl = ref("")
 const homeUrl = location.origin + location.pathname
@@ -255,8 +261,8 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="layout" :class="{ minimal }">
-    <aside v-if="!minimal" class="sidebar">
+  <div class="layout" :class="{ minimal, 'drawer-left': drawer === 'left', 'drawer-right': drawer === 'right' }">
+    <aside v-if="!minimal" class="sidebar" @click="closeOnPick">
       <header class="app-head">
         <span class="material-symbols-outlined">deployed_code</span>
         <h1>Structure Viewer</h1>
@@ -319,6 +325,15 @@ onMounted(async () => {
       <SlicersSection />
       <SceneSection />
     </aside>
+    <template v-if="!minimal">
+      <button class="drawer-toggle left" title="Structures" @click="toggleDrawer('left')">
+        <span class="material-symbols-outlined">menu</span>
+      </button>
+      <button v-if="!libError" class="drawer-toggle right" title="View settings" @click="toggleDrawer('right')">
+        <span class="material-symbols-outlined">tune</span>
+      </button>
+      <div v-if="drawer" class="backdrop" @click="drawer = ''"></div>
+    </template>
   </div>
 </template>
 
@@ -343,6 +358,25 @@ onMounted(async () => {
   border-right: none;
   border-left: 1px solid var(--border);
 }
+
+.drawer-toggle {
+  display: none;
+  position: fixed;
+  top: 12px;
+  z-index: 28;
+  width: 36px;
+  height: 36px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: #1f1f25d9;
+}
+
+.drawer-toggle.left { left: 12px; }
+.drawer-toggle.right { right: 12px; }
+.drawer-toggle .material-symbols-outlined { font-size: 20px; }
+
+.backdrop { display: none; }
 
 .app-head {
   display: flex;
@@ -492,5 +526,50 @@ onMounted(async () => {
 .cancel-btn .material-symbols-outlined {
   font-size: 18px;
   color: var(--red);
+}
+
+@media (max-width: 900px) {
+  .sidebar {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 30;
+    width: min(300px, 85vw);
+    transform: translateX(-100%);
+    transition: transform 0.25s;
+  }
+
+  .sidebar.right {
+    left: auto;
+    right: 0;
+    transform: translateX(100%);
+  }
+
+  .drawer-left .sidebar:not(.right),
+  .drawer-right .sidebar.right {
+    transform: none;
+    box-shadow: 0 0 30px #00000080;
+  }
+
+  .drawer-toggle { display: flex; }
+
+  .backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 29;
+    background: #00000073;
+  }
+
+  /* clear of the drawer toggles */
+  .chip {
+    left: 60px;
+    max-width: calc(100% - 120px);
+  }
+
+  .cancel-btn { top: 56px; }
+
+  .viewport :deep(.fps) { right: 60px; }
 }
 </style>
