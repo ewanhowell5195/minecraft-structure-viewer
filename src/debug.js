@@ -10,6 +10,7 @@ export const DEBUG_SCENES = [
   { kind: "pane", name: "Panes", desc: "Glass pane and connection shapes" },
   { kind: "dynamic", name: "Dynamic parts", desc: "Chests, banners, bells and heads with moving pieces" },
   { kind: "billboard", name: "Billboards", desc: "Camera-facing sprites" },
+  { kind: "items", name: "Item entities", desc: "Dropped items, components, a missing item and ones that cluster" },
   { kind: "aquarium", name: "Aquarium", desc: "Underwater scene" },
   { kind: "container", name: "Containers", desc: "Every container gui, animated icons and item frames" }
 ]
@@ -433,6 +434,31 @@ export function makeDebug(kind) {
     put(15, 1, 11, "quartz_block")
     floor(11, 10, 16, 12, 2, "quartz_block")
 
+    return finish()
+  }
+
+  if (kind === "items") {
+    const glint = { "minecraft:enchantment_glint_override": true }
+    const drops = [
+      { id: "diamond" },
+      { id: "apple" },
+      { id: "stone" },
+      { id: "oak_log" },
+      { id: "diamond_sword", components: glint },
+      { id: "potion", components: { "minecraft:potion_contents": { potion: "minecraft:strong_healing" } } },
+      { id: "leather_chestplate", components: { "minecraft:dyed_color": 5208621 } },
+      { id: "not_a_real_item" },
+      null,
+      { id: "gold_ingot", with: ["emerald", "redstone"] }
+    ]
+    drops.forEach((d, i) => {
+      const x = i * 2
+      put(x, 0, 0, "smooth_stone")
+      const at = n => [x + 0.5, 1.25, 0.5 + n * 0.1]
+      if (!d) return spawn("item", at(0))
+      spawn("item", at(0), { Item: { id: "minecraft:" + d.id, count: 1, ...(d.components ? { components: d.components } : {}) } })
+      d.with?.forEach((id, n) => spawn("item", at(n + 1), { Item: { id: "minecraft:" + id, count: 1 } }))
+    })
     return finish()
   }
 

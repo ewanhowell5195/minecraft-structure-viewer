@@ -337,6 +337,27 @@ function resizeIfNeeded() {
   }
 }
 
+let loseExt = null, released = false, releaseTimer = 0
+
+function releaseContext() {
+  if (released || !renderer) return
+  loseExt ??= renderer.getContext().getExtension("WEBGL_lose_context")
+  if (!loseExt) return
+  released = true
+  loseExt.loseContext()
+}
+
+function watchVisibility() {
+  if (typeof IntersectionObserver === "undefined") return
+  new IntersectionObserver(([entry]) => {
+    clearTimeout(releaseTimer)
+    if (!entry.isIntersecting) return void (releaseTimer = setTimeout(releaseContext, 2000))
+    if (!released) return
+    released = false
+    loseExt.restoreContext()
+  }, { threshold: 0 }).observe(canvas)
+}
+
 function init(canvasEl) {
   canvas = canvasEl
   renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: false })
@@ -355,6 +376,7 @@ function init(canvasEl) {
   controls.addEventListener("start", () => { if (camera === orthoCam && !orthoManual) setOrtho(false) })
   setGrids([{ x: -128, z: -128, y: -8.01, w: 16, d: 16 }])
   new ResizeObserver(() => { needResize = true }).observe(canvas)
+  watchVisibility()
 
   watch(() => view.wireframe, () => {
     if (gridGroup) gridGroup.visible = gridVisible()
@@ -367,6 +389,7 @@ function init(canvasEl) {
     const now = performance.now()
     const dt = (now - lastT) / 1000
     lastT = now
+    if (released) return
     resizeIfNeeded()
     if (!walkUpdate?.(dt)) controls.update()
     updateClips()
