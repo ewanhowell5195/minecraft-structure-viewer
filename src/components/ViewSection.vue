@@ -8,7 +8,7 @@ const sceneApi = useScene()
 const { view } = sceneApi
 const { state: buildState } = useBuild()
 const { locked } = useLock()
-const collapsed = ref(true)
+const collapsed = ref(false)
 </script>
 
 <template>

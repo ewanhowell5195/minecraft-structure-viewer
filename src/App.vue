@@ -267,9 +267,6 @@ onMounted(async () => {
         <StructuresSection v-show="tab === 'structures' && !worldState.active" />
         <FeaturesSection v-show="tab === 'features' && !worldState.active" />
         <WorldSection />
-        <ViewSection />
-        <SlicersSection />
-        <SceneSection />
       </template>
     </aside>
     <main class="viewport">
@@ -317,6 +314,11 @@ onMounted(async () => {
         <p>{{ notFound }}</p>
       </Modal>
     </main>
+    <aside v-if="!minimal && !libError" class="sidebar right">
+      <ViewSection />
+      <SlicersSection />
+      <SceneSection />
+    </aside>
   </div>
 </template>
 
@@ -335,6 +337,11 @@ onMounted(async () => {
   flex-direction: column;
   min-height: 0;
   overflow-y: auto;
+}
+
+.sidebar.right {
+  border-right: none;
+  border-left: 1px solid var(--border);
 }
 
 .app-head {

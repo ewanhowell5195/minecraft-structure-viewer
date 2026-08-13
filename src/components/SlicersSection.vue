@@ -5,7 +5,7 @@ import { useLock } from "../composables/useLock.js"
 
 const { state } = useSlicers()
 const { locked } = useLock()
-const collapsed = ref(true)
+const collapsed = ref(false)
 const AXES = ["x", "y", "z"]
 </script>
 

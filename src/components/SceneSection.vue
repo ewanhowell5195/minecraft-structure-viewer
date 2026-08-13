@@ -7,7 +7,7 @@ import { useLock } from "../composables/useLock.js"
 const { state: buildState, exportCurrent } = useBuild()
 const { state: structureState } = useStructure()
 const { locked } = useLock()
-const collapsed = ref(true)
+const collapsed = ref(false)
 
 function onExport(ev) {
   const v = ev.target.value
