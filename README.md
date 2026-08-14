@@ -161,6 +161,34 @@ assets once, at the end.
 
 `{ filter }`, an optional substring. Replies `{ names }`.
 
+#### `highlight`
+
+`{ blocks }`, a list of groups. Replies `{ count }` with the number of blocks
+highlighted. Each group is a list of block coordinates that share a look:
+
+```js
+blocks: [
+  { blocks: [[0, 0, 0], [1, 0, 0], [2, 0, 0]], colour: "#ff000099" },
+  { blocks: [[3, 1, 4]], colour: "rgba(0, 255, 0, 0.8)", flash: true },
+  { blocks: [[5, 0, 5]], wireframe: "#ffffff" }
+]
+```
+
+| Option | Default | What it does |
+| --- | --- | --- |
+| `blocks` | required | The group's coordinates, in the structure's own block coordinates, the same ones the viewer reports for a block |
+| `colour` | translucent white | Fills the block with any CSS colour, alpha included: `#rgb`, `#rrggbbaa`, `rgba()`, `hsl()` or a name. No fill if `wireframe` is given on its own |
+| `wireframe` | off | Outlines the block's edges in its own colour. Pairs with `colour`, or stands alone for an outline with no fill |
+| `flash` | `false` | Pulses the group instead of holding it steady, like a targeted block |
+| `merge` | `true` | Treats touching blocks as one shape: no faces or outlines between them, so the fill stays even instead of stacking up, and the wireframe traces the outside only. `false` draws every block as its own box |
+| `front` | `true` | Draws over the scene, so a buried block still shows. `false` puts the highlight in the world, where blocks in front of it hide it |
+
+Groups only merge into each other when their whole look matches, so blocks that
+differ in any of these stay separate shapes even when they touch.
+
+A call replaces whatever was highlighted before, `blocks: []` clears them, and
+they are placed again whenever the structure rebuilds.
+
 #### `loadWorld`
 
 `{ data, name, dimension, chunks, y, force }`. Replies

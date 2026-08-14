@@ -3,49 +3,40 @@ import * as THREE from "three"
 import { loadLibrary } from "../lib.js"
 import { useScene } from "./useScene.js"
 import { useBuild } from "./useBuild.js"
+import { setOverlay } from "./useHighlight.js"
 import { useContainer } from "./useContainer.js"
 import { usePacks } from "./usePacks.js"
 import { useWalk } from "./useWalk.js"
 
 const state = reactive({ on: false, index: 0, total: 0, label: "" })
 
-const PERIOD = 1200
-const MIN_FADE = 0.04, MAX_FADE = 0.34
+const SHOWN = "rgba(255, 255, 255, 0.34)"
+const CULLED = "rgba(255, 77, 77, 0.34)"
 
 let list = []
 let boxOf = null
 let highlight = null
-let fill = null
-let pulseRaf = 0
 let moveRaf = 0
 const _box = new THREE.Box3()
 const _center = new THREE.Vector3()
-const _size = new THREE.Vector3()
-
-// BoxGeometry's material groups, in order
-const FACES = ["east", "west", "up", "down", "south", "north"]
-
-const faceMat = color => new THREE.MeshBasicMaterial({ color, transparent: true, depthTest: false, depthWrite: false })
-const shown = faceMat(0xffffff)
-const culled = faceMat(0xff4d4d)
-
-function makeFill() {
-  const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), FACES.map(() => shown))
-  mesh.renderOrder = 998
-  mesh.frustumCulled = false
-  useScene().scene.add(mesh)
-  return mesh
-}
 
 const DIRS = [["north", 0, 0, -16], ["south", 0, 0, 16], ["west", -16, 0, 0], ["east", 16, 0, 0], ["up", 0, 16, 0], ["down", 0, -16, 0]]
 const cullCache = new Map()
 let tintToken = 0
 
+function drawBox(faces) {
+  setOverlay("find", [{
+    boxes: [{ min: _box.min.toArray(), max: _box.max.toArray() }],
+    faces: faces ?? {},
+    colour: SHOWN,
+    flash: true
+  }])
+}
+
 // faces the build culled away pulse red, so a block you cannot actually see
 // reads as buried instead of looking like one you just cannot spot
 async function tint(item) {
   const token = ++tintToken
-  fill.material = FACES.map(() => shown)
   if (!("state" in item)) return
   const build = useBuild()
   const s = build.current.value
@@ -81,22 +72,16 @@ async function tint(item) {
     } catch { hidden = new Set() }
     cullCache.set(cacheKey, hidden)
   }
-  if (token === tintToken && hidden.size) fill.material = FACES.map(f => hidden.has(f) ? culled : shown)
-}
-
-function pulse() {
-  if (!state.on) return
-  pulseRaf = requestAnimationFrame(pulse)
-  const k = (1 - Math.cos(performance.now() / PERIOD * Math.PI * 2)) / 2
-  shown.opacity = culled.opacity = MIN_FADE + (MAX_FADE - MIN_FADE) * k
+  if (token !== tintToken || !hidden.size) return
+  drawBox(Object.fromEntries(Array.from(hidden, dir => [dir, CULLED])))
 }
 
 // the hover outline owns the block under the cursor while it is clickable, so
 // the pulse steps aside rather than fighting it
 function setShown(on) {
-  if (!state.on || !fill) return
-  fill.visible = on
+  if (!state.on) return
   on ? highlight.show(_box) : highlight.hide()
+  on ? drawBox() : setOverlay("find", [])
 }
 
 function paint() {
@@ -105,15 +90,9 @@ function paint() {
   if (!box) return stop()
   _box.copy(box)
   _box.getCenter(_center)
-  _box.getSize(_size)
   highlight ??= useScene().makeHighlight()
-  fill ??= makeFill()
-  fill.position.copy(_center)
-  fill.scale.copy(_size)
   setShown(!useContainer().state.hovering)
   tint(item)
-  cancelAnimationFrame(pulseRaf)
-  pulse()
 }
 
 function focus() {
@@ -186,10 +165,9 @@ function stop() {
   state.total = 0
   state.index = 0
   cullCache.clear()
-  cancelAnimationFrame(pulseRaf)
   cancelAnimationFrame(moveRaf)
   highlight?.hide()
-  if (fill) fill.visible = false
+  setOverlay("find", [])
 }
 
 watch(() => useContainer().state.hovering, on => setShown(!on))

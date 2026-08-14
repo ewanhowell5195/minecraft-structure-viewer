@@ -2,6 +2,7 @@ import { usePacks } from "./composables/usePacks.js"
 import { useStructure } from "./composables/useStructure.js"
 import { useStructures } from "./composables/useStructures.js"
 import { useWorld } from "./composables/useWorld.js"
+import { setHighlights } from "./composables/useHighlight.js"
 
 const SOURCE = "structure-viewer"
 const TIMEOUT = 30000
@@ -89,6 +90,9 @@ const COMMANDS = {
   listStructures({ filter } = {}) {
     const names = useStructures().state.names
     return { names: filter ? names.filter(n => n.includes(filter)) : names.slice() }
+  },
+  highlight({ blocks }) {
+    return { count: setHighlights(blocks) }
   },
   async loadWorld({ data, name, dimension, chunks, y, force }) {
     const world = useWorld()
