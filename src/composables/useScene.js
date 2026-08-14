@@ -358,6 +358,25 @@ function watchVisibility() {
   }, { threshold: 0 }).observe(canvas)
 }
 
+const embedded = (() => {
+  try {
+    return window.self !== window.top
+  } catch {
+    return true
+  }
+})()
+
+let touches = null
+
+function gateInput() {
+  if (!controls) return
+  const live = !embedded || document.activeElement === canvas
+  controls.enableZoom = live
+  controls.touches.ONE = live ? touches.ONE : null
+  controls.touches.TWO = live ? touches.TWO : null
+  canvas.style.touchAction = live ? "none" : "pan-y"
+}
+
 function init(canvasEl) {
   canvas = canvasEl
   renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: false })
@@ -374,6 +393,21 @@ function init(canvasEl) {
   controls = new OrbitControls(camera, canvas)
   controls.enableDamping = true
   controls.addEventListener("start", () => { if (camera === orthoCam && !orthoManual) setOrtho(false) })
+  touches = { ...controls.touches }
+  canvas.tabIndex = -1
+  let downAt = null
+  canvas.addEventListener("pointerdown", e => {
+    if (e.pointerType === "touch") downAt = [e.clientX, e.clientY]
+    else canvas.focus({ preventScroll: true })
+  })
+  canvas.addEventListener("pointerup", e => {
+    if (e.pointerType !== "touch" || !downAt) return
+    if (Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) < 10) canvas.focus({ preventScroll: true })
+    downAt = null
+  })
+  canvas.addEventListener("focus", gateInput)
+  canvas.addEventListener("blur", gateInput)
+  gateInput()
   setGrids([{ x: -128, z: -128, y: -8.01, w: 16, d: 16 }])
   new ResizeObserver(() => { needResize = true }).observe(canvas)
   watchVisibility()
