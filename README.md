@@ -161,6 +161,32 @@ assets once, at the end.
 
 `{ filter }`, an optional substring. Replies `{ names }`.
 
+#### `loadWorld`
+
+`{ data, name, dimension, chunks, y, force }`. Replies
+`{ chunks, dimensions, bounds }`.
+
+- `data` a world `.zip` or a single `.mca` region file, chosen by `name`'s
+  extension
+- `dimension` which dimension to read. Defaults to the world's own
+- `chunks` the chunks to build, in **chunk** coordinates, as either two opposite
+  corners of a rectangle or an explicit list:
+
+  ```js
+  chunks: [[-2, -2], [5, 5]]              // rectangle, inclusive
+  chunks: [[0, 0], [0, 1], [4, -3]]       // exactly these
+  ```
+
+  Chunks the world doesn't have are skipped, and the reply's `chunks` count says
+  how many were actually selected. Omit `chunks` to open the world without
+  building, and use the reply's `dimensions` and `bounds` to decide what to ask
+  for next. A world stays open, so later calls can pass `chunks` alone
+- `y` a `[min, max]` build range, defaulting to one sampled from the selected
+  chunks. Worth setting: a modern world is 384 blocks tall, and height costs more
+  than area
+- `force` build even if the size estimate says it may exhaust memory. Without it
+  an oversized request is refused with `ok: false` and the estimate
+
 #### `highlight`
 
 `{ blocks }`, a list of groups. Replies `{ count }` with the number of blocks
@@ -189,31 +215,36 @@ differ in any of these stay separate shapes even when they touch.
 A call replaces whatever was highlighted before, `blocks: []` clears them, and
 they are placed again whenever the structure rebuilds.
 
-#### `loadWorld`
+#### `getBlocks`
 
-`{ data, name, dimension, chunks, y, force }`. Replies
-`{ chunks, dimensions, bounds }`.
+`{ data, name }`, both optional. Replies `{ blocks, entities }` for whatever is
+currently built, or for a structure file passed as `data`, which is parsed and
+reported without loading it or disturbing the scene. `name` picks the format by
+extension exactly as [`loadStructure`](#loadstructure) does.
 
-- `data` a world `.zip` or a single `.mca` region file, chosen by `name`'s
-  extension
-- `dimension` which dimension to read. Defaults to the world's own
-- `chunks` the chunks to build, in **chunk** coordinates, as either two opposite
-  corners of a rectangle or an explicit list:
+```js
+blocks: [
+  { pos: [1, 0, 0], id: "minecraft:stone" },
+  { pos: [2, 1, 2], id: "minecraft:iron_bars", properties: { east: "true", west: "true", … } },
+  { pos: [1, 1, 6], id: "minecraft:chest", properties: { facing: "north", … }, nbt: { id: "minecraft:chest", Items: [] } }
+]
+entities: [
+  { pos: [2.5, 1, 1.5], id: "minecraft:villager", nbt: { … } }
+]
+```
 
-  ```js
-  chunks: [[-2, -2], [5, 5]]              // rectangle, inclusive
-  chunks: [[0, 0], [0, 1], [4, -3]]       // exactly these
-  ```
+| Field | On | What it is |
+| --- | --- | --- |
+| `pos` | both | Block coordinates, whole numbers for blocks and exact positions for entities |
+| `id` | both | The block or entity id, namespaced |
+| `properties` | blocks | Its blockstate, omitted for a block that has none |
+| `nbt` | both | Block entity data, omitted for a block without any. Entities always carry theirs |
 
-  Chunks the world doesn't have are skipped, and the reply's `chunks` count says
-  how many were actually selected. Omit `chunks` to open the world without
-  building, and use the reply's `dimensions` and `bounds` to decide what to ask
-  for next. A world stays open, so later calls can pass `chunks` alone
-- `y` a `[min, max]` build range, defaulting to one sampled from the selected
-  chunks. Worth setting: a modern world is 384 blocks tall, and height costs more
-  than area
-- `force` build even if the size estimate says it may exhaust memory. Without it
-  an oversized request is refused with `ok: false` and the estimate
+Without `data` it reports the built scene rather than the file, so slicers,
+level and anything else that changed what you can see are already applied. Air
+is left out either way. The reply is plain JSON: NBT longs come back as decimal
+strings and byte arrays as arrays of numbers, so nothing in it trips
+`JSON.stringify`.
 
 ### Virtual sources
 

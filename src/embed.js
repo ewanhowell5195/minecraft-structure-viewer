@@ -2,9 +2,14 @@ import { usePacks } from "./composables/usePacks.js"
 import { useStructure } from "./composables/useStructure.js"
 import { useStructures } from "./composables/useStructures.js"
 import { useWorld } from "./composables/useWorld.js"
+import { useBuild } from "./composables/useBuild.js"
 import { setHighlights } from "./composables/useHighlight.js"
+import { readStructure } from "./nbt.js"
+import { readLitematic, readSchem, readMcstructure } from "./formats.js"
 
 const SOURCE = "structure-viewer"
+const AIR = /(^|:)(air|cave_air|void_air)$/
+const READERS = { nbt: readStructure, litematic: readLitematic, schem: readSchem, mcstructure: readMcstructure }
 const TIMEOUT = 30000
 
 const isCommand = data => data?.source === SOURCE && typeof data.type === "string"
@@ -64,6 +69,23 @@ export function makeHandler(id) {
   }
 }
 
+function jsonSafe(value) {
+  if (typeof value === "bigint") return value.toString()
+  if (ArrayBuffer.isView(value)) return Array.from(value)
+  if (Array.isArray(value)) return value.map(jsonSafe)
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, jsonSafe(v)]))
+  }
+  return value
+}
+
+async function readFileStructure(data, name = "structure.nbt") {
+  const bytes = await toBytes(data)
+  if (!bytes) throw new Error("getBlocks needs structure bytes in data")
+  const reader = READERS[name.split(".").pop().toLowerCase()] ?? readStructure
+  return reader(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength))
+}
+
 function toFile(data, name = "structure.nbt") {
   if (data instanceof File) return data
   if (data instanceof Blob) return new File([data], name)
@@ -90,9 +112,6 @@ const COMMANDS = {
   listStructures({ filter } = {}) {
     const names = useStructures().state.names
     return { names: filter ? names.filter(n => n.includes(filter)) : names.slice() }
-  },
-  highlight({ blocks }) {
-    return { count: setHighlights(blocks) }
   },
   async loadWorld({ data, name, dimension, chunks, y, force }) {
     const world = useWorld()
@@ -124,6 +143,30 @@ const COMMANDS = {
     await world.loadSelected(force)
     if (world.state.error) throw new Error(world.state.error)
     return report()
+  },
+  highlight({ blocks }) {
+    return { count: setHighlights(blocks) }
+  },
+  async getBlocks({ data, name } = {}) {
+    const structure = data !== undefined
+      ? await readFileStructure(data, name)
+      : useBuild().current.value
+    if (!structure) throw new Error("nothing is loaded")
+    const blocks = []
+    for (const b of structure.blocks) {
+      const entry = structure.palette[b.state]
+      if (!entry?.Name || AIR.test(entry.Name)) continue
+      const out = { pos: b.pos.slice(), id: entry.Name }
+      if (entry.Properties) out.properties = { ...entry.Properties }
+      if (b.nbt) out.nbt = jsonSafe(b.nbt)
+      blocks.push(out)
+    }
+    const entities = (structure.entities ?? []).map(e => ({
+      pos: e.pos.slice(),
+      id: e.nbt?.id ?? "",
+      nbt: jsonSafe(e.nbt ?? {})
+    }))
+    return { blocks, entities }
   }
 }
 
