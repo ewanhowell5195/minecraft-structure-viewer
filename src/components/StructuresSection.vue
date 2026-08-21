@@ -7,6 +7,7 @@ import { useContextMenu } from "../composables/useContextMenu.js"
 import { useLock } from "../composables/useLock.js"
 import { useCompare } from "../composables/useCompare.js"
 import { useCompareDiff } from "../composables/useCompareDiff.js"
+import { leafName } from "../transforms.js"
 import TreeFolder from "./TreeFolder.vue"
 import ListTabs from "./ListTabs.vue"
 
@@ -42,7 +43,7 @@ function onFileMenu(rel, e) {
   const sel = state.selected
   if (locked.value || compare.versionArmed() || sel.length !== 1 || sel[0] === rel) return
   ctx.open(e, [{
-    label: `Compare with ${sel[0].slice(sel[0].lastIndexOf("/") + 1)}`,
+    label: `Compare with ${leafName(sel[0])}`,
     icon: "compare",
     action: () => compare.enter(rel)
   }])

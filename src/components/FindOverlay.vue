@@ -1,12 +1,12 @@
 <script setup>
 import { computed, onMounted, onBeforeUnmount } from "vue"
 import { useFind } from "../composables/useFind.js"
+import { num } from "../format.js"
 
 const { state, go, stop } = useFind()
 
 const STEPS = [1, 10, 100]
 const steps = computed(() => STEPS.filter(n => state.total > n))
-const num = n => n.toLocaleString("en")
 
 function onKey(e) {
   if (e.key === "Escape" && state.on) stop()

@@ -1,6 +1,7 @@
 import { reactive, watch } from "vue"
 import * as THREE from "three"
 import { OrbitControls } from "three/addons/controls/OrbitControls.js"
+import { debounce } from "../yield.js"
 
 // owns the render loop; hot-updating this module would start a second one
 if (import.meta.hot) import.meta.hot.decline()
@@ -395,7 +396,7 @@ function resizeIfNeeded() {
   }
 }
 
-let loseExt = null, released = false, releaseTimer = 0
+let loseExt = null, released = false
 
 function releaseContext() {
   if (released || !renderer) return
@@ -405,11 +406,13 @@ function releaseContext() {
   loseExt.loseContext()
 }
 
+const releaseSoon = debounce(releaseContext, 2000)
+
 function watchVisibility() {
   if (typeof IntersectionObserver === "undefined") return
   new IntersectionObserver(([entry]) => {
-    clearTimeout(releaseTimer)
-    if (!entry.isIntersecting) return void (releaseTimer = setTimeout(releaseContext, 2000))
+    releaseSoon.cancel()
+    if (!entry.isIntersecting) return releaseSoon()
     if (!released) return
     released = false
     loseExt.restoreContext()

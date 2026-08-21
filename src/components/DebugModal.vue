@@ -1,12 +1,12 @@
 <script setup>
 import { DEBUG_SCENES } from "../debug.js"
+import { paramUrl } from "../params.js"
 import Modal from "./Modal.vue"
 
 const emit = defineEmits(["close"])
 
 const href = kind => {
-  const u = new URL(location)
-  u.searchParams.set("debug", kind || "1")
+  const u = paramUrl({ debug: kind || "1" })
   return u.pathname + u.search
 }
 </script>

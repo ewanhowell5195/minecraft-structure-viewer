@@ -1,6 +1,8 @@
 import { reactive, readonly, shallowRef } from "vue"
 import { loadLibrary } from "../lib.js"
 import { loadMojangJar } from "../mojang.js"
+import { setParams } from "../params.js"
+import { mb } from "../format.js"
 import { useLock } from "./useLock.js"
 import { STRUCT_RE } from "./useStructures.js"
 
@@ -22,7 +24,7 @@ const state = reactive({
 })
 
 const assets = shallowRef(null)
-const { lock, locked } = useLock()
+const { locked, withBusy } = useLock()
 
 const bytesById = new Map()
 let baseBytes = null
@@ -31,11 +33,7 @@ let structPath = new Map()
 
 // pinned versions write their id, a tracked channel writes the channel name, so
 // a reload restores what was picked rather than freezing on today's snapshot
-function setParam(id) {
-  const u = new URL(location)
-  id ? u.searchParams.set("cversion", id) : u.searchParams.delete("cversion")
-  history.replaceState(null, "", u)
-}
+const setParam = id => setParams({ cversion: id })
 
 const paramValue = () => state.version || state.channel
 
@@ -63,7 +61,6 @@ async function rebuild() {
 }
 
 async function loadBase() {
-  const mb = n => (n / 1048576).toFixed(0)
   state.baseStatus = "loading…"
   state.baseProgress = 0
   try {
@@ -86,24 +83,13 @@ async function loadBase() {
   await rebuild()
 }
 
-async function run(fn) {
-  state.busy = true
-  lock(true)
-  try {
-    await fn()
-  } finally {
-    state.busy = false
-    lock(false)
-  }
-}
-
 // picking a channel or exact version is what turns comparison mode on
 async function activate({ channel, version } = {}) {
   if (state.busy || locked.value) return
   state.channel = version ? "release" : channel ?? "release"
   state.version = version ?? ""
   state.armed = true
-  await run(loadBase)
+  await withBusy(state, loadBase)
 }
 
 async function deactivate() {
@@ -125,7 +111,7 @@ async function deactivate() {
 
 async function addPacks(files) {
   if (state.busy || locked.value || !files.length) return
-  await run(async () => {
+  await withBusy(state, async () => {
     const added = []
     for (const file of files) {
       const id = nextId++
@@ -141,7 +127,7 @@ async function removePack(id) {
   if (state.busy || locked.value) return
   const i = state.packs.findIndex(p => p.id === id)
   if (i < 0) return
-  await run(async () => {
+  await withBusy(state, async () => {
     state.packs.splice(i, 1)
     bytesById.delete(id)
     await rebuild()
@@ -153,7 +139,7 @@ async function movePack(id, delta) {
   const i = state.packs.findIndex(p => p.id === id)
   const j = i + delta
   if (i < 0 || j < 0 || j >= state.packs.length) return
-  await run(async () => {
+  await withBusy(state, async () => {
     const [p] = state.packs.splice(i, 1)
     state.packs.splice(j, 0, p)
     await rebuild()

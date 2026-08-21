@@ -9,6 +9,7 @@ import { useWorld } from "../composables/useWorld.js"
 import { getFont, measure, drawText } from "../mcfont.js"
 import { drawTooltip, onTooltipFrame, MARGIN } from "../tooltip.js"
 import { describeTable, prettyName, stackKey } from "../loot.js"
+import { num } from "../format.js"
 import { iconInfo, acquireIcon, releaseIcon, nextToken } from "../icons.js"
 import Modal from "./Modal.vue"
 import ItemIcon from "./ItemIcon.vue"
@@ -518,7 +519,7 @@ watch(() => [state.open, state.stacks, state.gui], () => {
             Re-roll
           </button>
           <span class="roll-stats" v-if="state.rolls > 1">
-            {{ state.rolls.toLocaleString("en") }} opens · {{ state.pileTotal.toLocaleString("en") }} item{{ state.pileTotal === 1 ? "" : "s" }}
+            {{ num(state.rolls) }} opens · {{ num(state.pileTotal) }} item{{ state.pileTotal === 1 ? "" : "s" }}
           </span>
           <span v-else></span>
           <div class="right">

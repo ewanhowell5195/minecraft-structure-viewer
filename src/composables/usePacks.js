@@ -4,6 +4,8 @@ import { loadMojangJar } from "../mojang.js"
 import { cachePack, uncachePack, setPackOrder, restorePacks } from "../userCache.js"
 import { proxyFetch, remoteName } from "../remote.js"
 import { warmIcons } from "../icons.js"
+import { setParams } from "../params.js"
+import { mb } from "../format.js"
 import { useLock } from "./useLock.js"
 
 // index 0 = highest priority (prepareAssets first-wins order); pack bytes
@@ -47,16 +49,10 @@ const state = reactive({
   remoteError: ""
 })
 
-if (state.version) {
-  const u = new URL(location)
-  if (u.searchParams.has("channel")) {
-    u.searchParams.delete("channel")
-    history.replaceState(null, "", u)
-  }
-}
+if (state.version && new URLSearchParams(location.search).has("channel")) setParams({ channel: null })
 
 const assets = shallowRef(null)
-const { lock, locked } = useLock()
+const { locked, withBusy } = useLock()
 
 let swapHandler = null
 const setSwapHandler = fn => { swapHandler = fn }
@@ -65,12 +61,8 @@ const setSwapHandler = fn => { swapHandler = fn }
 let makeHandler = () => { throw new Error("virtual sources need the embed API") }
 const setHandlerFactory = fn => { makeHandler = fn }
 
-function setChannelParam(ch) {
-  const u = new URL(location)
-  ch === "snapshot" ? u.searchParams.set("channel", "snapshot") : u.searchParams.delete("channel")
-  u.searchParams.delete("version") // picking a channel unpins
-  history.replaceState(null, "", u)
-}
+// picking a channel unpins
+const setChannelParam = ch => setParams({ channel: ch === "snapshot" ? "snapshot" : null, version: null })
 
 // dispose the previous bundle only after `swap` resolves, so the on-screen
 // scene keeps its cached textures until the rebuild lands
@@ -89,15 +81,12 @@ async function rebuildAssets(swap) {
   if (assets.value) warmIcons()
 }
 
-async function loadBase(swap, ready) {
-  state.busy = true
-  lock(true)
+const loadBase = (swap, ready) => withBusy(state, async () => {
   state.baseFailed = false
   state.baseStatus = "loading…"
   state.baseProgress = 0
   try {
     await loadBuiltin()
-    const mb = n => (n / 1048576).toFixed(0)
     const r = await loadMojangJar(state.channel, (got, total, ver) => {
       state.baseStatus = `downloading ${ver}… ${mb(got)}/${mb(total)}MB`
       state.baseProgress = total ? got / total : 0
@@ -114,30 +103,18 @@ async function loadBase(swap, ready) {
     state.baseFailed = true
   }
   state.baseProgress = 0
-  try {
-    await ready
-    await rebuildAssets(swap)
-  } finally {
-    state.busy = false
-    lock(false)
-  }
-}
+  await ready
+  await rebuildAssets(swap)
+})
 
 // the embed API's stack: no vanilla download, no pack cache writes, and one
 // rebuild however much the parent changes at once
-async function initSources(ready, swap) {
-  state.busy = true
-  lock(true)
+const initSources = (ready, swap) => withBusy(state, async () => {
   state.baseStatus = ""
-  try {
-    await loadBuiltin()
-    await ready
-    await rebuildAssets(swap)
-  } finally {
-    state.busy = false
-    lock(false)
-  }
-}
+  await loadBuiltin()
+  await ready
+  await rebuildAssets(swap)
+})
 
 async function applyBase(base) {
   baseVirtual = false
@@ -155,7 +132,6 @@ async function applyBase(base) {
     return
   }
   if (typeof base === "string") {
-    const mb = n => (n / 1048576).toFixed(0)
     state.baseFailed = false
     try {
       const r = await loadMojangJar(state.channel, (got, total, ver) => {
@@ -204,29 +180,17 @@ async function setPacks(packs) {
   })
 }
 
-async function loadPacks({ base, packs } = {}, swap) {
-  state.busy = true
-  lock(true)
-  try {
-    await loadBuiltin()
-    if (base !== undefined) await applyBase(base)
-    if (packs !== undefined) await setPacks(packs)
-    await rebuildAssets(swap)
-  } finally {
-    state.busy = false
-    lock(false)
-  }
-}
+const loadPacks = ({ base, packs } = {}, swap) => withBusy(state, async () => {
+  await loadBuiltin()
+  if (base !== undefined) await applyBase(base)
+  if (packs !== undefined) await setPacks(packs)
+  await rebuildAssets(swap)
+})
 
 async function setVersion(id, swap) {
   if (state.busy || locked.value || id === state.version) return
   state.version = id
-  const u = new URL(location)
-  if (id) {
-    u.searchParams.set("version", id)
-    u.searchParams.delete("channel")
-  } else u.searchParams.delete("version")
-  history.replaceState(null, "", u)
+  setParams(id ? { version: id, channel: null } : { version: null })
   await loadBase(swap)
 }
 
@@ -240,9 +204,7 @@ async function setChannel(channel, swap) {
 
 async function addPacks(files, swap) {
   if (state.busy || locked.value || !files.length) return
-  state.busy = true
-  lock(true)
-  try {
+  await withBusy(state, async () => {
     const added = []
     for (const file of files) {
       const id = nextId++
@@ -253,28 +215,20 @@ async function addPacks(files, swap) {
     state.packs.unshift(...added)
     setPackOrder(state.packs.map(p => p.name))
     await rebuildAssets(swap)
-  } finally {
-    state.busy = false
-    lock(false)
-  }
+  })
 }
 
 async function removePack(id, swap) {
   if (state.busy || locked.value) return
   const i = state.packs.findIndex(p => p.id === id)
   if (i < 0) return
-  state.busy = true
-  lock(true)
-  try {
+  await withBusy(state, async () => {
     const [removed] = state.packs.splice(i, 1)
     bytesById.delete(id)
     uncachePack(removed.name)
     setPackOrder(state.packs.map(p => p.name))
     await rebuildAssets(swap)
-  } finally {
-    state.busy = false
-    lock(false)
-  }
+  })
 }
 
 async function movePack(id, delta, swap) {
@@ -282,24 +236,18 @@ async function movePack(id, delta, swap) {
   const i = state.packs.findIndex(p => p.id === id)
   const j = i + delta
   if (i < 0 || j < 0 || j >= state.packs.length) return
-  state.busy = true
-  lock(true)
-  try {
+  await withBusy(state, async () => {
     const [p] = state.packs.splice(i, 1)
     state.packs.splice(j, 0, p)
     setPackOrder(state.packs.map(p => p.name))
     await rebuildAssets(swap)
-  } finally {
-    state.busy = false
-    lock(false)
-  }
+  })
 }
 
 // packs= URL packs: all fetched concurrently (and concurrently with the jar;
 // loadBase's ready gate holds the rebuild until they land), added at the front
 // so the list order is the priority order, never written to the pack cache
 async function addUrlPacks(urls) {
-  const mb = n => (n / 1048576).toFixed(0)
   const prog = urls.map(() => ({ got: 0, total: 0 }))
   const label = urls.length === 1 ? remoteName(urls[0]) : `${urls.length} packs`
   const update = () => {

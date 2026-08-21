@@ -9,6 +9,7 @@ import { useBuild } from "./useBuild.js"
 import { useScene } from "./useScene.js"
 import { useLock } from "./useLock.js"
 import { readStructure } from "../nbt.js"
+import { setParams } from "../params.js"
 import { AIR, EMPTY, JIGSAW, mix, parseState, poolTemplates, rand32, rnd } from "../transforms.js"
 import { hasDataMarkers, processDataMarkers } from "../markers.js"
 import { applyProcessors, seedFor } from "../processors.js"
@@ -175,16 +176,13 @@ async function regenerate() {
 }
 
 function syncUrl() {
-  const u = new URL(location)
-  if (state.active && state.level > 0 && state.seed != null) {
-    if (baseName && !u.searchParams.get("structure")) u.searchParams.set("structure", baseName)
-    u.searchParams.set("seed", state.seed.toString(16))
-    u.searchParams.set("level", String(state.level + 1))
-  } else {
-    u.searchParams.delete("seed")
-    u.searchParams.delete("level")
-  }
-  history.replaceState(null, "", u)
+  if (!(state.active && state.level > 0 && state.seed != null)) return setParams({ seed: null, level: null })
+  const named = baseName && !new URLSearchParams(location.search).get("structure")
+  setParams({
+    ...named && { structure: baseName },
+    seed: state.seed.toString(16),
+    level: state.level + 1
+  })
 }
 
 async function setLevel(target, { freshSeed = false } = {}) {

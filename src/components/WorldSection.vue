@@ -7,6 +7,7 @@ import { useContextMenu } from "../composables/useContextMenu.js"
 import { useLock } from "../composables/useLock.js"
 import { createGridRenderer, GRID } from "../world.js"
 import { numeric } from "../transforms.js"
+import { setParams } from "../params.js"
 import Modal from "./Modal.vue"
 import TreeFolder from "./TreeFolder.vue"
 import { useStream } from "../composables/useStream.js"
@@ -204,9 +205,7 @@ const explorable = ref(false)
 async function exploreWorld() {
   const spawn = nearestValidChunk()
   if (!spawn) return
-  const u = new URL(location)
-  u.searchParams.set("wy", state.yMin + "," + state.yMax)
-  history.replaceState(null, "", u)
+  setParams({ wy: state.yMin + "," + state.yMax })
   const stream = useStream()
   if (stream.state.session) stream.shutdown()
   const walk = useWalk()

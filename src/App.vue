@@ -21,6 +21,7 @@ import { minimal } from "./minimal.js"
 import { manual } from "./manual.js"
 import { initEmbedApi, emit } from "./embed.js"
 import { isRemote, prefetchRemote } from "./remote.js"
+import { kilo, num } from "./format.js"
 import PacksSection from "./components/PacksSection.vue"
 import CompareSection from "./components/CompareSection.vue"
 import StructuresSection from "./components/StructuresSection.vue"
@@ -177,12 +178,9 @@ const splashStatus = computed(() => {
   return buildState.status || "loading…"
 })
 
-const fmtK = n => n >= 1000 ? +(n / 1000).toFixed(1) + "K" : String(Math.round(n))
-
 function stats(i) {
-  const fmt = n => n.toLocaleString("en")
-  const perf = minimal ? "" : ` · ${i.draws} draws · ${fmtK(i.tris)} tris`
-  return `${i.size} · ${fmt(i.blocks)} blocks, ${fmt(i.palette)} unique${perf}`
+  const perf = minimal ? "" : ` · ${i.draws} draws · ${kilo(i.tris)} tris`
+  return `${i.size} · ${num(i.blocks)} blocks, ${num(i.palette)} unique${perf}`
 }
 
 const rightInfo = computed(() => compareState.on && buildState.info ? stats(buildState.info) : "")

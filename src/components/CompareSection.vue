@@ -4,6 +4,7 @@ import { useComparePacks } from "../composables/useComparePacks.js"
 import { useCompare } from "../composables/useCompare.js"
 import { useWorld } from "../composables/useWorld.js"
 import { useLock } from "../composables/useLock.js"
+import { num } from "../format.js"
 import PackStack from "./PackStack.vue"
 
 const { state, activate, addPacks, removePack, movePack } = useComparePacks()
@@ -59,7 +60,7 @@ function onStructure(e) {
             <label v-for="[id, label] in KINDS" :key="id" class="check" :class="id">
               <input type="checkbox" v-model="cmp.show[id]">
               {{ label }} blocks/entities
-              <span class="count">{{ cmp.counts[id].toLocaleString("en") }}</span>
+              <span class="count">{{ num(cmp.counts[id]) }}</span>
             </label>
           </div>
         </template>

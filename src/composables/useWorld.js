@@ -5,6 +5,8 @@ import { useStructure } from "./useStructure.js"
 import { useBuild } from "./useBuild.js"
 import { useStructures } from "./useStructures.js"
 import { cacheFile, uncache } from "../userCache.js"
+import { setParams } from "../params.js"
+import { debounce } from "../yield.js"
 
 let lastSelection = null
 let worldFile = null
@@ -35,32 +37,32 @@ const selected = new Set()
 
 const surface = new Map()
 let queue = [], qi = 0
-let focusTimer = null
 let lastFocus = ""
 let pumping = false
 let focus = null
 let autoRange = false
 
+const scanFocus = debounce((x0, z0, x1, z1) => {
+  if (!world) return
+  focus = { x0, z0, x1, z1 }
+  const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2
+  const rings = []
+  for (const c of world.chunks) {
+    if (c.cx < x0 || c.cx > x1 || c.cz < z0 || c.cz > z1) continue
+    if (surface.has(c.cx + "," + c.cz)) continue
+    const r = Math.max(Math.abs(c.cx - cx), Math.abs(c.cz - cz)) | 0
+    ;(rings[r] ??= []).push(c)
+  }
+  queue = rings.flat()
+  qi = 0
+  pump()
+}, 300)
+
 function setScanFocus(x0, z0, x1, z1) {
   const key = x0 + "," + z0 + "," + x1 + "," + z1
   if (key === lastFocus) return
   lastFocus = key
-  clearTimeout(focusTimer)
-  focusTimer = setTimeout(() => {
-    if (!world) return
-    focus = { x0, z0, x1, z1 }
-    const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2
-    const rings = []
-    for (const c of world.chunks) {
-      if (c.cx < x0 || c.cx > x1 || c.cz < z0 || c.cz > z1) continue
-      if (surface.has(c.cx + "," + c.cz)) continue
-      const r = Math.max(Math.abs(c.cx - cx), Math.abs(c.cz - cz)) | 0
-      ;(rings[r] ??= []).push(c)
-    }
-    queue = rings.flat()
-    qi = 0
-    pump()
-  }, 300)
+  scanFocus(x0, z0, x1, z1)
 }
 
 async function pump() {
@@ -316,20 +318,12 @@ async function unpackSel(param) {
 }
 
 async function setWorldParams(on) {
-  const u = new URL(location)
-  if (on) {
-    u.searchParams.set("wy", state.yMin + "," + state.yMax)
-    u.searchParams.set("wsel", await packSel())
-    u.searchParams.set("wloaded", "1")
-    if (state.dimension) u.searchParams.set("wdim", state.dimension)
-    else u.searchParams.delete("wdim")
-  } else {
-    u.searchParams.delete("wy")
-    u.searchParams.delete("wsel")
-    u.searchParams.delete("wloaded")
-    u.searchParams.delete("wdim")
-  }
-  history.replaceState(null, "", u)
+  setParams(on ? {
+    wy: state.yMin + "," + state.yMax,
+    wsel: await packSel(),
+    wloaded: true,
+    wdim: state.dimension || null
+  } : { wy: null, wsel: null, wloaded: null, wdim: null })
 }
 
 async function restoreLoad(wy, wsel, wdim) {
@@ -458,7 +452,15 @@ async function readMap(id) {
   }
 }
 
-let rangeTimer = null
+const rescan = debounce(() => {
+  if (!world) return
+  surface.clear()
+  queue = []
+  qi = 0
+  lastFocus = ""
+  state.rev++
+}, 300)
+
 function setYRange(lo, hi) {
   const yMin = Math.min(lo, hi), yMax = Math.max(lo, hi)
   if (yMin === state.yMin && yMax === state.yMax) return
@@ -466,15 +468,7 @@ function setYRange(lo, hi) {
   state.yMax = yMax
   state.rangeWarn = false
   // the surface preview clips to the y range, so a change rescans (debounced for slider drags)
-  clearTimeout(rangeTimer)
-  rangeTimer = setTimeout(() => {
-    if (!world) return
-    surface.clear()
-    queue = []
-    qi = 0
-    lastFocus = ""
-    state.rev++
-  }, 300)
+  rescan()
 }
 
 export function useWorld() {

@@ -6,3 +6,19 @@ export const yieldTask = globalThis.scheduler?.yield
     c.port1.onmessage = () => { c.port1.close(); r() }
     c.port2.postMessage(0)
   })
+
+export function debounce(fn, ms) {
+  let timer = null
+  const call = (...args) => {
+    clearTimeout(timer)
+    timer = setTimeout(() => {
+      timer = null
+      fn(...args)
+    }, ms)
+  }
+  call.cancel = () => {
+    clearTimeout(timer)
+    timer = null
+  }
+  return call
+}

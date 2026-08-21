@@ -8,7 +8,8 @@ import { useComparePacks } from "./useComparePacks.js"
 import { useLock } from "./useLock.js"
 import { setOverlay } from "./useHighlight.js"
 import { readStructure } from "../nbt.js"
-import { REAL_AIR } from "../transforms.js"
+import { setParams } from "../params.js"
+import { leafName as leaf, REAL_AIR } from "../transforms.js"
 import { readStructureFile, structureName } from "../formats.js"
 
 const build = useBuild()
@@ -45,17 +46,9 @@ let entering = false
 // structure renders on both, so the comparison is purely the assets
 const files = { main: null, panel: null }
 
-const leaf = rel => rel.slice(rel.lastIndexOf("/") + 1)
-
 // the pair lives in the url as the left structure plus the one it is compared
 // against, so a reload or a shared link comes back comparing
-function writeUrl(left, right) {
-  const u = new URL(location)
-  if (left) u.searchParams.set("structure", left)
-  else u.searchParams.delete("structure")
-  right ? u.searchParams.set("compare", right) : u.searchParams.delete("compare")
-  history.replaceState(null, "", u)
-}
+const writeUrl = (left, right) => setParams({ structure: left || null, compare: right || null })
 
 // waits for the app to go quiet: a build in flight, the comparison stack's own
 // load, or anything else holding the lock

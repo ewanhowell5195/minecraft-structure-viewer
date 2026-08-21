@@ -70,6 +70,8 @@ export function mix(a, b) {
 
 export const strip = s => s.replace(/^minecraft:/, "")
 
+export const leafName = p => p.slice(p.lastIndexOf("/") + 1)
+
 export function parseState(str) {
   const m = typeof str === "string" && str.trim().match(/^([\w./-]+(?::[\w./-]+)?)(?:\[(.*)\])?$/)
   if (!m) return { Name: "minecraft:air" }

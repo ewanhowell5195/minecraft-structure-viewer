@@ -4,6 +4,8 @@ import { useScene, SLICE_PLANES } from "./useScene.js"
 import { useBuild } from "./useBuild.js"
 import { useStructure } from "./useStructure.js"
 import { useLock } from "./useLock.js"
+import { setParams } from "../params.js"
+import { debounce } from "../yield.js"
 
 const AXES = ["x", "y", "z"]
 const DIRS = { x: new THREE.Vector3(1, 0, 0), y: new THREE.Vector3(0, 1, 0), z: new THREE.Vector3(0, 0, 1) }
@@ -39,10 +41,7 @@ function syncSliceUrl() {
   const parts = AXES.filter(a => state[a].on && state[a].i != null)
     .map(a => `${a}${state[a].i}${state[a].flip ? "f" : ""}`)
   const next = parts.length ? parts.join(",") : null
-  const u = new URL(location)
-  if (u.searchParams.get("slice") === next) return
-  next ? u.searchParams.set("slice", next) : u.searchParams.delete("slice")
-  history.replaceState(null, "", u)
+  if (new URLSearchParams(location.search).get("slice") !== next) setParams({ slice: next })
 }
 
 const sceneApi = useScene()
@@ -195,28 +194,26 @@ function sliceStructure(structure) {
 let previewOnly = false
 function setPreviewOnly(on) {
   previewOnly = on
-  if (on) clearTimeout(rebuildTimer)
+  if (on) rebuildSoon.cancel()
   else if (sliceKey() !== appliedKey) scheduleRebuild()
 }
 
-// the settle window lets a follow-up drag start without wasting a rebuild
-let rebuildTimer = null
 function scheduleRebuild() {
-  if (previewOnly) return
-  clearTimeout(rebuildTimer)
-  rebuildTimer = setTimeout(() => {
-    rebuildTimer = null
-    if (sliceKey() === appliedKey) return
-    const buildApi = useBuild()
-    if (buildApi.state.building) return scheduleRebuild()
-    if (sliceKey() === "" && buildApi.restoreFull()) {
-      appliedKey = ""
-      refresh()
-      return
-    }
-    buildApi.build(undefined, false, true)
-  }, 1000)
+  if (!previewOnly) rebuildSoon()
 }
+
+// the settle window lets a follow-up drag start without wasting a rebuild
+const rebuildSoon = debounce(() => {
+  if (sliceKey() === appliedKey) return
+  const buildApi = useBuild()
+  if (buildApi.state.building) return scheduleRebuild()
+  if (sliceKey() === "" && buildApi.restoreFull()) {
+    appliedKey = ""
+    refresh()
+    return
+  }
+  buildApi.build(undefined, false, true)
+}, 1000)
 
 watch(state, () => {
   if (box) {
@@ -407,7 +404,7 @@ function init() {
   })
   // sync flush, so the reset lands before the new load's build slices
   const reset = () => {
-    clearTimeout(rebuildTimer)
+    rebuildSoon.cancel()
     for (const a of AXES) {
       state[a].on = false
       state[a].i = null
@@ -424,7 +421,7 @@ function init() {
     if (e.button !== 0 || document.pointerLockElement || locked.value || !hoverA) return
     dragA = hoverA
     dragCorner = hoverH?.userData.corner ?? 0
-    clearTimeout(rebuildTimer)
+    rebuildSoon.cancel()
     if (!previewOnly) useBuild().showFull(sliceKey() !== appliedKey)
     canvas.setPointerCapture(e.pointerId)
     canvas.style.cursor = "grabbing"

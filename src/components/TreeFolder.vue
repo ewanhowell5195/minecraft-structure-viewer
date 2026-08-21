@@ -2,6 +2,7 @@
 import { computed, inject, reactive, ref, watch } from "vue"
 import { useContextMenu } from "../composables/useContextMenu.js"
 import { useLock } from "../composables/useLock.js"
+import { leafName as leaf } from "../transforms.js"
 
 const props = defineProps({
   node: Object,
@@ -110,8 +111,6 @@ watch(() => api.selected(), sel => {
     addTo(mounted, name)
   }
 }, { immediate: true })
-
-const leaf = rel => rel.split("/").at(-1)
 </script>
 
 <template>

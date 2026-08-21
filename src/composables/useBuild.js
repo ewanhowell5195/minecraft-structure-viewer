@@ -5,7 +5,7 @@ import { usePacks } from "./usePacks.js"
 import { useScene } from "./useScene.js"
 import { useSlicers } from "./useSlicers.js"
 import { useLock } from "./useLock.js"
-import { yieldTask } from "../yield.js"
+import { debounce, yieldTask } from "../yield.js"
 import { exportScene } from "../export.js"
 import { makeSignTexts, plainText } from "../signs.js"
 import { JIGSAW, parseState } from "../transforms.js"
@@ -211,12 +211,11 @@ function answerWarn(ok) {
 
 // seeded into template userData so the library shares one live uniform: daytime changes re-light with no rebuild
 const daytimeUniform = { value: NOON }
-let clockTimer = null
+const clocksSoon = debounce(updateClocks, 150)
 watch(() => state.daytime, v => {
   daytimeUniform.value = v
   if (sceneHandle?.group.userData.daytime) sceneHandle.group.userData.daytime.value = v
-  clearTimeout(clockTimer)
-  clockTimer = setTimeout(updateClocks, 150)
+  clocksSoon()
 })
 
 let savedDaytime = NOON
@@ -1437,21 +1436,21 @@ async function ensureOcclusionCache(lib, assets) {
   })()
   return st.ready
 }
-let occSaveTimer = null
+const saveOcclusion = debounce(async (lib, assets, st) => {
+  try {
+    if (packs.assets.value !== assets) return
+    const entries = await lib.exportOcclusionCache(assets)
+    if (entries.length > (st.saved ?? 0) + 8) {
+      await saveStateCache(st.key, entries)
+      st.saved = entries.length
+    }
+  } catch {}
+}, 2500)
+
 function scheduleOcclusionSave(lib, assets) {
   const st = occState.get(assets)
   if (!st?.key || !lib.exportOcclusionCache) return
-  clearTimeout(occSaveTimer)
-  occSaveTimer = setTimeout(async () => {
-    try {
-      if (packs.assets.value !== assets) return
-      const entries = await lib.exportOcclusionCache(assets)
-      if (entries.length > (st.saved ?? 0) + 8) {
-        await saveStateCache(st.key, entries)
-        st.saved = entries.length
-      }
-    } catch {}
-  }, 2500)
+  saveOcclusion(lib, assets, st)
 }
 
 // version comparison builds the right half against the comparison stack's

@@ -14,6 +14,7 @@ import { yieldTask } from "../yield.js"
 import { useFeatures } from "./useFeatures.js"
 import { generateFeature } from "../features/index.js"
 import { mix, rand32, rnd } from "../transforms.js"
+import { paramUrl, setParams } from "../params.js"
 import { isRemote, prefetchRemote, fetchRemote, remoteName } from "../remote.js"
 import { applyProcessors, seedFor } from "../processors.js"
 import { cacheFile, uncache } from "../userCache.js"
@@ -119,25 +120,22 @@ async function loadDefault() {
 
 function setStructureParam(rel, featureRel, featureSeed, featureField, keepWorldParams = false) {
   if (navigatingHistory || implicitLoad) return
-  const u = new URL(location)
-  const before = u.searchParams.get("structure") + "|" + u.searchParams.get("feature")
-  rel ? u.searchParams.set("structure", rel) : u.searchParams.delete("structure")
-  u.searchParams.delete("compare")
-  featureRel ? u.searchParams.set("feature", featureRel) : u.searchParams.delete("feature")
-  featureRel && featureSeed ? u.searchParams.set("fseed", featureSeed.toString(16)) : u.searchParams.delete("fseed")
-  featureRel && featureField ? u.searchParams.set("field", "1") : u.searchParams.delete("field")
-  // a load resets any level session; its params must not leak to the next one
-  u.searchParams.delete("seed")
-  u.searchParams.delete("level")
-  u.searchParams.delete("debug")
-  if (!keepWorldParams) {
-    u.searchParams.delete("wy")
-    u.searchParams.delete("wsel")
-    u.searchParams.delete("wloaded")
-  }
-  const changed = u.searchParams.get("structure") + "|" + u.searchParams.get("feature") !== before
-  if (changed && !initializing) history.pushState(null, "", u)
-  else history.replaceState(null, "", u)
+  const key = p => p.get("structure") + "|" + p.get("feature")
+  const before = key(new URLSearchParams(location.search))
+  const u = paramUrl({
+    structure: rel || null,
+    compare: null,
+    feature: featureRel || null,
+    fseed: featureRel && featureSeed ? featureSeed.toString(16) : null,
+    field: !!(featureRel && featureField),
+    // a load resets any level session; its params must not leak to the next one
+    seed: null,
+    level: null,
+    debug: null,
+    ...!keepWorldParams && { wy: null, wsel: null, wloaded: null }
+  })
+  const changed = key(u.searchParams) !== before
+  history[changed && !initializing ? "pushState" : "replaceState"](null, "", u)
 }
 
 addEventListener("popstate", async () => {
@@ -666,9 +664,7 @@ function loadDebug(kind) {
     const snap = snapshot()
     const name = kind ? `debug (${kind})` : "debug"
     setStructureParam(null)
-    const u = new URL(location)
-    u.searchParams.set("debug", kind || "1")
-    history.replaceState(null, "", u)
+    setParams({ debug: kind || "1" })
     state.field = null
     loaded = [{ structure: makeDebug(kind), name }]
     if (await apply() === false) return restore(snap)

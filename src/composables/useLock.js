@@ -19,6 +19,18 @@ async function withLock(fn) {
   }
 }
 
+// a pack stack's loads: busy for its own controls, locked for the rest of the app
+async function withBusy(target, fn) {
+  target.busy = true
+  lock(true)
+  try {
+    return await fn()
+  } finally {
+    target.busy = false
+    lock(false)
+  }
+}
+
 export function useLock() {
-  return { locked, lock, withLock }
+  return { locked, lock, withLock, withBusy }
 }
