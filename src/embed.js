@@ -4,6 +4,7 @@ import { useStructures } from "./composables/useStructures.js"
 import { useWorld } from "./composables/useWorld.js"
 import { useBuild } from "./composables/useBuild.js"
 import { setHighlights } from "./composables/useHighlight.js"
+import { useSky } from "./composables/useSky.js"
 import { readStructure } from "./nbt.js"
 import { readLitematic, readSchem, readMcstructure } from "./formats.js"
 
@@ -167,6 +168,11 @@ const COMMANDS = {
       nbt: jsonSafe(e.nbt ?? {})
     }))
     return { blocks, entities }
+  },
+  sky({ on } = {}) {
+    const sky = useSky()
+    if (on !== undefined) sky.enabled.value = !!on
+    return { on: sky.enabled.value, active: sky.active.value }
   }
 }
 

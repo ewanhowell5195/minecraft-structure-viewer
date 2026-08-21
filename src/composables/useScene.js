@@ -18,6 +18,8 @@ let renderer = null, canvas = null
 const scene = new THREE.Scene()
 // drawn over the finished frame; the wireframe override material never touches it
 const overlayScene = new THREE.Scene()
+// drawn under it, for the same reason: the sky is never wireframed or sliced
+const skyScene = new THREE.Scene()
 // near 2: at 0.1 far surfaces quantised to the same depth (distant z-fighting);
 // walking never gets closer than ~4 units, so nothing visible clips
 const perspCam = new THREE.PerspectiveCamera(FOV, 1, 2, 5000)
@@ -40,6 +42,38 @@ export const SLICE_PLANES = [
 
 const wireMat = new THREE.MeshBasicMaterial({ wireframe: true, color: 0x9fd0ff })
 wireMat.clippingPlanes = SLICE_PLANES
+
+let skyGroup = null
+// the sky has no horizon under a parallel projection, so ortho borrows a
+// perspective camera pointed the same way, framed to cover the same angle the
+// ortho frustum does: switching cameras leaves the sky where it was, and ortho
+// zoom moves it like a lens rather than leaving it behind
+const skyCam = new THREE.PerspectiveCamera(FOV, 1, 2, 5000)
+
+function skyCamera() {
+  if (camera.isPerspectiveCamera) return camera
+  const dist = Math.max(camera.position.distanceTo(controls.target), 1)
+  const half = THREE.MathUtils.radToDeg(Math.atan(camera.top / (camera.zoom || 1) / dist))
+  skyCam.fov = Math.min(Math.max(half * 2, 10), 100)
+  skyCam.aspect = (canvas?.clientWidth || 1) / (canvas?.clientHeight || 1)
+  skyCam.far = camera.far
+  skyCam.position.copy(camera.position)
+  skyCam.quaternion.copy(camera.quaternion)
+  skyCam.updateProjectionMatrix()
+  skyCam.updateMatrixWorld()
+  return skyCam
+}
+
+function setSky(group) {
+  skyGroup?.removeFromParent()
+  skyGroup = group ?? null
+  if (skyGroup) skyScene.add(skyGroup)
+}
+
+// compare mode: two builds in the one scene, each drawn into its own half, with
+// the grid of whichever build that half is showing
+let compare = null
+const setCompare = next => { compare = next ?? null }
 
 let gridGroup = null
 const gridVisible = () => view.grid && view.wireframe !== "wire"
@@ -197,8 +231,11 @@ function makeHighlight() {
 
 // ortho "zoom" moves no closer, so divide it out
 function updateGridLabels() {
-  if (!gridGroup) return
-  for (const o of gridGroup.children) {
+  for (const g of [gridGroup, compare?.leftGrid()]) if (g) updateLabelsOf(g)
+}
+
+function updateLabelsOf(group) {
+  for (const o of group.children) {
     const u = o.userData
     if (!u.showDist) continue
     const dist = camera.position.distanceTo(u.at) / (camera.zoom || 1)
@@ -212,6 +249,27 @@ function updateGridLabels() {
 }
 
 let gridRects = []
+
+// compare hands the outgoing build's grid to its own half, so it is detached
+// here rather than disposed with the build it belonged to
+function takeGrid() {
+  const taken = gridGroup ? { group: gridGroup, rects: gridRects } : null
+  gridGroup = null
+  gridRects = []
+  return taken
+}
+
+function disposeGrid(group) {
+  if (!group) return
+  group.removeFromParent()
+  group.traverse(o => {
+    o.geometry?.dispose()
+    o.material?.map?.dispose?.()
+    o.material?.dispose?.()
+  })
+}
+
+const setGridOffset = (dx = 0, dy = 0, dz = 0) => { if (gridGroup) gridGroup.position.set(dx, dy, dz) }
 
 // rects x/z/y are world units, w/d are blocks; cave is world units
 function setGrids(rects, cave = null) {
@@ -429,24 +487,61 @@ function init(canvasEl) {
     updateClips()
     updateGridLabels()
     for (const a of animators) a.update()
-    scene.overrideMaterial = view.wireframe === "wire" ? wireMat : null
-    renderer.render(scene, camera)
-    if (view.wireframe === "overlay") {
-      scene.overrideMaterial = wireMat
-      const gv = gridGroup?.visible
-      if (gridGroup) gridGroup.visible = false
-      renderer.autoClear = false
-      renderer.render(scene, camera)
-      renderer.autoClear = true
-      if (gridGroup) gridGroup.visible = gv
-      scene.overrideMaterial = null
-    }
-    if (overlayScene.children.length) {
-      renderer.autoClear = false
-      renderer.render(overlayScene, camera)
-      renderer.autoClear = true
-    }
+    drawScene()
   })
+}
+
+function drawPass() {
+  scene.overrideMaterial = view.wireframe === "wire" ? wireMat : null
+  renderer.render(scene, camera)
+  if (view.wireframe === "overlay") {
+    scene.overrideMaterial = wireMat
+    const gv = gridGroup?.visible
+    if (gridGroup) gridGroup.visible = false
+    renderer.render(scene, camera)
+    if (gridGroup) gridGroup.visible = gv
+  }
+  scene.overrideMaterial = null
+  if (overlayScene.children.length) renderer.render(overlayScene, camera)
+}
+
+function drawScene() {
+  renderer.autoClear = false
+  renderer.clear()
+  if (skyGroup) renderer.render(skyScene, skyCamera())
+  if (compare) {
+    const left = compare.left(), right = compare.right(), leftGrid = compare.leftGrid()
+    const x = Math.round(sizeW * compare.split())
+    const grid = gridVisible()
+    const view = compare.view?.() ?? "slide"
+    const show = isLeft => {
+      if (left) left.visible = isLeft
+      if (right) right.visible = !isLeft
+      if (leftGrid) leftGrid.visible = grid && isLeft
+      if (gridGroup) gridGroup.visible = grid && !isLeft
+    }
+    // before/after hand the whole frame to one half, so no scissor is needed
+    if (view !== "slide") {
+      show(view === "before")
+      drawPass()
+    } else {
+      renderer.setScissorTest(true)
+      for (const [side, from, width] of [["left", 0, x], ["right", x, sizeW - x]]) {
+        if (width <= 0) continue
+        show(side === "left")
+        renderer.setScissor(from, 0, width, sizeH)
+        drawPass()
+      }
+      renderer.setScissorTest(false)
+    }
+    if (left) left.visible = true
+    if (right) right.visible = true
+    if (leftGrid) leftGrid.visible = false
+    if (gridGroup) gridGroup.visible = grid
+  } else {
+    drawPass()
+  }
+  renderer.autoClear = true
 }
 
 let walkUpdate = null
@@ -459,7 +554,8 @@ function setOrthoManual(on) {
 
 export function useScene() {
   return {
-    view, scene, overlayScene, init, fit, setGrids, sceneBounds, setOrtho, setOrthoManual,
+    view, scene, overlayScene, init, fit, setGrids, sceneBounds, setOrtho, setOrthoManual, setSky, setCompare,
+    takeGrid, disposeGrid, setGridOffset,
     makeHighlight,
     getGridRects: () => gridRects,
     contentRoots, animators, perspCam, FOV, updateProjection, setWalkUpdate, syncAspect,

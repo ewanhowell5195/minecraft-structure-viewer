@@ -3,11 +3,13 @@ import { ref } from "vue"
 import { useScene } from "../composables/useScene.js"
 import { useBuild, NOON } from "../composables/useBuild.js"
 import { useLock } from "../composables/useLock.js"
+import { useSky } from "../composables/useSky.js"
 
 const sceneApi = useScene()
 const { view } = sceneApi
 const { state: buildState } = useBuild()
 const { locked } = useLock()
+const { enabled: sky } = useSky()
 const collapsed = ref(false)
 </script>
 
@@ -56,6 +58,10 @@ const collapsed = ref(false)
       <label class="check">
         <input type="checkbox" v-model="view.grid">
         Grid
+      </label>
+      <label class="check" title="The game's sky, sun, moon and stars. Always on while walking">
+        <input type="checkbox" v-model="sky">
+        Sky
       </label>
     </div>
     <button @click="sceneApi.fit()">

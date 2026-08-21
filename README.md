@@ -30,6 +30,9 @@ a standalone Vue 3 + Vite app.
   Explore World streams the open world around you in walk mode (tiles build in
   workers as you move, docs/STREAMING.md), and exiting leaves you orbiting the
   loaded chunks with the session resumable where you left off.
+- Sky: the game's sky behind the scene, with the day/night gradient, the pack's
+  own sun and moon, the star field and the sunrise glow, all following the
+  Daytime setting. Always on in walk mode, a View toggle when orbiting.
 - Interactions: containers open their loot modal in orbit and walk mode alike
   (chest lids pose, decorated pots wobble and show their held item or roll their
   loot table), enchanting books track you, and bells ring where you whack them.
@@ -48,6 +51,9 @@ a standalone Vue 3 + Vite app.
   would start the fragment), or something like
   `linear-gradient(160deg, %232f6fa8, black)`. Images are ignored, as is
   anything CSS doesn't parse as a background
+- `?sky` draw the game's sky behind the structure, the same thing as the View
+  panel's Sky toggle. Walk mode is always under the sky, so this is about the
+  orbit view
 - `?minimal` strip the chrome for embedding: no sidebar, walk button,
   structure-blocks menu, or progress bars; the splash stays up with loading
   status until the structure finishes loading, and the info chip drops its
@@ -246,6 +252,18 @@ level and anything else that changed what you can see are already applied. Air
 is left out either way. The reply is plain JSON: NBT longs come back as decimal
 strings and byte arrays as arrays of numbers, so nothing in it trips
 `JSON.stringify`.
+
+#### `sky`
+
+`{ on }`, optional. Replies `{ on, active }`.
+
+Draws the game's sky behind the structure: the day/night gradient, the pack's
+own sun and moon, the star field and the sunrise glow, in the loaded structure's
+dimension. Omit `on` to read the setting without changing it.
+
+Walk mode is always under the sky whatever this says, so `on` is what the orbit
+view does and `active` is whether the sky is showing right now. The sky follows
+the viewer's Daytime, which [`?sky`](#url-params) and this command don't set.
 
 ### Virtual sources
 

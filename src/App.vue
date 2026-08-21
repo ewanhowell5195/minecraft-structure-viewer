@@ -6,6 +6,7 @@ import { useStructures } from "./composables/useStructures.js"
 import { useStructure, decodeStructureParam, parseSeedParam, beginInit, endInit } from "./composables/useStructure.js"
 import { useBuild } from "./composables/useBuild.js"
 import { useScene } from "./composables/useScene.js"
+import { useSky } from "./composables/useSky.js"
 import { useLock } from "./composables/useLock.js"
 import { useWalk } from "./composables/useWalk.js"
 import { useStream } from "./composables/useStream.js"
@@ -46,6 +47,7 @@ const structures = useStructures()
 const { state: current, structure, loadVanilla, loadDefault, loadMany, loadFile, loadDebug, loadFeature, loadFeatures, loadFeatureField, cancelReading } = useStructure()
 const { state: buildState, cancel: cancelBuild } = useBuild()
 const sceneApi = useScene()
+useSky()
 const walk = useWalk()
 const stream = useStream()
 async function walkClick() {
