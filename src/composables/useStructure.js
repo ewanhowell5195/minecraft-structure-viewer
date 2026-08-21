@@ -6,7 +6,7 @@ import { useBuild } from "./useBuild.js"
 import { useSession } from "./useSession.js"
 import { useLock } from "./useLock.js"
 import { readStructure } from "../nbt.js"
-import { readLitematic, readMcstructure, readSchem } from "../formats.js"
+import { readerFor, structureName } from "../formats.js"
 import { useWorld } from "./useWorld.js"
 import { fixBuiltin, GENERATED } from "../generators/builtin.js"
 import { makeDebug } from "../debug.js"
@@ -18,7 +18,6 @@ import { isRemote, prefetchRemote, fetchRemote, remoteName } from "../remote.js"
 import { applyProcessors, seedFor } from "../processors.js"
 import { cacheFile, uncache } from "../userCache.js"
 
-const READERS = { nbt: readStructure, litematic: readLitematic, schem: readSchem, mcstructure: readMcstructure }
 const COMBINE_AIR = /(^|:)(air|cave_air|void_air|structure_void)$/
 
 const packs = usePacks()
@@ -28,7 +27,9 @@ const session = useSession()
 const { locked, withLock } = useLock()
 
 const structure = buildApi.current
-const state = reactive({ name: "", error: "", reading: null, field: null })
+// file: the name of the opened structure file on screen, so the sidebar can
+// offer to close it instead of leaving it stuck until something else loads
+const state = reactive({ name: "", error: "", reading: null, field: null, file: "" })
 
 let loaded = []
 
@@ -121,6 +122,7 @@ function setStructureParam(rel, featureRel, featureSeed, featureField, keepWorld
   const u = new URL(location)
   const before = u.searchParams.get("structure") + "|" + u.searchParams.get("feature")
   rel ? u.searchParams.set("structure", rel) : u.searchParams.delete("structure")
+  u.searchParams.delete("compare")
   featureRel ? u.searchParams.set("feature", featureRel) : u.searchParams.delete("feature")
   featureRel && featureSeed ? u.searchParams.set("fseed", featureSeed.toString(16)) : u.searchParams.delete("fseed")
   featureRel && featureField ? u.searchParams.set("field", "1") : u.searchParams.delete("field")
@@ -157,10 +159,27 @@ addEventListener("popstate", async () => {
       else await loadFeature(feature, fseed)
       return
     }
+    // the comparison panel follows the entry too, so stepping out of a
+    // comparison disarms it and stepping back into one arms it again
+    const comparePacks = (await import("./useComparePacks.js")).useComparePacks()
+    const compare = (await import("./useCompare.js")).useCompare()
+    const cversion = params.get("cversion")
+    if (!cversion && comparePacks.state.armed) await compare.stop()
     const rels = (await decodeStructureParam(params.get("structure"))).filter(r => isRemote(r) || structures.has(r))
     if (rels.length > 1 || rels.some(isRemote)) await loadMany(rels)
     else if (rels.length === 1) await loadVanilla(rels[0])
     else await loadDefault()
+    if (cversion) {
+      // arming rebuilds the pair on its own; an unchanged panel needs the nudge
+      const same = comparePacks.state.armed && comparePacks.paramValue() === cversion
+      await comparePacks.fromParam(cversion)
+      if (same && rels.length === 1) await compare.enterVersion(rels[0])
+      return
+    }
+    const against = params.get("compare")
+    if (against && rels.length === 1 && structures.has(against)) {
+      await compare.enter(against)
+    }
   } finally {
     navigatingHistory = false
   }
@@ -310,10 +329,13 @@ function restore(snap) {
 
 async function apply(refit = true) {
   if (!loaded.length) return
+  // any load replaces what is on screen, so a comparison can't survive it
+  ;(await import("./useCompare.js")).useCompare().exit()
   // map art carries across anything world-derived; a fresh non-world structure clears it
   const w = useWorld()
   if (!loaded.every(e => e.world || (e.rel && !e.feature && w.hasStructure(e.rel)))) await buildApi.clearMapArt()
   const features = useFeatures()
+  state.file = loaded.find(e => e.file)?.name ?? ""
   buildApi.state.manual = !loaded.every(e => e.rel && !e.feature && structures.has(e.rel))
   structures.stateMut.selected = loaded.filter(e => e.rel && !e.feature).map(e => e.rel)
   features.stateMut.selected = Array.from(new Set(loaded.filter(e => e.feature).map(e => e.rel)))
@@ -355,9 +377,9 @@ async function apply(refit = true) {
 async function remoteEntry(url) {
   const bytes = await fetchRemote(url)
   const name = remoteName(url)
-  const reader = READERS[name.split(".").pop().toLowerCase()] ?? readStructure
+  const reader = readerFor(name)
   const s = await reader(bytes.buffer)
-  return { structure: s, name: name.replace(/\.(nbt|litematic|schem|mcstructure)$/i, ""), rel: url }
+  return { structure: s, name: structureName(name), rel: url }
 }
 
 async function readVanilla(rel) {
@@ -627,6 +649,15 @@ function loadFeatureField(rel, baseSeed) {
   })
 }
 
+// drops an opened file and goes back to the default structure, so the tree is
+// usable again without having to load something else first
+async function closeFile() {
+  if (locked.value || !state.file) return
+  uncache("structure")
+  state.file = ""
+  await loadDefault()
+}
+
 function loadDebug(kind) {
   if (locked.value) return
   kind = kind && kind !== "1" ? kind : ""
@@ -651,11 +682,11 @@ function loadFile(file, cacheIt = true) {
     state.error = ""
     const snap = snapshot()
     try {
-      const reader = READERS[file.name.split(".").pop().toLowerCase()] ?? readStructure
+      const reader = readerFor(file.name)
       const s = await reader(await file.arrayBuffer())
       setStructureParam(null)
       state.field = null
-      loaded = [{ structure: s, name: file.name.replace(/\.(nbt|litematic|schem|mcstructure)$/i, "") }]
+      loaded = [{ structure: s, name: structureName(file.name), file: true }]
       if (await apply() === false) return restore(snap)
       if (cacheIt) {
         uncache("world")
@@ -712,7 +743,7 @@ async function onAssetsSwapped() {
 packs.setSwapHandler(onAssetsSwapped)
 
 export function useStructure() {
-  return { state: readonly(state), structure, apply, loadVanilla, loadDefault, loadMany, loadFile, loadObject, loadDebug, loadFeature, loadFeatures, loadFeatureField, clickFeature, cancelReading, setReading, readCancelled }
+  return { state: readonly(state), structure, apply, loadVanilla, loadDefault, loadMany, loadFile, closeFile, loadObject, loadDebug, loadFeature, loadFeatures, loadFeatureField, clickFeature, cancelReading, setReading, readCancelled }
 }
 
 

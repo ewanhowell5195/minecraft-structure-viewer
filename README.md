@@ -30,6 +30,32 @@ a standalone Vue 3 + Vite app.
   Explore World streams the open world around you in walk mode (tiles build in
   workers as you move, docs/STREAMING.md), and exiting leaves you orbiting the
   loaded chunks with the session resumable where you left off.
+- Compare mode: with one structure loaded, right-click another in the tree to
+  swipe between the two. Both are built and drawn under the one camera, split by
+  a divider you drag, so the halves line up block for block. Walking, the blocks
+  list and the structure-block toggle are hidden while comparing, and loading
+  anything else (a shift-click range included) drops back to a normal load. Each
+  half keeps its own floor grid, the pair shares a ground level and one set of
+  slicer handles spanning both (a cut there stays a live clipping preview across
+  the two rather than rebuilding either), and both names sit in the URL, so a
+  comparison survives a reload or a shared link.
+- Version comparison: the Compare panel picks a second game version with its own
+  pack stack, layered like the main one. While it's armed, clicking a structure
+  loads it from both versions at once, each side read from its own jar and
+  rendered with its own packs; structures that only exist on one side grey out.
+  Opening a structure file compares that same file under both versions' assets,
+  and the panel's own file upload replaces the right side to compare two files.
+  When the two stacks resolve to identical client assets, the tree narrows to
+  structures whose nbt genuinely changed (a DataVersion bump alone doesn't
+  count) and the Features tab goes away, since everything else would render the
+  same twice. Worlds and comparison are mutually exclusive. The panel also picks
+  the compare mode (Slide swipes, Before and After each take the whole frame)
+  and can highlight the diff: new, changed and removed blocks/entities, drawn
+  through the same overlay system the embed API's `highlight` uses, with counts
+  beside each toggle. Both halves are placed on one shared block grid, so a cell
+  means the same spot on either side however the two structures are sized.
+- An opened structure file can be closed again: the sidebar's Open button turns
+  into Close while a file is on screen, in comparison mode as well as normally.
 - Sky: the game's sky behind the scene, with the day/night gradient, the pack's
   own sun and moon, the star field and the sunrise glow, all following the
   Daytime setting. Always on in walk mode, a View toggle when orbiting.
@@ -45,6 +71,11 @@ a standalone Vue 3 + Vite app.
 - `?channel=snapshot` use the snapshot jar
 - `?version=<id>` pin an exact game version instead of tracking the latest, e.g.
   `26.1.2` or `26.3-snapshot-8`; anything from 15w31a on. Replaces `?channel=`
+- `?compare=<name>` compare the `?structure=` one against this one, the same
+  pairing the tree's right-click menu makes. Ignored unless `?structure=` names
+  a single structure
+- `?cversion=<id>` arm the Compare panel with this game version, re-entering the
+  version comparison on the loaded structure
 - `?seed=<hex>&level=<n>` restore a jigsaw/procedural session
 - `?background=<css>` paint the viewport behind the structure with any CSS
   background: a colour like `white` or `2f6fa8` (a bare hex needs no `#`, which

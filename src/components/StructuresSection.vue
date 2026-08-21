@@ -5,24 +5,48 @@ import { useStructure } from "../composables/useStructure.js"
 import { useWorld } from "../composables/useWorld.js"
 import { useContextMenu } from "../composables/useContextMenu.js"
 import { useLock } from "../composables/useLock.js"
+import { useCompare } from "../composables/useCompare.js"
+import { useCompareDiff } from "../composables/useCompareDiff.js"
 import TreeFolder from "./TreeFolder.vue"
 import ListTabs from "./ListTabs.vue"
 
 const structures = useStructures()
 const { state, stateMut, computeWorldgen, computeAdvIndex, advVocab, filteredNames } = structures
-const { loadVanilla, loadMany, loadFile } = useStructure()
+const { state: structState, loadVanilla, loadMany, loadFile, closeFile } = useStructure()
 const ctx = useContextMenu()
 const { locked } = useLock()
+const compare = useCompare()
+const diff = useCompareDiff()
 const fileInput = ref(null)
 const treeEl = ref(null)
 const collapsed = ref(false)
 
+// a plain click while the comparison panel is armed opens the structure from
+// both versions; modified clicks keep the normal combine behaviour and drop the split
+function openRel(rel, ev) {
+  if (compare.versionArmed() && !ev?.shiftKey && !ev?.ctrlKey && !ev?.metaKey) return compare.enterVersion(rel)
+  return loadVanilla(rel, ev)
+}
+
 provide("treeApi", {
   selected: () => state.selected,
-  open: (rel, ev) => loadVanilla(rel, ev),
+  open: openRel,
+  dimmed: rel => compare.dimmed(rel),
   loadAll: rels => loadMany(rels),
-  fileMenu: null
+  fileMenu: onFileMenu
 })
+
+// comparing needs exactly one structure loaded to compare against, so the menu
+// stays away while several are open, and while the panel owns comparison
+function onFileMenu(rel, e) {
+  const sel = state.selected
+  if (locked.value || compare.versionArmed() || sel.length !== 1 || sel[0] === rel) return
+  ctx.open(e, [{
+    label: `Compare with ${sel[0].slice(sel[0].lastIndexOf("/") + 1)}`,
+    icon: "compare",
+    action: () => compare.enter(rel)
+  }])
+}
 
 const stopReveal = watch(() => state.selected.length, async n => {
   if (!n) return
@@ -44,7 +68,10 @@ const vocab = computed(() => (void state.advReady, advMode.value ? advVocab() : 
 const names = computed(() => {
   void state.worldgenReady
   void state.advReady
-  return state.filterMode === "all" ? state.names : filteredNames()
+  let out = state.filterMode === "all" ? state.names : filteredNames()
+  // identical assets both sides: only structures whose nbt really changed remain
+  if ((void diff.state.rev, diff.active())) out = out.filter(n => diff.changed(n))
+  return out
 })
 
 const soleNs = computed(() => new Set(names.value.map(n => n.slice(0, n.indexOf("/")))).size <= 1)
@@ -106,8 +133,13 @@ function onFile(e) {
   e.target.value = ""
   if (!file) return
   if (/\.(zip|mca)$/i.test(file.name)) useWorld().openWorld(file)
+  else if (compare.versionArmed()) compare.setMainFile(file)
   else loadFile(file)
 }
+
+// comparing owns its own copy of the file, so closing goes through it
+const openFile = computed(() => compare.versionArmed() ? compare.fileName("main") : structState.file)
+const closeOpenFile = () => compare.versionArmed() ? compare.clearFile("main") : closeFile()
 </script>
 
 <template>
@@ -143,8 +175,9 @@ function onFile(e) {
         <template v-if="flat">
           <div v-if="!flat.length" class="empty">No match</div>
           <div v-for="rel in flat.slice(0, FLAT_CAP)" :key="rel" class="tree-file"
-            :class="{ sel: state.selected.includes(rel) }"
-            @click="loadVanilla(rel, $event)">{{ disp(rel) }}</div>
+            :class="{ sel: state.selected.includes(rel), dis: compare.dimmed(rel) }"
+            @click="!compare.dimmed(rel) && openRel(rel, $event)"
+            @contextmenu.prevent="onFileMenu(rel, $event)">{{ disp(rel) }}</div>
           <div v-if="flat.length > FLAT_CAP" class="empty">…and {{ flat.length - FLAT_CAP }} more</div>
         </template>
         <div v-else class="root-children">
@@ -153,7 +186,11 @@ function onFile(e) {
         </div>
       </template>
     </div>
-    <button :disabled="locked" @click="fileInput.click()">
+    <button v-if="openFile" :disabled="locked" :title="openFile" @click="closeOpenFile">
+      <span class="material-symbols-outlined">close</span>
+      Close Structure File
+    </button>
+    <button v-else :disabled="locked" @click="fileInput.click()">
       <span class="material-symbols-outlined">upload_file</span>
       Open Structure File
     </button>
@@ -217,22 +254,10 @@ function onFile(e) {
   user-select: none;
 }
 
-.tree-root:hover { color: #fff; }
+.tree-root:hover, .tree-root.ctx-target { color: #fff; }
 
 .root-children { margin-left: 14px; }
 
-.tree-file {
-  cursor: pointer;
-  color: #8fb3cc;
-  padding: 1px 4px;
-  border-radius: 3px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.tree-file:hover { color: #fff; background: #ffffff12; }
-.tree-file.sel { color: #6fd487; background: #6fd4871f; }
 
 button {
   display: flex;

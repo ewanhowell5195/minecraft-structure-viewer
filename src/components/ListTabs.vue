@@ -1,11 +1,18 @@
 <script setup>
+import { computed, watch } from "vue"
 import { tab } from "../composables/useTab.js"
+import { useCompareDiff } from "../composables/useCompareDiff.js"
+
+// identical assets both sides: features would render the same twice, so the tab goes
+const diff = useCompareDiff()
+const noFeatures = computed(() => (void diff.state.rev, diff.active()))
+watch(noFeatures, on => { if (on && tab.value === "features") tab.value = "structures" })
 </script>
 
 <template>
   <nav class="tabs">
     <button :class="{ active: tab === 'structures' }" @click="tab = 'structures'">Structures</button>
-    <button :class="{ active: tab === 'features' }" @click="tab = 'features'">Features</button>
+    <button v-if="!noFeatures" :class="{ active: tab === 'features' }" @click="tab = 'features'">Features</button>
   </nav>
 </template>
 

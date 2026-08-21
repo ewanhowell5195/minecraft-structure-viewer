@@ -242,6 +242,8 @@ const current = shallowRef(null)
 let source = null // the structure as loaded/combined; current may be a display strip of it
 let root = null
 let sceneHandle = null
+// compare mode keeps the outgoing build alive as the other half of the split
+let stashed = null, stashNext = false
 let inputIdxOf = null // structure block index -> createScene input index, -1 for door/loader/air
 let nonSolidPalette = new Set() // handle palette indices with all-plane models
 if (typeof window !== "undefined") window.__vroot = () => root
@@ -1425,7 +1427,8 @@ async function ensureOcclusionCache(lib, assets) {
   occState.set(assets, st)
   st.ready = (async () => {
     try {
-      st.key = packs.sourcesIdentity()
+      // the persisted key describes the main stack, so override builds skip it
+      st.key = assets === packs.assets.value ? packs.sourcesIdentity() : null
       if (!st.key) return
       const entries = await loadStateCache(st.key)
       if (entries) await lib.importOcclusionCache(assets, entries)
@@ -1451,9 +1454,14 @@ function scheduleOcclusionSave(lib, assets) {
   }, 2500)
 }
 
+// version comparison builds the right half against the comparison stack's
+// assets; everything downstream takes the local `assets`, so one swap suffices
+let assetsOverride = null
+const setAssetsOverride = v => { assetsOverride = v }
+
 // true when a build landed, false when cancelled
 async function build(structure = source, refit = true, slice = false, fresh = false) {
-  const assets = packs.assets.value
+  const assets = assetsOverride ?? packs.assets.value
   if (!assets || !structure || state.building) return
   state.building = true
   cancelBuild = false
@@ -1491,10 +1499,15 @@ async function build(structure = source, refit = true, slice = false, fresh = fa
       if (animator) sceneApi.animators.delete(animator)
       if (root) {
         sceneApi.contentRoots.delete(root)
-        disposeGroup(root)
-        sceneHandle?.dispose()
-        for (const t of markerTextures) t.dispose()
-        sceneLight?.dispose()
+        if (stashNext) {
+          stashNext = false
+          stashed = { group: root, handle: sceneHandle, markerTextures, animator, light: sceneLight, structure: prevCurrent, info: prevInfo }
+        } else {
+          disposeGroup(root)
+          sceneHandle?.dispose()
+          for (const t of markerTextures) t.dispose()
+          sceneLight?.dispose()
+        }
       }
       root = null
       sceneHandle = null
@@ -1995,6 +2008,27 @@ async function exportCurrent(format, name) {
   }
 }
 
+function stashNextBuild() {
+  stashNext = true
+}
+
+function takeStash() {
+  const s = stashed
+  stashed = null
+  stashNext = false
+  return s
+}
+
+function disposeStash(s) {
+  if (!s) return
+  sceneApi.animators.delete(s.animator)
+  sceneApi.contentRoots.delete(s.group)
+  disposeGroup(s.group)
+  s.handle?.dispose()
+  for (const t of s.markerTextures ?? []) t.dispose()
+  s.light?.dispose()
+}
+
 const getRoot = () => root
 const getTemplates = () => templates
 const getNonSolid = () => nonSolid
@@ -2006,6 +2040,7 @@ async function clearMapArt() {
 export function useBuild() {
   return {
     state, current, build, cancel, answerWarn, setRestoreGate, restoreGateCheck, getRoot, getTemplates, getNonSolid, showFull, restoreFull,
+    stashNextBuild, takeStash, disposeStash, setAssetsOverride,
     blockAt, blockEntryAt, boxForBlock, boxForEntity, boxForEntityData, markerUnderRay, rayHit, interact, aimDoor, blockBoxes, ringBell, exportCurrent, clearMapArt
   }
 }

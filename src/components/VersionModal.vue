@@ -2,11 +2,15 @@
 import { computed, ref, onMounted } from "vue"
 import { listVersions } from "../mojang.js"
 import { usePacks } from "../composables/usePacks.js"
+import { useComparePacks } from "../composables/useComparePacks.js"
 import { useLock } from "../composables/useLock.js"
 import Modal from "./Modal.vue"
 
 const emit = defineEmits(["close"])
+// "compare" pins the comparison panel's version instead of the main stack's
+const props = defineProps({ target: { type: String, default: "packs" } })
 const { state, setVersion } = usePacks()
+const comparePacks = useComparePacks()
 const { locked } = useLock()
 
 const versions = ref([])
@@ -52,8 +56,8 @@ const DATE = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", 
 const date = v => v.releaseTime ? DATE.format(new Date(v.releaseTime)) : ""
 
 function pick(id) {
-  if (locked.value || state.busy) return
-  setVersion(id)
+  if (locked.value || state.busy || comparePacks.state.busy) return
+  props.target === "compare" ? comparePacks.activate({ version: id }) : setVersion(id)
   emit("close")
 }
 </script>
@@ -69,7 +73,8 @@ function pick(id) {
     <div v-if="error" class="err">{{ error }}</div>
     <div v-else-if="!versions.length" class="err">Loading versions…</div>
     <div v-else class="body">
-      <div v-for="v in shown" :key="v.id" class="item-row row" :class="{ active: state.version === v.id, off: state.busy || locked }"
+      <div v-for="v in shown" :key="v.id" class="item-row row"
+        :class="{ active: (target === 'compare' ? comparePacks.state.version : state.version) === v.id, off: state.busy || comparePacks.state.busy || locked }"
         @click="pick(v.id)">
         <span class="nm">{{ v.id }}</span>
         <span v-if="v.id === latest.release || v.id === latest.snapshot" class="tag">latest</span>

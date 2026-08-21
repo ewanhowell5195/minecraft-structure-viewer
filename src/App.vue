@@ -7,6 +7,8 @@ import { useStructure, decodeStructureParam, parseSeedParam, beginInit, endInit 
 import { useBuild } from "./composables/useBuild.js"
 import { useScene } from "./composables/useScene.js"
 import { useSky } from "./composables/useSky.js"
+import { useCompare } from "./composables/useCompare.js"
+import { useComparePacks } from "./composables/useComparePacks.js"
 import { useLock } from "./composables/useLock.js"
 import { useWalk } from "./composables/useWalk.js"
 import { useStream } from "./composables/useStream.js"
@@ -20,6 +22,7 @@ import { manual } from "./manual.js"
 import { initEmbedApi, emit } from "./embed.js"
 import { isRemote, prefetchRemote } from "./remote.js"
 import PacksSection from "./components/PacksSection.vue"
+import CompareSection from "./components/CompareSection.vue"
 import StructuresSection from "./components/StructuresSection.vue"
 import FeaturesSection from "./components/FeaturesSection.vue"
 import WorldSection from "./components/WorldSection.vue"
@@ -29,6 +32,7 @@ import SceneSection from "./components/SceneSection.vue"
 import LevelMenu from "./components/LevelMenu.vue"
 import WalkOverlay from "./components/WalkOverlay.vue"
 import FindOverlay from "./components/FindOverlay.vue"
+import CompareOverlay from "./components/CompareOverlay.vue"
 import FpsCounter from "./components/FpsCounter.vue"
 import ContainerModal from "./components/ContainerModal.vue"
 import UsedBlocksModal from "./components/UsedBlocksModal.vue"
@@ -60,6 +64,7 @@ async function walkClick() {
   walk.enter()
 }
 const walkState = walk.state
+const compareState = useCompare().state
 const { locked } = useLock()
 const { state: containerState } = useContainer()
 
@@ -174,13 +179,21 @@ const splashStatus = computed(() => {
 
 const fmtK = n => n >= 1000 ? +(n / 1000).toFixed(1) + "K" : String(Math.round(n))
 
-const info = computed(() => {
-  const i = buildState.info
-  if (!i) return ""
-  const name = current.name ? `${current.name.replace(/\//g, "/\u200B")} · ` : ""
+function stats(i) {
   const fmt = n => n.toLocaleString("en")
   const perf = minimal ? "" : ` · ${i.draws} draws · ${fmtK(i.tris)} tris`
-  return `${name}${i.size} · ${fmt(i.blocks)} blocks, ${fmt(i.palette)} unique${perf}`
+  return `${i.size} · ${fmt(i.blocks)} blocks, ${fmt(i.palette)} unique${perf}`
+}
+
+const rightInfo = computed(() => compareState.on && buildState.info ? stats(buildState.info) : "")
+
+// comparing puts each half's name beside its own stats, so the chip drops the name
+const info = computed(() => {
+  const i = compareState.on ? compareState.leftInfo : buildState.info
+  if (!i) return ""
+  if (compareState.on) return stats(i)
+  const name = current.name ? `${current.name.replace(/\//g, "/\u200B")} · ` : ""
+  return name + stats(i)
 })
 
 const usedLabel = computed(() => buildState.info?.blocks === 0 && structure.value?.entities?.length ? "Entities" : "Blocks")
@@ -246,6 +259,20 @@ onMounted(async () => {
       else if (rels.length === 1) await loadVanilla(rels[0])
       else if (structureFile) await loadFile(structureFile, false)
       else if (!(minimal && notFound.value)) await loadDefault()
+      // arming the panel auto-enters version comparison on whatever loaded, and
+      // owns comparison outright, so a stale ?compare= pair is ignored
+      const cversion = minimal || manual || worldState.active ? null : params.get("cversion")
+      const against = params.get("compare")
+      if (cversion) {
+        useSlicers().restoreUrlSlice()
+        await useComparePacks().fromParam(cversion)
+        // a restored file has no path to look up, so it is fed in as the upload
+        if (structureFile) await useCompare().setMainFile(structureFile)
+      } else if (against && rels.length === 1 && structures.has(against)) {
+        // the cut lands before the pair is built, so both halves come up cut
+        useSlicers().restoreUrlSlice()
+        await useCompare().enter(against)
+      }
     } finally {
       endInit()
     }
@@ -275,35 +302,44 @@ onMounted(async () => {
         <StructuresSection v-show="tab === 'structures' && !worldState.active" />
         <FeaturesSection v-show="tab === 'features' && !worldState.active" />
         <WorldSection />
+        <CompareSection />
       </template>
     </aside>
     <main class="viewport">
       <canvas id="view" ref="canvasEl"></canvas>
       <!-- walking hides the viewport chrome: only the crosshair + hint show -->
       <template v-if="!walkState.on">
-        <div v-if="current.error" class="chip error">{{ current.error }}</div>
-        <div v-else-if="current.reading && !minimal" class="chip">{{ current.reading.label || "reading structures" }}… {{ current.reading.done }}/{{ current.reading.total }}</div>
-        <div v-else-if="buildState.status && !minimal" class="chip">{{ buildState.status }}</div>
-        <div v-else-if="info" class="chip">{{ info }}</div>
+        <div class="topbar">
+          <div v-if="compareState.on" class="name-tag">{{ compareState.left }}</div>
+          <div v-if="current.error" class="chip error">{{ current.error }}</div>
+          <div v-else-if="current.reading && !minimal" class="chip">{{ current.reading.label || "reading structures" }}… {{ current.reading.done }}/{{ current.reading.total }}</div>
+          <div v-else-if="buildState.status && !minimal" class="chip">{{ buildState.status }}</div>
+          <div v-else-if="info" class="chip">{{ info }}</div>
+        </div>
+        <div v-if="compareState.on" class="topbar right">
+          <div v-if="rightInfo" class="chip">{{ rightInfo }}</div>
+          <div class="name-tag">{{ compareState.right }}</div>
+        </div>
         <div v-if="packsState.remoteError" class="chip error remote">{{ packsState.remoteError }}</div>
         <div v-if="!current.error && aim" class="chip aim">{{ aim }}</div>
-        <LevelMenu v-if="!minimal" />
+        <LevelMenu v-if="!minimal && !compareState.on" />
         <button v-if="(buildState.building || current.reading) && cancelReady" class="cancel-btn" @click="current.reading ? cancelReading() : cancelBuild()">
           <span class="material-symbols-outlined">close</span>
           Cancel
         </button>
-        <button v-if="!minimal" class="walk-btn" :disabled="locked || !buildState.info" @click="walkClick()">
+        <button v-if="!minimal && !compareState.on" class="walk-btn" :disabled="locked || !buildState.info" @click="walkClick()">
           <span class="material-symbols-outlined">directions_walk</span>
           Walk Around
         </button>
-        <button v-if="buildState.info && (buildState.info.blocks || structure?.entities?.length)" class="used-btn" :disabled="locked" @click="usedModal?.open()">
+        <button v-if="!compareState.on && buildState.info && (buildState.info.blocks || structure?.entities?.length)" class="used-btn" :disabled="locked" @click="usedModal?.open()">
           <span class="material-symbols-outlined">list_alt</span>
           {{ usedLabel }}
         </button>
         <FindOverlay />
+        <CompareOverlay />
       </template>
       <WalkOverlay />
-      <FpsCounter v-if="!minimal" />
+      <FpsCounter v-if="!minimal && !compareState.on" />
       <UsedBlocksModal ref="usedModal" />
       <ContainerModal />
       <DebugModal v-if="debugPicker" @close="debugPicker = false" />
@@ -428,6 +464,32 @@ onMounted(async () => {
   border-radius: 6px;
   font-size: 12px;
   pointer-events: none;
+}
+
+/* the loaded structure's name, and the chip beside it, share one row */
+.topbar {
+  position: absolute;
+  top: 12px;
+  left: 14px;
+  max-width: calc(100% - 28px);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.topbar.right {
+  left: auto;
+  right: 14px;
+}
+
+.topbar .chip {
+  position: static;
+  max-width: none;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .chip.error { color: var(--red); }

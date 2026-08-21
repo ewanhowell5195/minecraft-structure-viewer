@@ -190,9 +190,19 @@ function sliceStructure(structure) {
   }
 }
 
+// comparing owns what each half shows, so a cut there stays a clipping-plane
+// preview on both builds instead of swapping in a rebuilt, physically cut one
+let previewOnly = false
+function setPreviewOnly(on) {
+  previewOnly = on
+  if (on) clearTimeout(rebuildTimer)
+  else if (sliceKey() !== appliedKey) scheduleRebuild()
+}
+
 // the settle window lets a follow-up drag start without wasting a rebuild
 let rebuildTimer = null
 function scheduleRebuild() {
+  if (previewOnly) return
   clearTimeout(rebuildTimer)
   rebuildTimer = setTimeout(() => {
     rebuildTimer = null
@@ -216,7 +226,7 @@ watch(state, () => {
     })
   }
   refresh()
-  useBuild().showFull(sliceKey() !== appliedKey)
+  if (!previewOnly) useBuild().showFull(sliceKey() !== appliedKey)
   syncSliceUrl()
   if (!dragA) scheduleRebuild()
 }, { deep: true })
@@ -224,8 +234,20 @@ watch(state, () => {
 function onBuild(root, position, size, sliced) {
   appliedKey = sliced ? pendingKey : ""
   if (!sliced && sliceKey()) scheduleRebuild()
+  applyBox([position.x - 8, position.y - 8, position.z - 8], size)
+  attachPlanes(root)
+}
+
+// compare spans one set of handles across both builds, so the box comes in
+// already unioned rather than from a single build
+function setSpan(min, size, roots) {
+  applyBox(min, size)
+  for (const r of roots) attachPlanes(r)
+}
+
+function applyBox(min, size) {
   box = {
-    min: new THREE.Vector3(position.x - 8, position.y - 8, position.z - 8),
+    min: new THREE.Vector3(min[0], min[1], min[2]),
     blocks: size,
     // x/z run out to the floor grid's edge (3-block border); y spans the structure
     lo: [-3, 0, -3],
@@ -266,7 +288,10 @@ function onBuild(root, position, size, sliced) {
     rails[a].geometry.setAttribute("position", new THREE.Float32BufferAttribute(P[a], 3))
   }
   refresh()
-  root.traverse(o => {
+}
+
+function attachPlanes(root) {
+  root?.traverse(o => {
     const m = o.material
     if (!m) return
     for (const mm of Array.isArray(m) ? m : [m]) {
@@ -400,7 +425,7 @@ function init() {
     dragA = hoverA
     dragCorner = hoverH?.userData.corner ?? 0
     clearTimeout(rebuildTimer)
-    useBuild().showFull(sliceKey() !== appliedKey)
+    if (!previewOnly) useBuild().showFull(sliceKey() !== appliedKey)
     canvas.setPointerCapture(e.pointerId)
     canvas.style.cursor = "grabbing"
     refresh()
@@ -422,7 +447,7 @@ function init() {
     setHover(hoverH?.userData.axis ?? null)
     canvas.style.cursor = hoverA ? "grab" : ""
     refresh()
-    useBuild().showFull(sliceKey() !== appliedKey)
+    if (!previewOnly) useBuild().showFull(sliceKey() !== appliedKey)
     scheduleRebuild()
   }
   canvas.addEventListener("pointerup", end)
@@ -433,5 +458,5 @@ function init() {
 const busy = () => !!(hoverA || dragA)
 
 export function useSlicers() {
-  return { state, init, onBuild, busy, sliceStructure, restoreUrlSlice }
+  return { state, init, onBuild, setSpan, setPreviewOnly, busy, sliceStructure, restoreUrlSlice }
 }
