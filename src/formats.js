@@ -1,5 +1,12 @@
-import { readNBT } from "./nbt.js"
+import { readNBT, readStructure } from "./nbt.js"
 import { AIR, parseState, normState } from "./transforms.js"
+
+// the structure file formats, keyed by extension, with the name suffix that
+// goes with them: everything that opens a structure file reads them from here
+export const STRUCTURE_EXTS = /\.(nbt|litematic|schem|mcstructure)$/i
+export const structureName = name => name.replace(STRUCTURE_EXTS, "")
+export const readerFor = name => READERS[name.split(".").pop().toLowerCase()] ?? readStructure
+export const readStructureFile = async file => readerFor(file.name)(await file.arrayBuffer())
 
 function collector() {
   const palette = [], idx = new Map(), cells = []
@@ -147,3 +154,5 @@ export async function readMcstructure(buf) {
   }
   return finish()
 }
+
+const READERS = { nbt: readStructure, litematic: readLitematic, schem: readSchem, mcstructure: readMcstructure }

@@ -123,8 +123,8 @@ const leaf = rel => rel.split("/").at(-1)
     </div>
   </details>
   <div v-for="rel in node.files" :key="rel" class="tree-file"
-    :class="{ sel: api.selected().includes(rel) }"
-    @click="api.open(rel, $event)"
+    :class="{ sel: api.selected().includes(rel), dis: api.dimmed?.(rel) }"
+    @click="!api.dimmed?.(rel) && api.open(rel, $event)"
     @contextmenu="api.fileMenu && ($event.preventDefault(), api.fileMenu(rel, $event))">{{ leaf(rel) }}</div>
 </template>
 
@@ -135,20 +135,8 @@ summary {
   padding: 1px 0;
 }
 
-summary:hover { color: #fff; }
+summary:hover, summary.ctx-target { color: #fff; }
 
 .children { margin-left: 14px; }
 
-.tree-file {
-  cursor: pointer;
-  color: #8fb3cc;
-  padding: 1px 4px;
-  border-radius: 3px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.tree-file:hover { color: #fff; background: #ffffff12; }
-.tree-file.sel { color: #6fd487; background: #6fd4871f; }
 </style>

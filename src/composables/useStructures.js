@@ -11,7 +11,7 @@ import { buildProcessorIndex } from "../processors.js"
 import { yieldTask } from "../yield.js"
 
 // structures? also matches the legacy/mod plural folder
-const STRUCT_RE = /^data\/([^/]+)\/structures?\/(.+)\.nbt$/
+export const STRUCT_RE = /^data\/([^/]+)\/structures?\/(.+)\.nbt$/
 
 const packs = usePacks()
 

@@ -165,6 +165,172 @@ aside section .check {
   justify-content: center;
 }
 
+/* a structure row in either tree (the folder tree and the flat filter list) */
+.tree-file {
+  cursor: pointer;
+  color: #8fb3cc;
+  padding: 1px 4px;
+  border-radius: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tree-file:hover, .tree-file.ctx-target { color: #fff; background: #ffffff12; }
+.tree-file.sel { color: #6fd487; background: #6fd4871f; }
+/* only in the loaded version, so there is no other side to compare against */
+.tree-file.dis { opacity: 0.35; cursor: default; }
+.tree-file.dis:hover { color: #8fb3cc; background: none; }
+
+/* the version row and layered pack list, in the Packs and Compare panels */
+.channel {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 6px;
+}
+
+.channel button.active {
+  background: var(--green);
+  border-color: transparent;
+  color: #fff;
+}
+
+.channel .pin {
+  display: flex;
+  align-items: center;
+  padding-inline: 8px;
+}
+
+.channel .pin .material-symbols-outlined { font-size: 18px; }
+
+.pack-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pack {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 8px;
+  min-height: 32px;
+}
+
+.pack .kind {
+  color: var(--text-dim);
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.pack .name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.pack.base {
+  position: relative;
+  overflow: hidden;
+}
+
+.pack.base .name { color: var(--text-dim); }
+.pack.base.failed .name { color: var(--red); }
+
+.pack.base .bar {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 2px;
+  background: var(--green);
+  transform-origin: left;
+  transition: transform 0.15s linear;
+}
+
+.pack button.icon {
+  padding: 0;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+
+.pack button.icon:hover:not(:disabled) {
+  background: #ffffff14;
+  color: var(--text);
+}
+
+.pack button.icon .material-symbols-outlined { font-size: 18px; }
+
+/* full-width sidebar action, icon beside its label */
+aside button.wide {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+}
+
+aside button.wide .material-symbols-outlined { font-size: 18px; }
+
+/* a floating stack of actions: the tree's context menu, the level menu's popup */
+.menu-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 6px 24px #00000080;
+}
+
+.menu-panel button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  border: none;
+  border-radius: 5px;
+  padding: 6px 10px;
+  text-align: left;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.menu-panel button:hover:not(:disabled) { background: #ffffff12; }
+
+.menu-panel button .material-symbols-outlined {
+  font-size: 17px;
+  color: var(--text-dim);
+}
+
+/* a structure's name over the viewport, beside its info chip */
+.name-tag {
+  flex: none;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: #000000a0;
+  color: var(--text);
+  padding: 5px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  pointer-events: none;
+}
+
 .modal-panel {
   background: var(--panel);
   border: 1px solid var(--border);

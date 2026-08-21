@@ -35,7 +35,7 @@ function run(item) {
 </script>
 
 <template>
-  <div v-if="state.open" ref="el" class="ctx-menu"
+  <div v-if="state.open" ref="el" class="ctx-menu menu-panel"
     :style="{ left: pos.left + 'px', top: pos.top + 'px' }" @contextmenu.prevent>
     <button v-for="(it, i) in state.items" :key="i" :disabled="it.disabled" @click="run(it)">
       <span v-if="it.icon" class="material-symbols-outlined">{{ it.icon }}</span>
@@ -49,31 +49,5 @@ function run(item) {
   position: fixed;
   z-index: 200;
   min-width: 170px;
-  background: var(--panel-2);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 4px;
-  box-shadow: 0 6px 24px #00000080;
-  display: flex;
-  flex-direction: column;
-}
-
-.ctx-menu button {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: transparent;
-  border: none;
-  border-radius: 5px;
-  padding: 6px 10px;
-  text-align: left;
-  font-size: 13px;
-}
-
-.ctx-menu button:hover:not(:disabled) { background: #ffffff12; }
-
-.ctx-menu .material-symbols-outlined {
-  font-size: 17px;
-  color: var(--text-dim);
 }
 </style>

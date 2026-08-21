@@ -55,7 +55,7 @@ const headLabel = computed(() => mode.value === "feature"
   </div>
   <div v-else-if="mode" class="level-menu" :class="{ locked }">
     <!-- collapsed uses visibility so the panel keeps its width and the head button stretches to match -->
-    <div class="panel" :class="{ collapsed: !open }">
+    <div class="panel menu-panel" :class="{ collapsed: !open }">
       <template v-if="mode === 'feature'">
         <button v-if="structState.field" :disabled="locked" @click="singleFeature">
           <span class="material-symbols-outlined">crop_square</span>
@@ -124,34 +124,21 @@ const headLabel = computed(() => mode.value === "feature"
   gap: 6px;
 }
 
-.head { white-space: nowrap; }
-
 .level-menu.locked {
   pointer-events: none;
   opacity: 0.7;
 }
 
-.panel {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 6px;
-}
-
 .panel.collapsed { visibility: hidden; }
 
-button {
+/* the head, and the lone structure-blocks toggle, stay ordinary buttons */
+.level-menu > button {
   display: flex;
   align-items: center;
-  gap: 6px;
-}
-
-.head {
   justify-content: center;
+  gap: 6px;
+  white-space: nowrap;
 }
 
-button .material-symbols-outlined { font-size: 18px; }
+.level-menu > button .material-symbols-outlined { font-size: 18px; }
 </style>

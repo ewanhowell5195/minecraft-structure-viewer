@@ -6,11 +6,10 @@ import { useBuild } from "./composables/useBuild.js"
 import { setHighlights } from "./composables/useHighlight.js"
 import { useSky } from "./composables/useSky.js"
 import { readStructure } from "./nbt.js"
-import { readLitematic, readSchem, readMcstructure } from "./formats.js"
+import { readerFor } from "./formats.js"
 
 const SOURCE = "structure-viewer"
 const AIR = /(^|:)(air|cave_air|void_air)$/
-const READERS = { nbt: readStructure, litematic: readLitematic, schem: readSchem, mcstructure: readMcstructure }
 const TIMEOUT = 30000
 
 const isCommand = data => data?.source === SOURCE && typeof data.type === "string"
@@ -83,7 +82,7 @@ function jsonSafe(value) {
 async function readFileStructure(data, name = "structure.nbt") {
   const bytes = await toBytes(data)
   if (!bytes) throw new Error("getBlocks needs structure bytes in data")
-  const reader = READERS[name.split(".").pop().toLowerCase()] ?? readStructure
+  const reader = readerFor(name)
   return reader(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength))
 }
 
