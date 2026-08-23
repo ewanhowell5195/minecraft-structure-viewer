@@ -178,9 +178,20 @@ aside section .check {
 
 .tree-file:hover, .tree-file.ctx-target { color: #fff; background: #ffffff12; }
 .tree-file.sel { color: #6fd487; background: #6fd4871f; }
-/* only in the loaded version, so there is no other side to compare against */
-.tree-file.dis { opacity: 0.35; cursor: default; }
-.tree-file.dis:hover { color: #8fb3cc; background: none; }
+
+/* a job's progress in the sidebar: the world's load, the comparison's sweep */
+.loadbar {
+  height: 6px;
+  border-radius: 3px;
+  background: #ffffff14;
+  overflow: hidden;
+}
+
+.loadbar .fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.15s;
+}
 
 /* the version row and layered pack list, in the Packs and Compare panels */
 .channel {

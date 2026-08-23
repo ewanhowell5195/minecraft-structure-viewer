@@ -8,6 +8,7 @@ import { useLock } from "../composables/useLock.js"
 import { useCompare } from "../composables/useCompare.js"
 import { useCompareDiff } from "../composables/useCompareDiff.js"
 import { leafName } from "../transforms.js"
+import { tab, isDiffTab } from "../composables/useTab.js"
 import TreeFolder from "./TreeFolder.vue"
 import ListTabs from "./ListTabs.vue"
 
@@ -25,14 +26,13 @@ const collapsed = ref(false)
 // a plain click while the comparison panel is armed opens the structure from
 // both versions; modified clicks keep the normal combine behaviour and drop the split
 function openRel(rel, ev) {
-  if (compare.versionArmed() && !ev?.shiftKey && !ev?.ctrlKey && !ev?.metaKey) return compare.enterVersion(rel)
+  if (compare.versionArmed() && !ev?.shiftKey && !ev?.ctrlKey && !ev?.metaKey) return compare.openVersion(rel)
   return loadVanilla(rel, ev)
 }
 
 provide("treeApi", {
   selected: () => state.selected,
   open: openRel,
-  dimmed: rel => compare.dimmed(rel),
   loadAll: rels => loadMany(rels),
   fileMenu: onFileMenu
 })
@@ -66,14 +66,32 @@ const advPlaceholder = computed(() => ({
 const advIndexing = computed(() => advMode.value && !state.advReady)
 const vocab = computed(() => (void state.advReady, advMode.value ? advVocab() : []))
 
+// a diff tab replaces the list wholesale: those names come from the two jars'
+// contents, not from the filters over the loaded version
+const diffTab = computed(() => isDiffTab(tab.value) ? tab.value : "")
+
 const names = computed(() => {
   void state.worldgenReady
   void state.advReady
-  let out = state.filterMode === "all" ? state.names : filteredNames()
-  // identical assets both sides: only structures whose nbt really changed remain
-  if ((void diff.state.rev, diff.active())) out = out.filter(n => diff.changed(n))
-  return out
+  if (diffTab.value) return (void diff.state.rev, diff.list(diffTab.value))
+  return state.filterMode === "all" ? state.names : filteredNames()
 })
+
+// the tab strip is gone either way: the lists aren't known yet, or there are none
+const sweeping = computed(() => compare.versionArmed() && (void diff.state.rev, !diff.state.ready))
+const noDiff = computed(() => compare.versionArmed() && (void diff.state.rev, diff.nothingDiffers()))
+const sweepPct = computed(() => (void diff.state.rev, diff.state.progress * 100))
+
+// comparing counts what the two versions disagree on, so the heading is the
+// tabs added up rather than the size of either version's tree
+const countLabel = computed(() => {
+  const total = state.names.length
+  if (compare.versionArmed()) return (void diff.state.rev, Object.values(diff.state.counts).reduce((a, b) => a + b, 0))
+  return names.value.length === total ? total : `${names.value.length}/${total}`
+})
+
+const ROOTS = { new: "New Structures", changed: "Changed Structures", removed: "Removed Structures" }
+const rootLabel = computed(() => ROOTS[diffTab.value] ?? "All Structures")
 
 const soleNs = computed(() => new Set(names.value.map(n => n.slice(0, n.indexOf("/")))).size <= 1)
 const disp = rel => soleNs.value ? rel.slice(rel.indexOf("/") + 1) : rel
@@ -148,11 +166,11 @@ const closeOpenFile = () => compare.versionArmed() ? compare.clearFile("main") :
     <h2 @click="collapsed = !collapsed">
       <span class="material-symbols-outlined chev">{{ collapsed ? "chevron_right" : "expand_more" }}</span>
       Structures
-      <span class="count">{{ names.length === state.names.length ? state.names.length : `${names.length}/${state.names.length}` }}</span>
+      <span class="count">{{ countLabel }}</span>
     </h2>
     <div class="controls">
       <input v-model="stateMut.filterText" placeholder="Filter…">
-      <select :value="state.filterMode" @change="onMode" :disabled="locked || state.indexing" title="all: every structure. starters: anything that starts a build (never placed as a piece of another). standalone: neither pulled into another build nor loads any other structure blocks. has block / item / entity: structures containing a matching block, a matching item in a container or its loot table, or a matching entity (placed or spawner-spawned).">
+      <select :value="state.filterMode" @change="onMode" :disabled="locked || state.indexing || !!diffTab" title="all: every structure. starters: anything that starts a build (never placed as a piece of another). standalone: neither pulled into another build nor loads any other structure blocks. has block / item / entity: structures containing a matching block, a matching item in a container or its loot table, or a matching entity (placed or spawner-spawned).">
         <option value="all">All</option>
         <option value="starters">Starters</option>
         <option value="standalone">Standalone</option>
@@ -169,18 +187,24 @@ const closeOpenFile = () => compare.versionArmed() ? compare.clearFile("main") :
       </datalist>
     </div>
     <ListTabs />
-    <div class="tree" :class="{ disabled: locked }" ref="treeEl">
+    <div class="tree" :class="{ disabled: locked, notabs: sweeping || noDiff }" ref="treeEl">
       <div v-if="state.indexing || advIndexing" class="empty">Indexing…</div>
+      <div v-else-if="sweeping" class="empty">
+        Comparing…
+        <div class="loadbar"><div class="fill" :style="{ width: sweepPct + '%' }"></div></div>
+      </div>
+      <div v-else-if="noDiff" class="empty">No structures differ between the two versions</div>
       <template v-else>
-        <div class="tree-root" title="Right-click for options" @contextmenu.prevent="onRootMenu($event)">All Structures</div>
+        <div class="tree-root" title="Right-click for options" @contextmenu.prevent="onRootMenu($event)">{{ rootLabel }}</div>
         <template v-if="flat">
           <div v-if="!flat.length" class="empty">No match</div>
           <div v-for="rel in flat.slice(0, FLAT_CAP)" :key="rel" class="tree-file"
-            :class="{ sel: state.selected.includes(rel), dis: compare.dimmed(rel) }"
-            @click="!compare.dimmed(rel) && openRel(rel, $event)"
+            :class="{ sel: state.selected.includes(rel) }"
+            @click="openRel(rel, $event)"
             @contextmenu.prevent="onFileMenu(rel, $event)">{{ disp(rel) }}</div>
           <div v-if="flat.length > FLAT_CAP" class="empty">…and {{ flat.length - FLAT_CAP }} more</div>
         </template>
+        <div v-else-if="!names.length" class="empty">None</div>
         <div v-else class="root-children">
           <TreeFolder :node="tree" :auto-open-name="autoOpenName"
             :expand-token="rootExpand" :collapse-token="rootCollapse" />
@@ -241,6 +265,11 @@ const closeOpenFile = () => compare.versionArmed() ? compare.clearFile("main") :
 }
 
 .tree .empty { color: var(--text-dim); }
+
+.tree .empty .loadbar { margin-top: 6px; }
+
+/* with the tab strip gone there is nothing above the tree to sit flush against */
+.tree.notabs { border-radius: 6px; }
 
 .tree.disabled {
   opacity: 0.5;

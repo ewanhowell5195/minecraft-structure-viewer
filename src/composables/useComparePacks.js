@@ -147,6 +147,7 @@ async function movePack(id, delta) {
 }
 
 const has = rel => structPath.has(rel)
+const names = () => Array.from(structPath.keys())
 const zipSources = () => state.packs.map(p => bytesById.get(p.id)).concat(baseBytes).filter(Boolean)
 
 async function readStructureBytes(rel) {
@@ -157,5 +158,5 @@ async function readStructureBytes(rel) {
 }
 
 export function useComparePacks() {
-  return { state: readonly(state), assets, activate, deactivate, fromParam, paramValue, addPacks, removePack, movePack, has, readStructureBytes, zipSources }
+  return { state: readonly(state), assets, activate, deactivate, fromParam, paramValue, addPacks, removePack, movePack, has, names, readStructureBytes, zipSources }
 }

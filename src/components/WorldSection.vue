@@ -619,19 +619,6 @@ h2 .icon .material-symbols-outlined,
   font-variant-numeric: tabular-nums;
 }
 
-.loadbar {
-  height: 6px;
-  border-radius: 3px;
-  background: #ffffff14;
-  overflow: hidden;
-}
-
-.loadbar .fill {
-  height: 100%;
-  background: #4c8dff;
-  transition: width 0.15s;
-}
-
 .tree {
   max-height: 220px;
   overflow: auto;

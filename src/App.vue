@@ -264,6 +264,12 @@ onMounted(async () => {
       if (cversion) {
         useSlicers().restoreUrlSlice()
         await useComparePacks().fromParam(cversion)
+        // a structure the loaded version dropped only turns up once the
+        // comparison jar is in, and opens on its own
+        if (!rels.length && requested.length === 1 && useComparePacks().has(requested[0])) {
+          notFound.value = ""
+          await useCompare().openVersion(requested[0])
+        }
         // a restored file has no path to look up, so it is fed in as the upload
         if (structureFile) await useCompare().setMainFile(structureFile)
       } else if (against && rels.length === 1 && structures.has(against)) {
@@ -297,10 +303,10 @@ onMounted(async () => {
       <div v-if="libError" class="lib-error">Renderer failed: {{ libError }}</div>
       <template v-else>
         <PacksSection />
-        <StructuresSection v-show="tab === 'structures' && !worldState.active" />
+        <StructuresSection v-show="tab !== 'features' && !worldState.active" />
         <FeaturesSection v-show="tab === 'features' && !worldState.active" />
         <WorldSection />
-        <CompareSection />
+        <CompareSection v-show="!worldState.active" />
       </template>
     </aside>
     <main class="viewport">

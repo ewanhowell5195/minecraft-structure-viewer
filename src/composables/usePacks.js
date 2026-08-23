@@ -305,6 +305,9 @@ const featureZipSources = () => zipOnly(featureSources())
 
 const allSources = () => state.packs.map(p => bytesById.get(p.id)).concat(baseBytes, builtinBytes, featureBytes).filter(Boolean)
 
+// the viewer's own two zips, which belong to no game version
+const builtinSources = () => [builtinBytes, featureBytes].filter(Boolean)
+
 // stable identity of the loaded source set, for keying persisted per-state
 // caches; full content hashes, memoized per byte buffer
 const fnvMemo = new WeakMap()
@@ -334,5 +337,5 @@ const sourcesIdentity = () => virtualSources() ? null : [
 const featureSources = () => state.packs.map(p => bytesById.get(p.id)).concat(builtinBytes, featureBytes).filter(Boolean)
 
 export function usePacks() {
-  return { state: readonly(state), assets, loadBase, initSources, loadPacks, setChannel, setVersion, addPacks, addUrlPacks, removePack, movePack, restoreCachedPacks, allSources, featureSources, zipSources, featureZipSources, virtualSources, sourcesIdentity, setSwapHandler, setHandlerFactory }
+  return { state: readonly(state), assets, loadBase, initSources, loadPacks, setChannel, setVersion, addPacks, addUrlPacks, removePack, movePack, restoreCachedPacks, allSources, featureSources, builtinSources, zipSources, featureZipSources, virtualSources, sourcesIdentity, setSwapHandler, setHandlerFactory }
 }

@@ -38,10 +38,25 @@ const state = reactive({
   files: { main: "", panel: "" }
 })
 
+// the overlay toggles ride in the url under their button names, so a shared
+// comparison comes up highlighting the same things
+const HL = { added: "new", changed: "changed", removed: "removed" }
+{
+  const on = new Set((new URLSearchParams(location.search).get("hl") ?? "").split(",").filter(Boolean))
+  for (const kind of Object.keys(HL)) state.show[kind] = on.has(HL[kind])
+}
+
+function syncHlUrl() {
+  const on = Object.keys(HL).filter(kind => state.show[kind]).map(kind => HL[kind])
+  setParams({ hl: on.length ? on.join(",") : null })
+}
+
 let stash = null
 let leftGrid = null
 let leftRel = "", rightRel = ""
 let entering = false
+// the structure on screen came from the comparison version alone
+let onlyRel = ""
 // custom nbt uploads while the panel is armed: one side missing means the same
 // structure renders on both, so the comparison is purely the assets
 const files = { main: null, panel: null }
@@ -196,6 +211,7 @@ async function enter(rel) {
   try {
     const { useStructure } = await import("./useStructure.js")
     const grid = scene.takeGrid()
+    dropOverride()
     const cut = snapCut()
     slicers.setPreviewOnly(true)
     build.stashNextBuild()
@@ -250,6 +266,7 @@ async function enterVersion(rel) {
     setFile("panel", null)
     const cut = snapCut()
     exit()
+    dropOverride()
     await settled()
     const { useStructure } = await import("./useStructure.js")
     await useStructure().loadVanilla(rel)
@@ -266,6 +283,47 @@ async function enterVersion(rel) {
   }
 }
 
+// only one version ships this structure, so there is no pair to split: it is
+// built by itself against the assets of whichever version has it. the override
+// stays put afterwards, so a setting that rebuilds keeps those assets
+async function enterOnly(rel) {
+  if (entering || build.state.building || !comparePacks.state.armed) return
+  entering = true
+  try {
+    setFile("main", null)
+    setFile("panel", null)
+    exit()
+    await settled()
+    const bytes = await comparePacks.readStructureBytes(rel)
+    if (!bytes) return
+    const structure = await readStructure(bytes)
+    const { useStructure } = await import("./useStructure.js")
+    build.setAssetsOverride(comparePacks.assets.value)
+    onlyRel = rel
+    await useStructure().loadObject(structure, rel)
+    structures.stateMut.selected = [rel]
+    writeUrl(rel, null)
+  } finally {
+    entering = false
+  }
+}
+
+// both versions ship it, so it can be split
+const pairable = rel => comparePacks.has(rel) && !!structures.zipPathOf(rel)
+
+// a tree click while the panel is armed: a pair splits, anything else is shown
+// on its own, from whichever version has it
+function openVersion(rel) {
+  if (!comparePacks.state.armed) return
+  if (pairable(rel)) return enterVersion(rel)
+  return comparePacks.has(rel) ? enterOnly(rel) : loadMainOnly(rel)
+}
+
+async function loadMainOnly(rel) {
+  const { useStructure } = await import("./useStructure.js")
+  return useStructure().loadVanilla(rel)
+}
+
 // version mode, uploaded files: each side renders its own upload, or the one
 // upload renders on both when only one side has a file
 async function enterFiles() {
@@ -277,6 +335,7 @@ async function enterFiles() {
   try {
     const cut = snapCut()
     exit()
+    dropOverride()
     await settled()
     const { useStructure } = await import("./useStructure.js")
     await useStructure().loadFile(leftFile, !!files.main)
@@ -318,14 +377,23 @@ async function clearFile(side) {
   if (files.main || files.panel) return enterFiles()
   exit()
   const sel = structures.state.selected
-  if (comparePacks.state.armed && sel.length === 1 && comparePacks.has(sel[0])) return enterVersion(sel[0])
+  if (comparePacks.state.armed && sel.length === 1 && pairable(sel[0])) return enterVersion(sel[0])
   const { useStructure } = await import("./useStructure.js")
   await useStructure().loadDefault()
   // the panel is still armed, so the default structure comes back compared
   await tryAutoEnter()
 }
 
+// every load exits through here, so it is also where a single-sided view lets go
+// of the comparison assets. a load this module is driving keeps them: it is the
+// one putting them there
+function dropOverride() {
+  build.setAssetsOverride(null)
+  onlyRel = ""
+}
+
 function exit() {
+  if (!entering) dropOverride()
   if (!state.on) return
   const wasVersions = state.mode === "versions"
   setOverlay("compare", [])
@@ -333,7 +401,6 @@ function exit() {
   state.counts.added = state.counts.changed = state.counts.removed = 0
   scene.setCompare(null)
   slicers.setPreviewOnly(false)
-  build.setAssetsOverride(null)
   build.disposeStash(stash)
   scene.disposeGrid(leftGrid?.group)
   scene.setGridOffset(0)
@@ -405,7 +472,7 @@ function tryAutoEnter() {
   }
   if (files.main || files.panel) return enterFiles()
   const sel = structures.state.selected
-  if (sel.length === 1 && comparePacks.has(sel[0])) return enterVersion(sel[0])
+  if (sel.length === 1 && pairable(sel[0])) return enterVersion(sel[0])
 }
 
 watch(() => [build.state.lighting, build.state.fullbright, build.state.hideStructureBlocks], refresh)
@@ -417,7 +484,9 @@ watch(() => comparePacks.state.assetsVersion, async () => {
   if (!comparePacks.state.armed) return
   await settled()
   if (!comparePacks.state.armed) return
+  // the single-sided view holds that stack's assets, so it rebuilds against the new ones
   if (state.on && state.mode === "versions") refresh()
+  else if (onlyRel) enterOnly(onlyRel)
   else tryAutoEnter()
 })
 // any other rebuild (a level step) replaces the right build and its grid
@@ -425,17 +494,17 @@ watch(() => build.state.info, () => {
   align()
   if (state.on) drawDiff()
 })
-watch(() => ({ ...state.show }), drawDiff, { deep: true })
+watch(() => ({ ...state.show }), () => {
+  drawDiff()
+  syncHlUrl()
+}, { deep: true })
 
 import("./useWorld.js").then(({ useWorld }) => {
   watch(() => useWorld().state.active, on => { if (on) worldOpened() })
 })
 
 const versionArmed = () => comparePacks.state.armed
-// greyed rows: the structure only exists on one side, so there is nothing to compare
-const dimmed = rel => comparePacks.state.armed && !!comparePacks.state.baseId &&
-  (void comparePacks.state.assetsVersion, !comparePacks.has(rel))
 
 export function useCompare() {
-  return { state: readonly(state), stateMut: state, enter, enterVersion, setMainFile, setPanelFile, clearFile, fileName, exit, stop, versionArmed, dimmed }
+  return { state: readonly(state), stateMut: state, enter, enterVersion, openVersion, setMainFile, setPanelFile, clearFile, fileName, exit, stop, versionArmed }
 }

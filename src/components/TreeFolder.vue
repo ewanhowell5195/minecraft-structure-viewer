@@ -122,8 +122,8 @@ watch(() => api.selected(), sel => {
     </div>
   </details>
   <div v-for="rel in node.files" :key="rel" class="tree-file"
-    :class="{ sel: api.selected().includes(rel), dis: api.dimmed?.(rel) }"
-    @click="!api.dimmed?.(rel) && api.open(rel, $event)"
+    :class="{ sel: api.selected().includes(rel) }"
+    @click="api.open(rel, $event)"
     @contextmenu="api.fileMenu && ($event.preventDefault(), api.fileMenu(rel, $event))">{{ leaf(rel) }}</div>
 </template>
 

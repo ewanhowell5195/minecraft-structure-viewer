@@ -2,7 +2,6 @@
 import { computed, ref } from "vue"
 import { useComparePacks } from "../composables/useComparePacks.js"
 import { useCompare } from "../composables/useCompare.js"
-import { useWorld } from "../composables/useWorld.js"
 import { useLock } from "../composables/useLock.js"
 import { num } from "../format.js"
 import PackStack from "./PackStack.vue"
@@ -10,7 +9,6 @@ import PackStack from "./PackStack.vue"
 const { state, activate, addPacks, removePack, movePack } = useComparePacks()
 const compare = useCompare()
 const cmp = compare.stateMut
-const { state: worldState } = useWorld()
 const { locked } = useLock()
 const busy = computed(() => state.busy || locked.value)
 const structInput = ref(null)
@@ -33,42 +31,39 @@ function onStructure(e) {
       <span class="material-symbols-outlined chev">{{ collapsed ? "chevron_right" : "expand_more" }}</span>
       Compare
     </h2>
-    <div v-if="worldState.active" class="hint">Not available with a world open</div>
+    <PackStack target="compare" :state="state" :live="state.armed"
+      @channel="channel => activate({ channel })" @add="addPacks" @move="movePack" @remove="removePack" />
+    <div v-if="!state.armed" class="hint">Pick a version to compare the loaded structure against, packs and all</div>
     <template v-else>
-      <PackStack target="compare" :state="state" :live="state.armed"
-        @channel="channel => activate({ channel })" @add="addPacks" @move="movePack" @remove="removePack" />
-      <div v-if="!state.armed" class="hint">Pick a version to compare the loaded structure against, packs and all</div>
-      <template v-else>
-        <button v-if="compare.fileName('panel')" class="wide" :disabled="busy" :title="compare.fileName('panel')"
-          @click="compare.clearFile('panel')">
-          <span class="material-symbols-outlined">close</span>
-          Close Structure File
-        </button>
-        <button v-else class="wide" :disabled="busy" title="Compare against this file instead of the main side's structure"
-          @click="structInput.click()">
-          <span class="material-symbols-outlined">upload_file</span>
-          Open Structure File
-        </button>
-        <template v-if="cmp.on">
-          <label class="lbl">Compare mode</label>
-          <div class="seg">
-            <button v-for="[id, label] in VIEWS" :key="id" :class="{ active: cmp.view === id }"
-              @click="cmp.view = id">{{ label }}</button>
-          </div>
-          <label class="lbl">Highlights</label>
-          <div class="checks">
-            <label v-for="[id, label] in KINDS" :key="id" class="check" :class="id">
-              <input type="checkbox" v-model="cmp.show[id]">
-              {{ label }} blocks/entities
-              <span class="count">{{ num(cmp.counts[id]) }}</span>
-            </label>
-          </div>
-        </template>
-        <button class="wide" :disabled="busy" @click="compare.stop()">
-          <span class="material-symbols-outlined">close</span>
-          Stop Comparing
-        </button>
+      <button v-if="compare.fileName('panel')" class="wide" :disabled="busy" :title="compare.fileName('panel')"
+        @click="compare.clearFile('panel')">
+        <span class="material-symbols-outlined">close</span>
+        Close Structure File
+      </button>
+      <button v-else class="wide" :disabled="busy" title="Compare against this file instead of the main side's structure"
+        @click="structInput.click()">
+        <span class="material-symbols-outlined">upload_file</span>
+        Open Structure File
+      </button>
+      <template v-if="cmp.on">
+        <label class="lbl">Compare mode</label>
+        <div class="seg">
+          <button v-for="[id, label] in VIEWS" :key="id" :class="{ active: cmp.view === id }"
+            @click="cmp.view = id">{{ label }}</button>
+        </div>
+        <label class="lbl">Highlights</label>
+        <div class="checks">
+          <label v-for="[id, label] in KINDS" :key="id" class="check" :class="id">
+            <input type="checkbox" v-model="cmp.show[id]">
+            {{ label }} blocks/entities
+            <span class="count">{{ num(cmp.counts[id]) }}</span>
+          </label>
+        </div>
       </template>
+      <button class="wide" :disabled="busy" @click="compare.stop()">
+        <span class="material-symbols-outlined">close</span>
+        Stop Comparing
+      </button>
     </template>
     <input ref="structInput" type="file" accept=".nbt,.litematic,.schem,.mcstructure" hidden @change="onStructure">
   </section>
