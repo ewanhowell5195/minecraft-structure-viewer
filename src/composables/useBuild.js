@@ -212,9 +212,11 @@ function answerWarn(ok) {
 // seeded into template userData so the library shares one live uniform: daytime changes re-light with no rebuild
 const daytimeUniform = { value: NOON }
 const clocksSoon = debounce(updateClocks, 150)
+// every build gets its own uniform out of the library, so a comparison's stashed
+// half needs the new time as much as the live one
 watch(() => state.daytime, v => {
   daytimeUniform.value = v
-  if (sceneHandle?.group.userData.daytime) sceneHandle.group.userData.daytime.value = v
+  for (const g of sceneApi.contentRoots) if (g.userData.daytime) g.userData.daytime.value = v
   clocksSoon()
 })
 
