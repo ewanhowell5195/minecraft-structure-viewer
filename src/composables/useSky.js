@@ -10,9 +10,9 @@ const build = useBuild()
 const scene = useScene()
 const walk = useWalk()
 
-// walking is always under the sky; orbiting only when the view toggle asks for it
-const param = new URLSearchParams(location.search).get("sky")
-const enabled = ref(param !== null && param !== "false")
+// walking is always under the sky; orbiting has it too unless the view toggle or
+// the url turns it off
+const enabled = ref(!new URLSearchParams(location.search).has("nosky"))
 const active = computed(() => walk.state.on || enabled.value)
 
 let handle = null
@@ -35,6 +35,8 @@ async function apply() {
     next = await lib.createSky(assets, {
       dimension: build.state.dimension,
       daytime: build.state.daytime,
+      // no terrain here to hide them the way the game does
+      horizonFade: true,
       version: packs.state.baseId || undefined
     })
   } catch {
