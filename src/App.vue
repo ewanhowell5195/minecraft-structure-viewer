@@ -10,6 +10,7 @@ import { useSky } from "./composables/useSky.js"
 import { useCompare } from "./composables/useCompare.js"
 import { useComparePacks } from "./composables/useComparePacks.js"
 import { useLock } from "./composables/useLock.js"
+import { useFullscreen } from "./composables/useFullscreen.js"
 import { useWalk } from "./composables/useWalk.js"
 import { useStream } from "./composables/useStream.js"
 import { useWorld } from "./composables/useWorld.js"
@@ -91,13 +92,7 @@ function refreshMainSiteUrl() {
 }
 refreshMainSiteUrl()
 
-const fullscreenSupported = document.fullscreenEnabled ?? false
-const isFullscreen = ref(false)
-document.addEventListener("fullscreenchange", () => isFullscreen.value = !!document.fullscreenElement)
-function toggleFullscreen() {
-  if (document.fullscreenElement) document.exitFullscreen()
-  else document.documentElement.requestFullscreen()
-}
+const { supported: fullscreenSupported, active: isFullscreen, toggle: toggleFullscreen } = useFullscreen()
 
 watch(() => !!buildState.info || !!current.error, ready => {
   if (ready) minimalReady.value = true
@@ -351,7 +346,7 @@ onMounted(async () => {
       <BuildProgress />
       <BuildWarning />
       <SplashScreen v-if="splash" v-bind="splash" @cancel="splashCancel" @linkdown="refreshMainSiteUrl" />
-      <button v-if="minimal && minimalReady && fullscreenSupported" class="fs-btn" :title="isFullscreen ? 'Exit fullscreen' : 'Fullscreen'" @click="toggleFullscreen">
+      <button v-if="minimal && minimalReady && fullscreenSupported" class="fs-btn" :title="isFullscreen ? 'Exit fullscreen' : 'Fullscreen'" @click="toggleFullscreen()">
         <span class="material-symbols-outlined">{{ isFullscreen ? "fullscreen_exit" : "fullscreen" }}</span>
       </button>
       <a v-if="minimal && minimalReady" class="open-full" :href="mainSiteUrl" target="_blank" rel="noopener" title="Open in Structure Viewer" @pointerdown="refreshMainSiteUrl">

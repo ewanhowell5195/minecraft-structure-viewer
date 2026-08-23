@@ -88,7 +88,8 @@ requestAnimationFrame(tick)
     <div class="crosshair" :style="pos"></div>
     <div class="hint" :style="{ left: pos.left }">
       <b>WASD</b> move · <b>mouse</b> look · <b>click</b> open door · <b>space</b> jump · <b>2×space</b> fly ·
-      <b>N</b> noclip · <b>scroll</b> fly speed · <b>shift</b> down/sneak · <b>ctrl/Q/2×W</b> sprint · <b>esc</b> exit
+      <b>N</b> noclip · <b>scroll</b> fly speed · <b>shift</b> down/sneak · <b>ctrl/Q/2×W</b> sprint ·
+      <b>0-9</b> time · <b>alt+scroll</b> scrub time · <b>F11</b> fullscreen · <b>esc</b> exit
     </div>
   </template>
   <div v-if="state.on && state.suspended && !containerState.open" class="paused" :style="rect">

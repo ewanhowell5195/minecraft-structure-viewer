@@ -6,6 +6,7 @@ import { useContainer } from "./useContainer.js"
 import { useBooks } from "./useBooks.js"
 import { useLock } from "./useLock.js"
 import { useStream } from "./useStream.js"
+import { useFullscreen } from "./useFullscreen.js"
 
 // stateful singleton with document listeners and live loops: a hot update
 // re-executing this module would stack them (walking speeds up per reload),
@@ -20,6 +21,15 @@ const streamApi = useStream()
 const wapi = () => streamApi.state.on ? streamApi.provider : buildApi
 const containerApi = useContainer()
 const { locked } = useLock()
+const fullscreen = useFullscreen()
+
+// the clock on the number row, dawn through to midnight
+const DAY_PRESETS = [18000, 23000, 0, 2000, 4000, 6000, 9000, 12000, 14000, 16000]
+// alt-scrolled, half an hour a notch and proportionally less off a trackpad
+const DAY_SCRUB = 500
+const DAY = 24000
+
+const setDaytime = t => { buildApi.state.daytime = Math.round((t % DAY + DAY) % DAY) }
 
 const CLIMB = /(ladder|scaffolding)$|(^|:)vine$/
 const PW = 4.8                                    // half-width (0.3 blocks)
@@ -682,6 +692,8 @@ function exit() {
   sceneApi.updateProjection()
   sceneApi.controls.update()
   outline?.hide()
+  // only the viewport fullscreen this mode owns: an embed's page fullscreen stays
+  if (document.fullscreenElement && document.fullscreenElement === sceneApi.canvas?.parentElement) fullscreen.toggle()
   if (streaming) streamApi.exit({ x: walk.pos.x, y: walk.pos.y + walk.eye, z: walk.pos.z, pitch: walk.pitch, yaw: walk.yaw })
 }
 
@@ -703,14 +715,22 @@ document.addEventListener("pointerlockchange", () => {
     pendingKeys.clear()
   } else if (!state.suspended) {
     // a lock Chrome grants on the modal's Esc relock and instantly revokes is
-    // not an exit gesture: fall back to suspended and let the next input relock
-    if (performance.now() - lockAt < 400) {
+    // not an exit gesture, and neither is one a fullscreen transition drops:
+    // fall back to suspended and let the next input relock
+    if (performance.now() - lockAt < 400 || performance.now() - fullscreen.changedAt() < 1000) {
       state.suspended = true
       keys.clear()
       sprintW = false
     } else exit()
   }
 })
+// the lock the transition dropped comes back on its own, once the browser has
+// settled; a denied relock leaves it suspended for the next key to pick up
+document.addEventListener("fullscreenchange", () => {
+  if (!state.on) return
+  setTimeout(() => { if (state.on && state.suspended) resume() }, 100)
+})
+
 // chrome under pointer lock occasionally emits one giant bogus movement delta
 // when the hidden cursor resyncs (classically once the unclipped position
 // crosses a screen edge, so it reproduces after turning a set amount): the
@@ -769,6 +789,11 @@ addEventListener("keydown", e => {
     if (t - lastW < DOUBLE_TAP) sprintW = true
     lastW = t
   }
+  if (e.code === "F11" && !e.repeat) fullscreen.toggle(sceneApi.canvas?.parentElement)
+  if (!e.repeat) {
+    const digit = /^(?:Digit|Numpad)(\d)$/.exec(e.code)
+    if (digit) setDaytime(DAY_PRESETS[+digit[1]])
+  }
   if (e.code === "KeyN" && !e.repeat) {
     noclip = !noclip
     if (!noclip) {
@@ -790,6 +815,13 @@ addEventListener("keyup", e => {
 // fly speed scroll, exactly spectator mode's: 0.005 a notch, clamped 0..0.2
 addEventListener("wheel", e => {
   if (!state.on || state.suspended || (!NOLOCK && document.pointerLockElement !== sceneApi.canvas)) return
+  // alt scrubs the clock instead, whether flying or not
+  if (e.altKey) {
+    e.preventDefault()
+    const notches = e.deltaMode ? e.deltaY : e.deltaY / 100
+    setDaytime(buildApi.state.daytime - notches * DAY_SCRUB)
+    return
+  }
   if (!fly.on && !noclip) return
   e.preventDefault()
   fly.speed = Math.min(Math.max(fly.speed + Math.sign(-e.deltaY) * 0.005, 0), 0.2)
