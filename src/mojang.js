@@ -1,17 +1,12 @@
-// Mojang's hosts send no CORS headers, so everything goes through the proxy.
+// the piston hosts and the legacy launcher one both send ACAO: *, so the jars
+// and metadata are fetched straight from Mojang.
 // each channel caches its jar under its own bucket so channels never evict each other
-const CORS = "https://corsmc.ewanhowell.com/"
 const MANIFEST = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json"
 const KEY = "https://mc-jar.cache/"
 
-// snapshots before 15w43a still download from the legacy host, which the proxy
-// refuses; it sends ACAO: * so it needs no proxy
-const DIRECT = /^https:\/\/(launcher|launchermeta)\.mojang\.com\//
-const via = url => DIRECT.test(url) ? url : CORS + url
-
 let manifestPromise = null
 function loadManifest() {
-  return manifestPromise ??= fetch(CORS + MANIFEST).then(r => r.json())
+  return manifestPromise ??= fetch(MANIFEST).then(r => r.json())
 }
 
 export async function listVersions() {
@@ -24,7 +19,7 @@ export async function loadMojangJar(channel = "release", onProgress, version) {
   const id = version || manifest.latest[channel]
   const ver = manifest.versions.find(v => v.id === id)
   if (!ver) throw new Error(`version not found: ${id}`)
-  const { url, size } = (await fetch(via(ver.url)).then(r => r.json())).downloads.client
+  const { url, size } = (await fetch(ver.url).then(r => r.json())).downloads.client
 
   const bucket = version ? "pinned" : channel
   const key = `${KEY}${bucket}/${id}`, mine = `${KEY}${bucket}/`
@@ -36,7 +31,7 @@ export async function loadMojangJar(channel = "release", onProgress, version) {
   const hit = await cache.match(key)
   if (hit) return { id, channel, type: ver.type, bytes: new Uint8Array(await hit.arrayBuffer()) }
 
-  const res = await fetch(via(url))
+  const res = await fetch(url)
   if (!res.ok) throw new Error(`client.jar fetch failed (${res.status})`)
   const total = +res.headers.get("content-length") || size
   const reader = res.body.getReader()
