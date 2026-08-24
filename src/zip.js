@@ -1,3 +1,7 @@
+// without this flag the names are read as cp437, and anything non-ascii in a
+// structure's name comes out mojibaked
+const UTF8 = 0x0800
+
 const CRC = (() => {
   const table = new Uint32Array(256)
   for (let i = 0; i < 256; i++) {
@@ -37,6 +41,7 @@ export async function makeZip(files) {
     const head = new DataView(new ArrayBuffer(30))
     head.setUint32(0, 0x04034B50, true)
     head.setUint16(4, 20, true)
+    head.setUint16(6, UTF8, true)
     head.setUint16(8, deflated ? 8 : 0, true)
     head.setUint32(14, crc32(file.data), true)
     head.setUint32(18, body.length, true)
@@ -48,6 +53,7 @@ export async function makeZip(files) {
     entry.setUint32(0, 0x02014B50, true)
     entry.setUint16(4, 20, true)
     entry.setUint16(6, 20, true)
+    entry.setUint16(8, UTF8, true)
     entry.setUint16(10, deflated ? 8 : 0, true)
     entry.setUint32(16, crc32(file.data), true)
     entry.setUint32(20, body.length, true)
