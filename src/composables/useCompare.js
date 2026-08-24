@@ -255,7 +255,7 @@ async function enterVersion(rel) {
     if (!build.getRoot() || !comparePacks.has(rel)) return
     const bytes = await comparePacks.readStructureBytes(rel)
     if (!bytes) return
-    const rightStruct = await readStructure(bytes)
+    const rightStruct = await useStructure().processVanilla(rel, await readStructure(bytes))
     if (await buildRightSplit(rightStruct, packs.state.baseId || "current", comparePacks.state.baseId)) {
       leftRel = rightRel = rel
       applyCut(cut)

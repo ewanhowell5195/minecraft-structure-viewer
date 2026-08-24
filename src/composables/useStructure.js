@@ -394,19 +394,24 @@ async function readVanilla(rel) {
     return (await gen(undefined, { seed: 0 })).structure
   }
   const lib = await loadLibrary()
-  let s = await readStructure(await lib.readFile(zp, packs.assets.value))
-  // the pool/structure processors the game runs at placement (mossify, rot,
-  // aging, the outpost overgrown overlay), rolled deterministically per rel
-  await structures.computeProcessors()
-  const pe = structures.processorEntry(rel)
-  if (pe) {
-    s = await applyProcessors(s, pe, rnd(seedFor(rel)), async orel => {
-      const ozp = structures.zipPathOf(orel)
-      return ozp ? readStructure(await lib.readFile(ozp, packs.assets.value)) : null
-    })
-  }
+  const s = await processVanilla(rel, await readStructure(await lib.readFile(zp, packs.assets.value)))
   // randomised builtins load deterministically at seed 0; Re-roll picks a fresh seed
   return fixBuiltin(rel, s, 0)
+}
+
+// the pool/structure processors the game runs at placement (mossify, rot,
+// aging, the outpost overgrown overlay), rolled deterministically per rel; the
+// version comparison runs the right half through the same pass and seed, so
+// identical files degrade identically instead of diffing against pristine
+async function processVanilla(rel, s) {
+  await structures.computeProcessors()
+  const pe = structures.processorEntry(rel)
+  if (!pe) return s
+  const lib = await loadLibrary()
+  return applyProcessors(s, pe, rnd(seedFor(rel)), async orel => {
+    const ozp = structures.zipPathOf(orel)
+    return ozp ? readStructure(await lib.readFile(ozp, packs.assets.value)) : null
+  })
 }
 
 // must match TreeFolder's render order (folders before files); shift ranges span it
@@ -743,7 +748,7 @@ async function onAssetsSwapped() {
 packs.setSwapHandler(onAssetsSwapped)
 
 export function useStructure() {
-  return { state: readonly(state), structure, apply, loadVanilla, loadDefault, loadMany, loadFile, closeFile, loadObject, loadDebug, loadFeature, loadFeatures, loadFeatureField, clickFeature, cancelReading, setReading, readCancelled, setQuietLoads }
+  return { state: readonly(state), structure, apply, loadVanilla, loadDefault, loadMany, loadFile, closeFile, loadObject, loadDebug, loadFeature, loadFeatures, loadFeatureField, clickFeature, cancelReading, setReading, readCancelled, setQuietLoads, processVanilla }
 }
 
 
