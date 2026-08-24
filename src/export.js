@@ -2,7 +2,7 @@ import * as THREE from "three"
 import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js"
 import { OBJExporter } from "three/addons/exporters/OBJExporter.js"
 import { makeZip } from "./zip.js"
-import { leafName } from "./transforms.js"
+import { fileBase } from "./transforms.js"
 
 // shader materials and OffscreenCanvas atlas textures aren't portable, so
 // everything is rebaked onto MeshStandardMaterial + real-canvas textures
@@ -219,7 +219,7 @@ export async function exportScene({ format, name, root }) {
   if (root) bakeGroup(scene, root, caches)
   if (!scene.children.length) return
 
-  const base = (name ? leafName(name) : "").replace(/[^\w.-]+/g, "_").replace(/^_+|_+$/g, "") || "structure"
+  const base = fileBase(name)
   let blob, ext = format
   if (format === "glb") {
     const buf = await new GLTFExporter().parseAsync(scene, { binary: true })

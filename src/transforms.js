@@ -72,6 +72,8 @@ export const strip = s => s.replace(/^minecraft:/, "")
 
 export const leafName = p => p.slice(p.lastIndexOf("/") + 1)
 
+export const fileBase = name => (name ? leafName(name) : "").replace(/[^\w.-]+/g, "_").replace(/^_+|_+$/g, "") || "structure"
+
 // a folder starting nether/end marks the home dimension; the file name doesn't count
 export function pathDimension(rel) {
   for (const part of String(rel ?? "").toLowerCase().split("/").slice(0, -1)) {

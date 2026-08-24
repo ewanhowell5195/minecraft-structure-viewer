@@ -391,6 +391,76 @@ function resizeIfNeeded() {
   }
 }
 
+// preset directions from the target to the camera, at 30 degrees elevation
+const SHOT_ANGLES = (() => {
+  const y = 0.5, h = Math.sqrt(3) / 2, c = h / Math.SQRT2
+  return {
+    south: [0, y, h], north: [0, y, -h], east: [h, y, 0], west: [-h, y, 0],
+    southeast: [c, y, c], southwest: [-c, y, c], northeast: [c, y, -c], northwest: [-c, y, -c],
+    top: [0.0001, 1, 0.0001]
+  }
+})()
+
+// one frame at scale x the css size on the live canvas (double with aa, then
+// halved), captured before the next rAF restores the real pixel ratio
+function renderShot({ scale = 1, aa = false, angle = "current", crop = false, sky = false } = {}) {
+  if (!renderer || !canvas || released) return null
+  let ratio = scale * (aa ? 2 : 1)
+  const cap = (renderer.capabilities.maxTextureSize || 16384) / Math.max(sizeW, sizeH, 1)
+  ratio = Math.min(ratio, cap)
+  const savedPos = camera.position.clone()
+  const savedQuat = camera.quaternion.clone()
+  const savedSky = skyGroup
+  if (!sky) skyGroup = null
+  const dir = SHOT_ANGLES[angle]
+  if (dir) {
+    const dist = Math.max(camera.position.distanceTo(controls.target), 1)
+    camera.position.copy(controls.target).addScaledVector(new THREE.Vector3(...dir).normalize(), dist)
+    camera.lookAt(controls.target)
+    camera.updateMatrixWorld(true)
+  }
+  renderer.setPixelRatio(ratio)
+  renderer.setSize(sizeW, sizeH, false)
+  drawScene()
+  let sx = 0, sy = 0, sw = canvas.width, sh = canvas.height
+  if (crop) {
+    const box = sceneBounds()
+    if (!box.isEmpty()) {
+      const v = new THREE.Vector3()
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+      for (let i = 0; i < 8; i++) {
+        v.set(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z).project(camera)
+        minX = Math.min(minX, v.x); maxX = Math.max(maxX, v.x)
+        minY = Math.min(minY, v.y); maxY = Math.max(maxY, v.y)
+      }
+      const pad = 8 * ratio
+      const x0 = Math.max(0, Math.floor((minX + 1) / 2 * canvas.width - pad))
+      const x1 = Math.min(canvas.width, Math.ceil((maxX + 1) / 2 * canvas.width + pad))
+      const y0 = Math.max(0, Math.floor((1 - maxY) / 2 * canvas.height - pad))
+      const y1 = Math.min(canvas.height, Math.ceil((1 - minY) / 2 * canvas.height + pad))
+      if (x1 - x0 >= 4 && y1 - y0 >= 4) {
+        sx = x0; sy = y0; sw = x1 - x0; sh = y1 - y0
+      }
+    }
+  }
+  const factor = aa ? 2 : 1
+  const out = document.createElement("canvas")
+  out.width = Math.max(1, Math.round(sw / factor))
+  out.height = Math.max(1, Math.round(sh / factor))
+  const ctx = out.getContext("2d")
+  ctx.imageSmoothingEnabled = true
+  ctx.imageSmoothingQuality = "high"
+  ctx.drawImage(canvas, sx, sy, sw, sh, 0, 0, out.width, out.height)
+  skyGroup = savedSky
+  if (dir) {
+    camera.position.copy(savedPos)
+    camera.quaternion.copy(savedQuat)
+    camera.updateMatrixWorld(true)
+  }
+  needResize = true
+  return new Promise(resolve => out.toBlob(resolve, "image/png"))
+}
+
 let loseExt = null, released = false
 
 function releaseContext() {
@@ -553,7 +623,7 @@ function setOrthoManual(on) {
 export function useScene() {
   return {
     view, scene, overlayScene, init, fit, setGrids, sceneBounds, setOrtho, setOrthoManual, setSky, setCompare,
-    takeGrid, disposeGrid, setGridOffset,
+    takeGrid, disposeGrid, setGridOffset, renderShot,
     makeHighlight,
     getGridRects: () => gridRects,
     contentRoots, animators, perspCam, FOV, updateProjection, setWalkUpdate, syncAspect,
