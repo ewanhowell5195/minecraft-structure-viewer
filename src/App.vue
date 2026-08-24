@@ -182,7 +182,7 @@ const rightInfo = computed(() => compareState.on && buildState.info ? stats(buil
 
 // the sky's fog colour behind the canvas, so nothing flickers before it draws
 const SKY_FOG = { overworld: "#C0D8FF", the_nether: "#330808", the_end: "#181318" }
-const skyBg = computed(() => sky.active.value ? SKY_FOG[buildState.dimension] ?? SKY_FOG.overworld : "")
+const skyBg = computed(() => sky.active.value ? SKY_FOG[sky.skyDim.value] ?? SKY_FOG.overworld : "")
 
 const info = computed(() => {
   const i = compareState.on ? compareState.leftInfo : buildState.info

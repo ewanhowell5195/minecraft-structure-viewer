@@ -1457,6 +1457,9 @@ function scheduleOcclusionSave(lib, assets) {
 let assetsOverride = null
 const setAssetsOverride = v => { assetsOverride = v }
 
+let lightDimSource = null
+const setLightDimSource = fn => { lightDimSource = fn }
+
 // true when a build landed, false when cancelled
 async function build(structure = source, refit = true, slice = false, fresh = false) {
   const assets = assetsOverride ?? packs.assets.value
@@ -1522,9 +1525,8 @@ async function build(structure = source, refit = true, slice = false, fresh = fa
     if (streamS.state.session && !streamS.state.on) streamS.shutdown()
     const [sx, sy, sz] = structure.size
     state.status = "building…"
-    // the sky keeps the structure's dimension even when fullbright flattens the lighting's
     state.dimension = /^(the_nether|the_end)$/.test(unsliced.dimension) ? unsliced.dimension : "overworld"
-    buildDim = state.fullbright ? "overworld" : state.dimension
+    buildDim = state.fullbright ? "overworld" : (lightDimSource?.() ?? state.dimension)
     await resolveLegacyNames(structure, lib, assets)
     await precomputeMapArt(structure, lib, assets)
     await ensureOcclusionCache(lib, assets)
@@ -2039,7 +2041,7 @@ async function clearMapArt() {
 export function useBuild() {
   return {
     state, current, build, cancel, answerWarn, setRestoreGate, restoreGateCheck, getRoot, getTemplates, getNonSolid, showFull, restoreFull,
-    stashNextBuild, takeStash, disposeStash, setAssetsOverride,
+    stashNextBuild, takeStash, disposeStash, setAssetsOverride, setLightDimSource,
     blockAt, blockEntryAt, boxForBlock, boxForEntity, boxForEntityData, markerUnderRay, rayHit, interact, aimDoor, blockBoxes, ringBell, exportCurrent, clearMapArt
   }
 }

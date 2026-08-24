@@ -13,6 +13,13 @@ const walk = useWalk()
 const enabled = ref(!new URLSearchParams(location.search).has("nosky"))
 const active = computed(() => walk.state.on || enabled.value)
 
+// "auto" follows the structure's own dimension; the sky toggle off pins the
+// lightmap back to overworld
+const dimension = ref("auto")
+const skyDim = computed(() => dimension.value === "auto" ? build.state.dimension : dimension.value)
+const lightDim = computed(() => enabled.value ? skyDim.value : "overworld")
+build.setLightDimSource(() => lightDim.value)
+
 let handle = null
 let token = 0
 
@@ -31,7 +38,7 @@ async function apply() {
   let next
   try {
     next = await lib.createSky(assets, {
-      dimension: build.state.dimension,
+      dimension: skyDim.value,
       daytime: build.state.daytime,
       // no terrain here to hide them the way the game does
       horizonFade: true,
@@ -46,11 +53,20 @@ async function apply() {
   scene.setSky(next.group)
 }
 
-watch([active, () => packs.assets.value, () => build.state.dimension], apply, { immediate: true })
+watch([active, () => packs.assets.value, skyDim], apply, { immediate: true })
 watch(() => build.state.daytime, v => {
   if (handle) handle.daytime.value = v
 })
 
+// a lightmap change rebuilds like the lighting toggles do; a build in flight is
+// the one that moved state.dimension, so it already carries the new value
+watch(lightDim, async () => {
+  if (!build.getRoot() || build.state.building) return
+  const { useCompare } = await import("./useCompare.js")
+  if (useCompare().state.on) return
+  build.build(undefined, false)
+})
+
 export function useSky() {
-  return { enabled, active }
+  return { enabled, active, dimension, skyDim, lightDim }
 }

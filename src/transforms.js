@@ -72,11 +72,11 @@ export const strip = s => s.replace(/^minecraft:/, "")
 
 export const leafName = p => p.slice(p.lastIndexOf("/") + 1)
 
-// a nether or end token in any path segment marks the structure's home dimension
+// a folder starting nether/end marks the home dimension; the file name doesn't count
 export function pathDimension(rel) {
-  for (const part of String(rel ?? "").toLowerCase().split("/")) {
-    if (part.includes("nether")) return "the_nether"
-    if (/(^|_)end(_|$)/.test(part)) return "the_end"
+  for (const part of String(rel ?? "").toLowerCase().split("/").slice(0, -1)) {
+    if (/^nether(_|$)/.test(part)) return "the_nether"
+    if (/^end(_|$)/.test(part)) return "the_end"
   }
   return ""
 }

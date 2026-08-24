@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from "vue"
+import { computed, ref } from "vue"
 import { useScene } from "../composables/useScene.js"
 import { useBuild, NOON } from "../composables/useBuild.js"
 import { useLock } from "../composables/useLock.js"
@@ -9,8 +9,13 @@ const sceneApi = useScene()
 const { view } = sceneApi
 const { state: buildState } = useBuild()
 const { locked } = useLock()
-const { enabled: sky } = useSky()
+const { enabled: sky, dimension: skyDimension, lightDim } = useSky()
 const collapsed = ref(false)
+
+const lighting = computed({
+  get: () => buildState.lighting === "world",
+  set: v => { buildState.lighting = v ? "world" : "off" }
+})
 </script>
 
 <template>
@@ -26,19 +31,18 @@ const collapsed = ref(false)
         <option value="overlay">Overlay</option>
         <option value="wire">Wireframe</option>
       </select>
-      <label for="lighting">Lighting</label>
-      <select id="lighting" v-model="buildState.lighting" :disabled="locked">
-        <option value="world">World</option>
-        <option value="off">Off</option>
-      </select>
     </div>
     <div class="checks">
+      <label class="check">
+        <input type="checkbox" v-model="lighting" :disabled="locked">
+        Lighting
+      </label>
       <template v-if="buildState.lighting === 'world'">
         <label class="check">
           <input type="checkbox" v-model="buildState.fullbright" :disabled="locked">
           Fullbright
         </label>
-        <label v-if="!buildState.fullbright && buildState.dimension === 'overworld'" class="check daytime">
+        <label v-if="!buildState.fullbright && lightDim === 'overworld'" class="check daytime">
           Daytime
           <input type="range" min="0" max="23999" v-model.number="buildState.daytime">
           <span class="value">{{ buildState.daytime }}</span>
@@ -62,6 +66,15 @@ const collapsed = ref(false)
       <label class="check" title="The game's sky, sun, moon and stars. Always on while walking">
         <input type="checkbox" v-model="sky">
         Sky
+      </label>
+      <label v-if="sky" class="check dim" title="Auto follows the structure's own dimension">
+        Dimension
+        <select v-model="skyDimension" :disabled="locked">
+          <option value="auto">Auto</option>
+          <option value="overworld">Overworld</option>
+          <option value="the_nether">Nether</option>
+          <option value="the_end">The End</option>
+        </select>
       </label>
     </div>
     <button @click="sceneApi.fit()">
@@ -89,6 +102,8 @@ button {
 button .material-symbols-outlined { font-size: 18px; }
 
 .daytime { min-width: 0; }
+
+.dim select { flex: 1; }
 
 .daytime input[type="range"] {
   flex: 1;

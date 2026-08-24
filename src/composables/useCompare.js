@@ -5,6 +5,7 @@ import { usePacks } from "./usePacks.js"
 import { useSlicers } from "./useSlicers.js"
 import { useStructures } from "./useStructures.js"
 import { useComparePacks } from "./useComparePacks.js"
+import { useSky } from "./useSky.js"
 import { useLock } from "./useLock.js"
 import { setOverlay } from "./useHighlight.js"
 import { readStructure } from "../nbt.js"
@@ -426,7 +427,7 @@ function tryAutoEnter() {
   if (sel.length === 1 && pairable(sel[0])) return enterVersion(sel[0])
 }
 
-watch(() => [build.state.lighting, build.state.fullbright, build.state.hideStructureBlocks], refresh)
+watch(() => [build.state.lighting, build.state.fullbright, build.state.hideStructureBlocks, useSky().lightDim.value], refresh)
 watch(() => packs.state.assetsVersion, () => {
   if (!state.on) return
   state.mode === "versions" ? refresh() : exit()
