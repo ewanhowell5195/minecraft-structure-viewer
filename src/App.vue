@@ -53,7 +53,7 @@ const structures = useStructures()
 const { state: current, structure, loadVanilla, loadDefault, loadMany, loadFile, loadDebug, loadFeature, loadFeatures, loadFeatureField, cancelReading } = useStructure()
 const { state: buildState, cancel: cancelBuild } = useBuild()
 const sceneApi = useScene()
-useSky()
+const sky = useSky()
 const walk = useWalk()
 const stream = useStream()
 async function walkClick() {
@@ -180,6 +180,10 @@ function stats(i) {
 
 const rightInfo = computed(() => compareState.on && buildState.info ? stats(buildState.info) : "")
 
+// the sky's fog colour behind the canvas, so nothing flickers before it draws
+const SKY_FOG = { overworld: "#C0D8FF", the_nether: "#330808", the_end: "#181318" }
+const skyBg = computed(() => sky.active.value ? SKY_FOG[buildState.dimension] ?? SKY_FOG.overworld : "")
+
 const info = computed(() => {
   const i = compareState.on ? compareState.leftInfo : buildState.info
   if (!i) return ""
@@ -301,7 +305,7 @@ onMounted(async () => {
         <CompareSection v-show="!worldState.active" />
       </template>
     </aside>
-    <main class="viewport">
+    <main class="viewport" :style="skyBg ? { background: skyBg } : null">
       <canvas id="view" ref="canvasEl"></canvas>
       <!-- walking hides the viewport chrome: only the crosshair + hint show -->
       <template v-if="!walkState.on">
