@@ -1438,21 +1438,21 @@ async function ensureOcclusionCache(lib, assets) {
   })()
   return st.ready
 }
-const saveOcclusion = debounce(async (lib, assets, st) => {
-  try {
-    if (packs.assets.value !== assets) return
-    const entries = await lib.exportOcclusionCache(assets)
-    if (entries.length > (st.saved ?? 0) + 8) {
-      await saveStateCache(st.key, entries)
-      st.saved = entries.length
-    }
-  } catch {}
-}, 2500)
-
+// debounced per stack, so a comparison build can't swallow the main one's save
 function scheduleOcclusionSave(lib, assets) {
   const st = occState.get(assets)
   if (!st?.key || !lib.exportOcclusionCache) return
-  saveOcclusion(lib, assets, st)
+  st.save ??= debounce(async () => {
+    try {
+      if (packs.assets.value !== assets) return
+      const entries = await lib.exportOcclusionCache(assets)
+      if (entries.length > (st.saved ?? 0) + 8) {
+        await saveStateCache(st.key, entries)
+        st.saved = entries.length
+      }
+    } catch {}
+  }, 2500)
+  st.save()
 }
 
 // version comparison builds the right half against the comparison stack's
