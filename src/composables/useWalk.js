@@ -815,10 +815,11 @@ addEventListener("keyup", e => {
 // fly speed scroll, exactly spectator mode's: 0.005 a notch, clamped 0..0.2
 addEventListener("wheel", e => {
   if (!state.on || state.suspended || (!NOLOCK && document.pointerLockElement !== sceneApi.canvas)) return
-  // alt scrubs the clock instead, whether flying or not
+  // alt scrubs the clock instead, whether flying or not; line-mode wheels
+  // (firefox) report ~3 lines a notch where pixel mode reports ~100
   if (e.altKey) {
     e.preventDefault()
-    const notches = e.deltaMode ? e.deltaY : e.deltaY / 100
+    const notches = e.deltaMode ? e.deltaY / 3 : e.deltaY / 100
     setDaytime(buildApi.state.daytime - notches * DAY_SCRUB)
     return
   }
