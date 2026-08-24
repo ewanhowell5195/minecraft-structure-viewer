@@ -1,6 +1,7 @@
 import * as THREE from "three"
 import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js"
 import { OBJExporter } from "three/addons/exporters/OBJExporter.js"
+import { makeZip } from "./zip.js"
 
 // shader materials and OffscreenCanvas atlas textures aren't portable, so
 // everything is rebaked onto MeshStandardMaterial + real-canvas textures
@@ -16,6 +17,7 @@ function portableTexture(tex, cache) {
   c.height = img.height
   c.getContext("2d").drawImage(img, 0, 0)
   out = new THREE.CanvasTexture(c)
+  out.userData.file = `textures/texture_${cache.size}.png`
   out.colorSpace = tex.colorSpace
   out.flipY = tex.flipY
   out.wrapS = tex.wrapS
@@ -38,16 +40,18 @@ function portableMaterial(mat, caches) {
     metalness: 0,
     side: mat.side
   })
+  out.name = `material_${caches.mat.size}`
   caches.mat.set(mat, out)
   return out
 }
 
-// exporters can't represent invisible material groups, so those meshes
-// explode into one mesh per visible group
+// exporters can't represent invisible material groups, so those meshes explode
+// into one mesh per visible group. obj can't carry a multi-material mesh at all,
+// only one usemtl per object, so there every group goes its own way
 function bakeMesh(scene, o, matrix, caches, geometry = o.geometry) {
   const mats = [].concat(o.material)
   const groups = geometry.groups
-  if (groups.length && mats.some(m => m?.visible === false)) {
+  if (groups.length && ((caches.perGroup && mats.length > 1) || mats.some(m => m?.visible === false))) {
     const src = geometry.index
     for (const g of groups) {
       const m = mats[g.materialIndex]
@@ -93,24 +97,61 @@ function bakeGroup(scene, group, caches) {
   })
 }
 
+// obj keeps its materials in a sidecar file that points at the textures by
+// path, so the three of them travel together in a zip
+function writeMtl(materials) {
+  const out = []
+  for (const mat of materials) {
+    const file = mat.map?.userData.file
+    out.push(`newmtl ${mat.name}`, "Ka 0.000 0.000 0.000", "Kd 1.000 1.000 1.000", "Ks 0.000 0.000 0.000", "Ns 0")
+    out.push(`illum ${mat.transparent ? 4 : 2}`)
+    if (file) {
+      out.push(`map_Kd ${file}`)
+      // the atlas is a cutout: without this the leaves come out as solid squares
+      out.push(`map_d ${file}`)
+    }
+    out.push("")
+  }
+  return out.join("\n")
+}
+
+function pngBytes(canvas) {
+  return new Promise(resolve => canvas.toBlob(async blob => resolve(new Uint8Array(await blob.arrayBuffer())), "image/png"))
+}
+
+async function objZip(scene, caches, base) {
+  const encoder = new TextEncoder()
+  const obj = `mtllib ${base}.mtl\n` + new OBJExporter().parse(scene)
+  const materials = Array.from(caches.mat.values())
+  const files = [
+    { name: `${base}.obj`, data: encoder.encode(obj) },
+    { name: `${base}.mtl`, data: encoder.encode(writeMtl(materials)) }
+  ]
+  for (const tex of caches.tex.values()) {
+    files.push({ name: tex.userData.file, data: await pngBytes(tex.image) })
+  }
+  return makeZip(files)
+}
+
 export async function exportScene({ format, name, root }) {
   const scene = new THREE.Scene()
-  const caches = { mat: new Map(), tex: new Map() }
+  const caches = { mat: new Map(), tex: new Map(), perGroup: format === "obj" }
   if (root) bakeGroup(scene, root, caches)
   if (!scene.children.length) return
 
   const base = name?.split("/").pop() || "structure"
-  let blob
+  let blob, ext = format
   if (format === "glb") {
     const buf = await new GLTFExporter().parseAsync(scene, { binary: true })
     blob = new Blob([buf], { type: "model/gltf-binary" })
   } else {
-    blob = new Blob([new OBJExporter().parse(scene)], { type: "text/plain" })
+    blob = await objZip(scene, caches, base)
+    ext = "zip"
   }
 
   const a = document.createElement("a")
   a.href = URL.createObjectURL(blob)
-  a.download = `${base}.${format}`
+  a.download = `${base}.${ext}`
   a.click()
   setTimeout(() => URL.revokeObjectURL(a.href), 2000)
 }

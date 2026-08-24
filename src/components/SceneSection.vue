@@ -27,7 +27,7 @@ function onExport(ev) {
       <select id="export" :disabled="locked || !buildState.info" @change="onExport">
         <option value="" selected>Save as…</option>
         <option value="glb">.glb</option>
-        <option value="obj">.obj</option>
+        <option value="obj">.obj (zip)</option>
       </select>
     </div>
   </section>
