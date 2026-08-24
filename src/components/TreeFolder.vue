@@ -91,7 +91,7 @@ function collectFiles(node, out = []) {
 }
 
 function onMenu(name, child, e) {
-  const rels = collectFiles(child)
+  const rels = api.loadable?.(collectFiles(child)) ?? collectFiles(child)
   ctx.open(e, [
     { label: `Load all (${rels.length})`, icon: "stacks", disabled: locked.value || !rels.length, action: () => api.loadAll(rels) },
     { label: "Expand all", icon: "unfold_more", action: () => expandAll(name) },

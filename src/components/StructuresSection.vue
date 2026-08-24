@@ -24,16 +24,23 @@ const treeEl = ref(null)
 const collapsed = ref(false)
 
 // a plain click while the comparison panel is armed opens the structure from
-// both versions; modified clicks keep the normal combine behaviour and drop the split
+// both versions; modified clicks keep the normal combine behaviour and drop the
+// split, except on a structure only the compared version has, which the main
+// stack can't combine
 function openRel(rel, ev) {
-  if (compare.versionArmed() && !ev?.shiftKey && !ev?.ctrlKey && !ev?.metaKey) return compare.openVersion(rel)
+  const mod = ev?.shiftKey || ev?.ctrlKey || ev?.metaKey
+  if (compare.versionArmed() && (!mod || !structures.has(rel))) return compare.openVersion(rel)
   return loadVanilla(rel, ev)
 }
+
+// the New list's rels exist only in the comparison jar, so bulk loads skip them
+const loadable = rels => rels.filter(rel => structures.has(rel))
 
 provide("treeApi", {
   selected: () => state.selected,
   open: openRel,
-  loadAll: rels => loadMany(rels),
+  loadable,
+  loadAll: rels => loadMany(loadable(rels)),
   fileMenu: onFileMenu
 })
 
@@ -129,7 +136,7 @@ watch(() => !!flat.value, isFlat => {
   }
 })
 function onRootMenu(e) {
-  const rels = flat.value ?? names.value
+  const rels = loadable(flat.value ?? names.value)
   const items = [
     { label: `Load all (${rels.length})`, icon: "stacks", disabled: locked.value || !rels.length, action: () => loadMany(rels) }
   ]
