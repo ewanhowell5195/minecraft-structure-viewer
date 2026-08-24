@@ -301,6 +301,7 @@ async function enterOnly(rel) {
     build.setAssetsOverride(comparePacks.assets.value)
     onlyRel = rel
     await useStructure().loadObject(structure, rel)
+    if (build.current.value !== structure) return dropOverride()
     structures.stateMut.selected = [rel]
     writeUrl(rel, null)
   } finally {
