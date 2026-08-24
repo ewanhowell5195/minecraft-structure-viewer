@@ -163,9 +163,10 @@ function onFile(e) {
   else loadFile(file)
 }
 
-// comparing owns its own copy of the file, so closing goes through it
-const openFile = computed(() => compare.versionArmed() ? compare.fileName("main") : structState.file)
-const closeOpenFile = () => compare.versionArmed() ? compare.clearFile("main") : closeFile()
+// comparing owns its own copy of the file, so closing goes through it; a file
+// opened before the panel was armed still closes the ordinary way
+const openFile = computed(() => compare.versionArmed() && compare.fileName("main") ? compare.fileName("main") : structState.file)
+const closeOpenFile = () => compare.versionArmed() && compare.fileName("main") ? compare.clearFile("main") : closeFile()
 </script>
 
 <template>
