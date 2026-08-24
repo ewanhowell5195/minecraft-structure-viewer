@@ -243,6 +243,8 @@ onMounted(async () => {
           : "None of the linked structures were found"
       }
       const structureFile = minimal || rels.length || debug != null || feature != null ? null : await restoreFile("structure")
+      // a restored file under an armed panel loads once, through the comparison
+      const cversion = minimal || manual || worldState.active ? null : params.get("cversion")
       if (debug === "") debugPicker.value = true
       else if (debug != null) await loadDebug(debug)
       else if (feature != null && feature.includes(",")) await loadFeatures(feature.split(","))
@@ -250,11 +252,10 @@ onMounted(async () => {
       else if (feature != null) await loadFeature(feature, parseSeedParam(params.get("fseed")))
       else if (rels.length > 1 || rels.some(isRemote)) await loadMany(rels)
       else if (rels.length === 1) await loadVanilla(rels[0])
-      else if (structureFile) await loadFile(structureFile, false)
-      else if (!(minimal && notFound.value)) await loadDefault()
+      else if (structureFile && !cversion) await loadFile(structureFile, false)
+      else if (!(minimal && notFound.value) && !(structureFile && cversion)) await loadDefault()
       // arming the panel auto-enters version comparison on whatever loaded, and
       // owns comparison outright, so a stale ?compare= pair is ignored
-      const cversion = minimal || manual || worldState.active ? null : params.get("cversion")
       const against = params.get("compare")
       if (cversion) {
         useSlicers().restoreUrlSlice()
