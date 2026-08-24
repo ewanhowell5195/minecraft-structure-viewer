@@ -1,15 +1,17 @@
 <script setup>
 import { computed, onMounted, onBeforeUnmount } from "vue"
 import { useFind } from "../composables/useFind.js"
+import { useContainer } from "../composables/useContainer.js"
 import { num } from "../format.js"
 
 const { state, go, stop } = useFind()
+const container = useContainer()
 
 const STEPS = [1, 10, 100]
 const steps = computed(() => STEPS.filter(n => state.total > n))
 
 function onKey(e) {
-  if (e.key === "Escape" && state.on) stop()
+  if (e.key === "Escape" && state.on && !container.state.open) stop()
 }
 
 onMounted(() => addEventListener("keydown", onKey))

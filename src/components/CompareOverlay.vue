@@ -1,8 +1,10 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from "vue"
 import { useCompare } from "../composables/useCompare.js"
+import { useContainer } from "../composables/useContainer.js"
 
 const { state, stateMut, stop } = useCompare()
+const container = useContainer()
 const el = ref(null)
 const dragging = ref(false)
 
@@ -26,8 +28,9 @@ function up(e) {
   try { e.target.releasePointerCapture(e.pointerId) } catch {}
 }
 
+// a modal's own Escape must not tear the comparison down with it
 function onKey(e) {
-  if (e.key === "Escape" && state.on) stop()
+  if (e.key === "Escape" && state.on && !container.state.open) stop()
 }
 
 onMounted(() => addEventListener("keydown", onKey))
