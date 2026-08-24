@@ -5,10 +5,14 @@ import { useComparePacks } from "./useComparePacks.js"
 import { useStructures, STRUCT_RE } from "./useStructures.js"
 import { numeric } from "../transforms.js"
 import { yieldTask } from "../yield.js"
+import { readStructure } from "../nbt.js"
+import { sameStructure } from "../structdiff.js"
 
 // what the comparison version did to the structure set: which files it gained,
-// which it dropped, and which it rewrote. a DataVersion bump alone is not a
-// rewrite: every structure gets one each version
+// which it dropped, and which it rewrote. equal bytes settle it cheaply; the
+// rest parse and compare on content, since a version can re-serialise every
+// file (DataVersion bumps, the 26.3 blockstate field rename) without changing
+// what any of them holds
 
 const packs = usePacks()
 const comparePacks = useComparePacks()
@@ -35,42 +39,12 @@ function bytesEqual(a, b) {
   return true
 }
 
-async function gunzip(bytes) {
-  if (!(bytes[0] === 0x1F && bytes[1] === 0x8B)) return bytes
-  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"))
-  return new Uint8Array(await new Response(stream).arrayBuffer())
-}
-
-// TAG_Int, name length 11, "DataVersion": the 4 value bytes that follow
-const DV = [0x03, 0x00, 0x0B, 0x44, 0x61, 0x74, 0x61, 0x56, 0x65, 0x72, 0x73, 0x69, 0x6F, 0x6E]
-
-function dvRanges(buf) {
-  const ranges = []
-  outer: for (let i = 0; i + DV.length + 4 <= buf.length; i++) {
-    for (let j = 0; j < DV.length; j++) if (buf[i + j] !== DV[j]) continue outer
-    ranges.push([i + DV.length, i + DV.length + 4])
-  }
-  return ranges
-}
-
-function equalIgnoringDataVersion(a, b) {
-  if (a.length !== b.length) return false
-  const ranges = dvRanges(a)
-  let r = 0
-  for (let i = 0; i < a.length; i++) {
-    while (r < ranges.length && i >= ranges[r][1]) r++
-    if (r < ranges.length && i >= ranges[r][0] && i < ranges[r][1]) continue
-    if (a[i] !== b[i]) return false
-  }
-  return true
-}
-
 async function computeChanged(lib, token, both) {
   const out = []
   const mainAssets = packs.assets.value
   for (let i = 0; i < both.length; i++) {
     if (token !== tok) return null
-    if (i % 20 === 0) {
+    if (i % 5 === 0) {
       state.progress = i / both.length
       await yieldTask()
     }
@@ -81,8 +55,8 @@ async function computeChanged(lib, token, both) {
         comparePacks.readStructureBytes(rel)
       ])
       if (!a || !b || bytesEqual(a, b)) continue
-      const [ia, ib] = await Promise.all([gunzip(a), gunzip(b)])
-      if (!equalIgnoringDataVersion(ia, ib)) out.push(rel)
+      const [sa, sb] = await Promise.all([readStructure(a), readStructure(b)])
+      if (!sameStructure(sa, sb)) out.push(rel)
     } catch {
       out.push(rel)
     }

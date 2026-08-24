@@ -9,8 +9,9 @@ import { useLock } from "./useLock.js"
 import { setOverlay } from "./useHighlight.js"
 import { readStructure } from "../nbt.js"
 import { setParams } from "../params.js"
-import { leafName as leaf, REAL_AIR } from "../transforms.js"
+import { leafName as leaf } from "../transforms.js"
 import { readStructureFile, structureName } from "../formats.js"
+import { cellContents } from "../structdiff.js"
 
 const build = useBuild()
 const scene = useScene()
@@ -97,25 +98,6 @@ function boxOf(group, structure) {
   return { min, max: min.map((v, i) => v + s[i] * 16) }
 }
 
-// what the two structures hold per cell, as a comparable string: the block's id
-// and state, plus any entity ids standing in it
-const key3 = p => p[0] + "," + p[1] + "," + p[2]
-const propsOf = e => Object.keys(e.Properties ?? {}).sort().map(k => k + "=" + e.Properties[k]).join(",")
-
-function contents(structure) {
-  const map = new Map()
-  for (const b of structure.blocks ?? []) {
-    const e = structure.palette?.[b.state]
-    if (!e?.Name || REAL_AIR.test(e.Name)) continue
-    map.set(key3(b.pos), e.Name + "[" + propsOf(e) + "]")
-  }
-  for (const ent of structure.entities ?? []) {
-    const k = key3(ent.pos.map(Math.floor))
-    map.set(k, (map.get(k) ?? "") + "+" + (ent.nbt?.id ?? "entity"))
-  }
-  return map
-}
-
 const STYLES = {
   added: { colour: "rgba(63, 195, 95, 0.28)", line: { colour: "#6fd487", alpha: 0.95 } },
   changed: { colour: "rgba(232, 184, 64, 0.28)", line: { colour: "#f0c85a", alpha: 0.95 } },
@@ -130,7 +112,7 @@ function computeDiff() {
   diffCells = { added: [], changed: [], removed: [] }
   const right = build.current.value
   if (!stash?.structure || !right) return
-  const before = contents(stash.structure), after = contents(right)
+  const before = cellContents(stash.structure), after = cellContents(right)
   for (const [k, v] of after) {
     if (!before.has(k)) diffCells.added.push(k.split(",").map(Number))
     else if (before.get(k) !== v) diffCells.changed.push(k.split(",").map(Number))
