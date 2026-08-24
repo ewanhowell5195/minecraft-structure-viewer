@@ -180,7 +180,6 @@ function stats(i) {
 
 const rightInfo = computed(() => compareState.on && buildState.info ? stats(buildState.info) : "")
 
-// comparing puts each half's name beside its own stats, so the chip drops the name
 const info = computed(() => {
   const i = compareState.on ? compareState.leftInfo : buildState.info
   if (!i) return ""
@@ -254,14 +253,12 @@ onMounted(async () => {
       else if (rels.length === 1) await loadVanilla(rels[0])
       else if (structureFile && !cversion) await loadFile(structureFile, false)
       else if (!(minimal && notFound.value) && !(structureFile && cversion)) await loadDefault()
-      // arming the panel auto-enters version comparison on whatever loaded, and
-      // owns comparison outright, so a stale ?compare= pair is ignored
+      // an armed panel owns comparison, so a stale ?compare= pair is ignored
       const against = params.get("compare")
       if (cversion) {
         useSlicers().restoreUrlSlice()
         await useComparePacks().fromParam(cversion)
-        // a structure the loaded version dropped only turns up once the
-        // comparison jar is in, and opens on its own
+        // a structure only the compared version has resolves once its jar is in
         if (!rels.length && requested.length === 1 && useComparePacks().has(requested[0])) {
           notFound.value = ""
           await useCompare().openVersion(requested[0])
@@ -269,7 +266,6 @@ onMounted(async () => {
         // a restored file has no path to look up, so it is fed in as the upload
         if (structureFile) await useCompare().setMainFile(structureFile)
       } else if (against && rels.length === 1 && structures.has(against)) {
-        // the cut lands before the pair is built, so both halves come up cut
         useSlicers().restoreUrlSlice()
         await useCompare().enter(against)
       }

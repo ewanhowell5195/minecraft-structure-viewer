@@ -25,7 +25,6 @@ const fullscreen = useFullscreen()
 
 // the clock on the number row, dawn through to midnight
 const DAY_PRESETS = [18000, 23000, 0, 2000, 4000, 6000, 9000, 12000, 14000, 16000]
-// alt-scrolled, half an hour a notch and proportionally less off a trackpad
 const DAY_SCRUB = 500
 const DAY = 24000
 
@@ -724,8 +723,7 @@ document.addEventListener("pointerlockchange", () => {
     } else exit()
   }
 })
-// the lock the transition dropped comes back on its own, once the browser has
-// settled; a denied relock leaves it suspended for the next key to pick up
+// the transition drops the lock; it relocks itself once the browser settles
 document.addEventListener("fullscreenchange", () => {
   if (!state.on) return
   setTimeout(() => { if (state.on && state.suspended) resume() }, 100)
@@ -815,8 +813,7 @@ addEventListener("keyup", e => {
 // fly speed scroll, exactly spectator mode's: 0.005 a notch, clamped 0..0.2
 addEventListener("wheel", e => {
   if (!state.on || state.suspended || (!NOLOCK && document.pointerLockElement !== sceneApi.canvas)) return
-  // alt scrubs the clock instead, whether flying or not; line-mode wheels
-  // (firefox) report ~3 lines a notch where pixel mode reports ~100
+  // line-mode wheels (firefox) report ~3 a notch where pixel mode reports ~100
   if (e.altKey) {
     e.preventDefault()
     const notches = e.deltaMode ? e.deltaY / 3 : e.deltaY / 100

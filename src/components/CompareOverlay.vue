@@ -28,7 +28,6 @@ function up(e) {
   try { e.target.releasePointerCapture(e.pointerId) } catch {}
 }
 
-// a modal's own Escape must not tear the comparison down with it
 function onKey(e) {
   if (e.key === "Escape" && state.on && !container.state.open) stop()
 }

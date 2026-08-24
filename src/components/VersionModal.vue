@@ -7,7 +7,6 @@ import { useLock } from "../composables/useLock.js"
 import Modal from "./Modal.vue"
 
 const emit = defineEmits(["close"])
-// "compare" pins the comparison panel's version instead of the main stack's
 const props = defineProps({ target: { type: String, default: "packs" } })
 const { state, setVersion } = usePacks()
 const comparePacks = useComparePacks()

@@ -6,9 +6,8 @@ import { mb } from "../format.js"
 import { useLock } from "./useLock.js"
 import { STRUCT_RE } from "./useStructures.js"
 
-// the comparison side's own stack: a second vanilla jar plus its own pack list,
-// prepared independently of the main stack. picking a version arms comparison
-// mode; nothing here touches the pack cache or the icon workers
+// the comparison side's own stack, prepared independently of the main one:
+// nothing here touches the pack cache or the icon workers
 
 const state = reactive({
   armed: false,
@@ -31,8 +30,8 @@ let baseBytes = null
 let nextId = 1
 let structPath = new Map()
 
-// pinned versions write their id, a tracked channel writes the channel name, so
-// a reload restores what was picked rather than freezing on today's snapshot
+// a pinned version writes its id, a tracked channel its name, so a reload
+// restores the choice rather than freezing on today's snapshot
 const setParam = id => setParams({ cversion: id })
 
 const paramValue = () => state.version || state.channel
@@ -83,7 +82,6 @@ async function loadBase() {
   await rebuild()
 }
 
-// picking a channel or exact version is what turns comparison mode on
 async function activate({ channel, version } = {}) {
   if (state.busy || locked.value) return
   state.channel = version ? "release" : channel ?? "release"

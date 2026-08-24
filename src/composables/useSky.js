@@ -10,8 +10,6 @@ const build = useBuild()
 const scene = useScene()
 const walk = useWalk()
 
-// walking is always under the sky; orbiting has it too unless the view toggle or
-// the url turns it off
 const enabled = ref(!new URLSearchParams(location.search).has("nosky"))
 const active = computed(() => walk.state.on || enabled.value)
 

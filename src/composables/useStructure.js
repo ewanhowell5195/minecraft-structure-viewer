@@ -28,8 +28,6 @@ const session = useSession()
 const { locked, withLock } = useLock()
 
 const structure = buildApi.current
-// file: the name of the opened structure file on screen, so the sidebar can
-// offer to close it instead of leaving it stuck until something else loads
 const state = reactive({ name: "", error: "", reading: null, field: null, file: "" })
 
 let loaded = []
@@ -161,8 +159,7 @@ addEventListener("popstate", async () => {
       else await loadFeature(feature, fseed)
       return
     }
-    // the comparison panel follows the entry too, so stepping out of a
-    // comparison disarms it and stepping back into one arms it again
+    // the panel follows history: leaving a comparison disarms it, re-entering re-arms
     const comparePacks = (await import("./useComparePacks.js")).useComparePacks()
     const compare = (await import("./useCompare.js")).useCompare()
     const cversion = params.get("cversion")
@@ -399,10 +396,8 @@ async function readVanilla(rel) {
   return fixBuiltin(rel, s, 0)
 }
 
-// the pool/structure processors the game runs at placement (mossify, rot,
-// aging, the outpost overgrown overlay), rolled deterministically per rel; the
-// version comparison runs the right half through the same pass and seed, so
-// identical files degrade identically instead of diffing against pristine
+// the placement processors (mossify, rot, aging), rolled deterministically per
+// rel; the version split runs both halves through it so identical files match
 async function processVanilla(rel, s) {
   await structures.computeProcessors()
   const pe = structures.processorEntry(rel)
@@ -656,8 +651,6 @@ function loadFeatureField(rel, baseSeed) {
   })
 }
 
-// drops an opened file and goes back to the default structure, so the tree is
-// usable again without having to load something else first
 async function closeFile() {
   if (locked.value || !state.file) return
   uncache("structure")

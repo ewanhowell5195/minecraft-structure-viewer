@@ -1,8 +1,7 @@
 import { REAL_AIR } from "./transforms.js"
 
-// what a structure holds per cell, as comparable strings: the block's state and
-// nbt, plus the entities standing there. canonical ordering throughout, so two
-// serialisations of the same data always read equal
+// a structure's contents per cell, canonically ordered, so two serialisations
+// of the same data always read equal
 
 function canon(v) {
   if (typeof v === "bigint") return '"' + v + '"'

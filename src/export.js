@@ -30,8 +30,7 @@ function portableTexture(tex, cache) {
   return out
 }
 
-// obj identifies materials by name alone, so they have to be unique; past the
-// atlas and how it blends there is nothing left to tell two of them apart
+// obj identifies materials by name alone
 function uniqueName(want, taken) {
   let name = want
   for (let n = 2; taken.has(name); n++) name = `${want}_${n}`
@@ -60,9 +59,7 @@ function portableMaterial(mat, caches) {
   return out
 }
 
-// grass, foliage and water carry their biome tint as vertex colors, which gltf
-// keeps but obj has no notion of: there the tint becomes part of the material,
-// so the faces are grouped by it and each group gets its own
+// obj has no vertex colors, so the biome tint becomes per-material Kd
 function tintedMaterial(mat, key, caches) {
   const id = mat.name + ":" + key
   let out = caches.tint.get(id)
@@ -115,9 +112,8 @@ function addBaked(scene, geometry, material, matrix, caches) {
   scene.add(mesh)
 }
 
-// exporters can't represent invisible material groups, so those meshes explode
-// into one mesh per visible group. obj can't carry a multi-material mesh at all,
-// only one usemtl per object, so there every group goes its own way
+// exporters can't represent invisible material groups, and obj can't carry a
+// multi-material mesh at all, so those explode into one mesh per group
 function bakeMesh(scene, o, matrix, caches, geometry = o.geometry) {
   const mats = [].concat(o.material)
   const groups = geometry.groups
@@ -167,8 +163,6 @@ function bakeGroup(scene, group, caches) {
   })
 }
 
-// obj keeps its materials in a sidecar file that points at the textures by
-// path, so the three of them travel together in a zip
 function writeMtl(materials) {
   const out = []
   for (const mat of materials) {
@@ -200,8 +194,7 @@ function pngBytes(canvas) {
 
 async function objZip(scene, caches, base) {
   const encoder = new TextEncoder()
-  // the obj exporter reads matrixWorld, which nothing has computed yet: without
-  // this every mesh writes out at the origin, doors and all
+  // the exporter reads matrixWorld, which nothing has computed yet
   scene.updateMatrixWorld(true)
   const obj = `mtllib ${base}.mtl\n` + new OBJExporter().parse(scene)
   const materials = new Map()
@@ -219,15 +212,13 @@ async function objZip(scene, caches, base) {
 }
 
 export async function exportScene({ format, name, root }) {
-  // the viewer builds at 16 units a block; a block is a metre, which is what
-  // gltf measures in, so the whole thing comes down to one unit a block
+  // the viewer builds at 16 units a block; gltf measures metres
   const scene = new THREE.Group()
   scene.scale.setScalar(1 / 16)
   const caches = { mat: new Map(), tex: new Map(), tint: new Map(), names: new Set(), perGroup: format === "obj" }
   if (root) bakeGroup(scene, root, caches)
   if (!scene.children.length) return
 
-  // a world selection is named "world · 16 chunks", which is no kind of filename
   const base = (name ? leafName(name) : "").replace(/[^\w.-]+/g, "_").replace(/^_+|_+$/g, "") || "structure"
   let blob, ext = format
   if (format === "glb") {

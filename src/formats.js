@@ -1,8 +1,6 @@
 import { readNBT, readStructure } from "./nbt.js"
 import { AIR, parseState, normState } from "./transforms.js"
 
-// the structure file formats, keyed by extension, with the name suffix that
-// goes with them: everything that opens a structure file reads them from here
 export const STRUCTURE_EXTS = /\.(nbt|litematic|schem|mcstructure)$/i
 export const structureName = name => name.replace(STRUCTURE_EXTS, "")
 export const readerFor = name => READERS[name.split(".").pop().toLowerCase()] ?? readStructure

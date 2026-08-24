@@ -12,7 +12,6 @@ const cmp = compare.stateMut
 const { locked } = useLock()
 const busy = computed(() => state.busy || locked.value)
 const structInput = ref(null)
-// a comparison restored from the url opens the panel it belongs to
 const collapsed = ref(!new URLSearchParams(location.search).get("cversion"))
 
 const VIEWS = [["slide", "Slide"], ["before", "Before"], ["after", "After"]]

@@ -8,18 +8,15 @@ import { yieldTask } from "../yield.js"
 import { readStructure } from "../nbt.js"
 import { sameStructure } from "../structdiff.js"
 
-// what the comparison version did to the structure set: which files it gained,
-// which it dropped, and which it rewrote. equal bytes settle it cheaply; the
-// rest parse and compare on content, since a version can re-serialise every
-// file (DataVersion bumps, the 26.3 blockstate field rename) without changing
-// what any of them holds
+// which files the comparison version gained, dropped and changed. equal bytes
+// settle a pair cheaply; the rest parse and compare on content, since versions
+// re-serialise every file without changing what most of them hold
 
 const packs = usePacks()
 const comparePacks = useComparePacks()
 const structures = useStructures()
 
-// ready: the nbt sweep has finished, so `changed` is authoritative. the other two
-// lists come from the file names alone, so they land immediately
+// new and removed come from the names alone; ready means the changed sweep finished
 const state = reactive({ ready: false, progress: 0, counts: { new: 0, changed: 0, removed: 0 }, rev: 0 })
 
 let lists = { new: [], changed: [], removed: [] }
@@ -64,8 +61,7 @@ async function computeChanged(lib, token, both) {
   return out
 }
 
-// the hardcoded structures and built features ship with the viewer, not with
-// either version, so they are no version's doing
+// the viewer's own bundled structures are no version's doing
 function viewerOwned(lib) {
   const set = new Set()
   for (const src of packs.builtinSources()) {
@@ -86,7 +82,6 @@ async function recompute() {
   if (!comparePacks.state.armed || !comparePacks.assets.value || !packs.assets.value) return
   const lib = await loadLibrary()
   if (token !== tok) return
-  // zip-backed names only, and none of the viewer's own: the rest is what the jars ship
   const ours = viewerOwned(lib)
   const mine = new Set(structures.state.names.filter(rel => structures.zipPathOf(rel) && !ours.has(rel)))
   const theirs = new Set(comparePacks.names())

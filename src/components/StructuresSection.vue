@@ -23,10 +23,8 @@ const fileInput = ref(null)
 const treeEl = ref(null)
 const collapsed = ref(false)
 
-// a plain click while the comparison panel is armed opens the structure from
-// both versions; modified clicks keep the normal combine behaviour and drop the
-// split, except on a structure only the compared version has, which the main
-// stack can't combine
+// a plain click opens from both versions; modified clicks keep the combine
+// behaviour, unless only the compared version has the structure
 function openRel(rel, ev) {
   const mod = ev?.shiftKey || ev?.ctrlKey || ev?.metaKey
   if (compare.versionArmed() && (!mod || !structures.has(rel))) return compare.openVersion(rel)
@@ -44,8 +42,7 @@ provide("treeApi", {
   fileMenu: onFileMenu
 })
 
-// comparing needs exactly one structure loaded to compare against, so the menu
-// stays away while several are open, and while the panel owns comparison
+// comparing needs exactly one loaded structure, and the panel owns comparison
 function onFileMenu(rel, e) {
   const sel = state.selected
   if (locked.value || compare.versionArmed() || sel.length !== 1 || sel[0] === rel) return
@@ -73,8 +70,6 @@ const advPlaceholder = computed(() => ({
 const advIndexing = computed(() => advMode.value && !state.advReady)
 const vocab = computed(() => (void state.advReady, advMode.value ? advVocab() : []))
 
-// a diff tab replaces the list wholesale: those names come from the two jars'
-// contents, not from the filters over the loaded version
 const diffTab = computed(() => isDiffTab(tab.value) ? tab.value : "")
 
 const names = computed(() => {
@@ -84,13 +79,11 @@ const names = computed(() => {
   return state.filterMode === "all" ? state.names : filteredNames()
 })
 
-// the tab strip is gone either way: the lists aren't known yet, or there are none
 const sweeping = computed(() => compare.versionArmed() && (void diff.state.rev, !diff.state.ready))
 const noDiff = computed(() => compare.versionArmed() && (void diff.state.rev, diff.nothingDiffers()))
 const sweepPct = computed(() => (void diff.state.rev, diff.state.progress * 100))
 
-// comparing counts what the two versions disagree on, so the heading is the
-// tabs added up rather than the size of either version's tree
+// comparing counts disagreements, so the heading sums the tabs
 const countLabel = computed(() => {
   const total = state.names.length
   if (compare.versionArmed()) return (void diff.state.rev, Object.values(diff.state.counts).reduce((a, b) => a + b, 0))
@@ -163,8 +156,7 @@ function onFile(e) {
   else loadFile(file)
 }
 
-// comparing owns its own copy of the file, so closing goes through it; a file
-// opened before the panel was armed still closes the ordinary way
+// comparing owns its copy of the file; a pre-arm file closes the ordinary way
 const openFile = computed(() => compare.versionArmed() && compare.fileName("main") ? compare.fileName("main") : structState.file)
 const closeOpenFile = () => compare.versionArmed() && compare.fileName("main") ? compare.clearFile("main") : closeFile()
 </script>

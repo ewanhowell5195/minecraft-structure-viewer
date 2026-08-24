@@ -21,26 +21,21 @@ const structures = useStructures()
 const comparePacks = useComparePacks()
 const { locked } = useLock()
 
-// mode: "structs" is the right-click structure-vs-structure split, "versions"
-// the comparison panel's version-vs-version one. they share all the machinery
+// mode "structs" is the right-click structure-vs-structure split, "versions"
+// the panel's version-vs-version one; they share all the machinery
 const state = reactive({
   on: false,
   mode: "",
-  // slide swipes between the halves; before/after show one of them whole
   view: "slide",
   split: 0.5,
   left: "",
   right: "",
   leftInfo: null,
-  // diff overlays: what the right half added, altered and dropped
   show: { added: false, changed: false, removed: false },
   counts: { added: 0, changed: 0, removed: 0 },
-  // names of the opened files per side, for the sidebar's close buttons
   files: { main: "", panel: "" }
 })
 
-// the overlay toggles ride in the url under their button names, so a shared
-// comparison comes up highlighting the same things
 const HL = { added: "new", changed: "changed", removed: "removed" }
 {
   const on = new Set((new URLSearchParams(location.search).get("hl") ?? "").split(",").filter(Boolean))
@@ -58,16 +53,11 @@ let leftRel = "", rightRel = ""
 let entering = false
 // the structure on screen came from the comparison version alone
 let onlyRel = ""
-// custom nbt uploads while the panel is armed: one side missing means the same
-// structure renders on both, so the comparison is purely the assets
+// with one side missing, the same file renders on both, comparing just the assets
 const files = { main: null, panel: null }
 
-// the pair lives in the url as the left structure plus the one it is compared
-// against, so a reload or a shared link comes back comparing
 const writeUrl = (left, right) => setParams({ structure: left || null, compare: right || null })
 
-// waits for the app to go quiet: a build in flight, the comparison stack's own
-// load, or anything else holding the lock
 const quiet = () => !build.state.building && !comparePacks.state.busy && !locked.value
 
 function settled() {
@@ -81,9 +71,7 @@ function settled() {
   })
 }
 
-// loading a structure clears the slicers, and comparing is two loads, so the cut
-// is carried across them. the planes are shared, so restoring the state is
-// enough to cut both halves
+// each load clears the slicers and comparing is two loads, so the cut is carried across
 const AXES = ["x", "y", "z"]
 const snapCut = () => AXES.map(a => ({ ...slicers.state[a] }))
 
@@ -106,8 +94,6 @@ const STYLES = {
 
 let diffCells = { added: [], changed: [], removed: [] }
 
-// cells are placed against the live build's root, so the overlay lines up with
-// the right half; the two sides share an origin whenever the sizes match
 function computeDiff() {
   diffCells = { added: [], changed: [], removed: [] }
   const right = build.current.value
@@ -131,11 +117,8 @@ function drawDiff() {
   setOverlay("compare", groups)
 }
 
-// each build is centred on its own size, so two different-sized structures put
-// their cell 0,0,0 in different places. both are moved onto the shared origin
-// (the larger one's, which keeps it centred): the halves then sit on one block
-// grid, so a cell means the same spot on either side and the diff highlights
-// land correctly whichever build they are drawn against
+// both builds move onto a shared origin so the halves sit on one block grid
+// and a diff cell means the same spot on either side
 function basePos(obj) {
   obj.userData.compareBase ??= obj.position.clone()
   return obj.userData.compareBase
@@ -183,8 +166,6 @@ function wireSplit(mode, leftLabel, rightLabel) {
   scene.fit()
 }
 
-// the left half keeps the build that was already loaded; the right half is the
-// one just picked, built through the normal path with the old one stashed
 async function enter(rel) {
   if (state.on || entering || build.state.building) return
   const from = structures.state.selected[0]
@@ -217,8 +198,6 @@ async function enter(rel) {
   }
 }
 
-// the version modes' shared tail: the left half is the current build; the right
-// is built through the same pipeline against the comparison stack's assets
 async function buildRightSplit(rightStruct, leftLabel, rightLabel) {
   const grid = scene.takeGrid()
   slicers.setPreviewOnly(true)
@@ -238,8 +217,6 @@ async function buildRightSplit(rightStruct, leftLabel, rightLabel) {
   return true
 }
 
-// version mode, tree pick: the same structure from both versions, each side
-// read from its own jar and rendered with its own packs
 async function enterVersion(rel) {
   if (entering || build.state.building || !comparePacks.state.armed) return
   entering = true
@@ -265,9 +242,7 @@ async function enterVersion(rel) {
   }
 }
 
-// only one version ships this structure, so there is no pair to split: it is
-// built by itself against the assets of whichever version has it. the override
-// stays put afterwards, so a setting that rebuilds keeps those assets
+// the override stays on afterwards, so a setting that rebuilds keeps these assets
 async function enterOnly(rel) {
   if (entering || build.state.building || !comparePacks.state.armed) return
   entering = true
@@ -291,11 +266,8 @@ async function enterOnly(rel) {
   }
 }
 
-// both versions ship it, so it can be split
 const pairable = rel => comparePacks.has(rel) && !!structures.zipPathOf(rel)
 
-// a tree click while the panel is armed: a pair splits, anything else is shown
-// on its own, from whichever version has it
 function openVersion(rel) {
   if (!comparePacks.state.armed) return
   if (pairable(rel)) return enterVersion(rel)
@@ -307,8 +279,6 @@ async function loadMainOnly(rel) {
   return useStructure().loadVanilla(rel)
 }
 
-// version mode, uploaded files: each side renders its own upload, or the one
-// upload renders on both when only one side has a file
 async function enterFiles() {
   if (entering || !comparePacks.state.armed) return
   const leftFile = files.main ?? files.panel
@@ -353,7 +323,6 @@ const setPanelFile = file => {
 
 const fileName = side => state.files[side]
 
-// dropping one side's file falls back to the other one, or back to the tree
 async function clearFile(side) {
   if (!files[side]) return
   setFile(side, null)
@@ -363,13 +332,11 @@ async function clearFile(side) {
   if (comparePacks.state.armed && sel.length === 1 && pairable(sel[0])) return enterVersion(sel[0])
   const { useStructure } = await import("./useStructure.js")
   await useStructure().loadDefault()
-  // the panel is still armed, so the default structure comes back compared
   await tryAutoEnter()
 }
 
-// every load exits through here, so it is also where a single-sided view lets go
-// of the comparison assets. a load this module is driving keeps them: it is the
-// one putting them there
+// every load funnels through exit, so it also releases the override, except
+// when this module's own load is the one holding it
 function dropOverride() {
   build.setAssetsOverride(null)
   onlyRel = ""
@@ -406,9 +373,8 @@ function exit() {
   if (root && structure) slicers.setSpan(boxOf(root, structure).min, structure.size, [root])
 }
 
-// the user-facing exit: while the live build holds the comparison stack's
-// assets (a versions split, or a single-sided view), the main-assets view is
-// rebuilt first so the comparison cache isn't freed under live meshes
+// while the live build holds the comparison stack's assets, the main view is
+// rebuilt first so the cache isn't freed under live meshes
 async function stop() {
   setFile("main", null)
   setFile("panel", null)
@@ -421,11 +387,9 @@ async function stop() {
   if (comparePacks.state.armed) await comparePacks.deactivate()
 }
 
-// a world replaces the scene wholesale, so comparison mode goes with it
 const worldOpened = () => stop()
 
-// a setting that rebuilds only rebuilds the right half, so both are rebuilt
-// from scratch to keep the two sides comparable
+// a setting that rebuilds only touches the live half, so both are rebuilt
 async function refresh() {
   if (!state.on || entering) return
   const at = state.split
@@ -449,7 +413,6 @@ async function refresh() {
   if (state.on) state.split = at
 }
 
-// arming the panel with a single structure already loaded compares it right away
 function tryAutoEnter() {
   if (entering || !comparePacks.state.armed) return
   if (state.on) {
@@ -470,12 +433,10 @@ watch(() => comparePacks.state.assetsVersion, async () => {
   if (!comparePacks.state.armed) return
   await settled()
   if (!comparePacks.state.armed) return
-  // the single-sided view holds that stack's assets, so it rebuilds against the new ones
   if (state.on && state.mode === "versions") refresh()
   else if (onlyRel) enterOnly(onlyRel)
   else tryAutoEnter()
 })
-// any other rebuild (a level step) replaces the right build and its grid
 watch(() => build.state.info, () => {
   align()
   if (state.on) drawDiff()

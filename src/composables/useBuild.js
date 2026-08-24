@@ -212,8 +212,7 @@ function answerWarn(ok) {
 // seeded into template userData so the library shares one live uniform: daytime changes re-light with no rebuild
 const daytimeUniform = { value: NOON }
 const clocksSoon = debounce(updateClocks, 150)
-// every build gets its own uniform out of the library, so a comparison's stashed
-// half needs the new time as much as the live one
+// each build carries its own uniform, so the stashed half needs the time too
 watch(() => state.daytime, v => {
   daytimeUniform.value = v
   for (const g of sceneApi.contentRoots) if (g.userData.daytime) g.userData.daytime.value = v
@@ -1455,8 +1454,6 @@ function scheduleOcclusionSave(lib, assets) {
   st.save()
 }
 
-// version comparison builds the right half against the comparison stack's
-// assets; everything downstream takes the local `assets`, so one swap suffices
 let assetsOverride = null
 const setAssetsOverride = v => { assetsOverride = v }
 

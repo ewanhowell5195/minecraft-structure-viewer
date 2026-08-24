@@ -235,8 +235,6 @@ function onBuild(root, position, size, sliced) {
   attachPlanes(root)
 }
 
-// compare spans one set of handles across both builds, so the box comes in
-// already unioned rather than from a single build
 function setSpan(min, size, roots) {
   applyBox(min, size)
   for (const r of roots) attachPlanes(r)

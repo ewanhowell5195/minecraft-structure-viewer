@@ -45,10 +45,8 @@ const wireMat = new THREE.MeshBasicMaterial({ wireframe: true, color: 0x9fd0ff }
 wireMat.clippingPlanes = SLICE_PLANES
 
 let skyGroup = null
-// the sky has no horizon under a parallel projection, so ortho borrows a
-// perspective camera pointed the same way, framed to cover the same angle the
-// ortho frustum does: switching cameras leaves the sky where it was, and ortho
-// zoom moves it like a lens rather than leaving it behind
+// ortho has no horizon, so the sky borrows a perspective camera framed to the
+// same angle: switching cameras leaves it in place, and zoom acts like a lens
 const skyCam = new THREE.PerspectiveCamera(FOV, 1, 2, 5000)
 
 function skyCamera() {
@@ -71,8 +69,6 @@ function setSky(group) {
   if (skyGroup) skyScene.add(skyGroup)
 }
 
-// compare mode: two builds in the one scene, each drawn into its own half, with
-// the grid of whichever build that half is showing
 let compare = null
 const setCompare = next => { compare = next ?? null }
 
@@ -251,8 +247,7 @@ function updateLabelsOf(group) {
 
 let gridRects = []
 
-// compare hands the outgoing build's grid to its own half, so it is detached
-// here rather than disposed with the build it belonged to
+// compare adopts the outgoing build's grid instead of disposing it
 function takeGrid() {
   const taken = gridGroup ? { group: gridGroup, rects: gridRects } : null
   gridGroup = null
@@ -524,7 +519,6 @@ function drawScene() {
       if (leftGrid) leftGrid.visible = grid && isLeft
       if (gridGroup) gridGroup.visible = grid && !isLeft
     }
-    // before/after hand the whole frame to one half, so no scissor is needed
     if (view !== "slide") {
       show(view === "before")
       drawPass()

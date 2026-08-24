@@ -1,5 +1,4 @@
-// without this flag the names are read as cp437, and anything non-ascii in a
-// structure's name comes out mojibaked
+// without this flag readers decode the names as cp437
 const UTF8 = 0x0800
 
 const CRC = (() => {
@@ -28,8 +27,7 @@ async function deflate(bytes) {
   }
 }
 
-// zip keeps its timestamps in the dos pair: seconds land on even numbers, and
-// nothing before 1980 can be expressed
+// dos time: even seconds only, nothing before 1980
 function dosStamp(date) {
   const year = Math.max(date.getFullYear(), 1980)
   return {

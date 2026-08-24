@@ -3,12 +3,10 @@ import { computed, ref } from "vue"
 import { useLock } from "../composables/useLock.js"
 import VersionModal from "./VersionModal.vue"
 
-// the version row and pack list, shared by the main Packs section and the
-// comparison panel: same controls, different stack behind them
+// the version row and pack list, shared by the Packs section and the comparison panel
 const props = defineProps({
   target: { type: String, default: "packs" },
   state: { type: Object, required: true },
-  // the pin and channel buttons only light up once the stack is in use
   live: { type: Boolean, default: true }
 })
 const emit = defineEmits(["channel", "add", "move", "remove"])
