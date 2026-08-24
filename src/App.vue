@@ -29,6 +29,7 @@ import StructuresSection from "./components/StructuresSection.vue"
 import FeaturesSection from "./components/FeaturesSection.vue"
 import WorldSection from "./components/WorldSection.vue"
 import ViewSection from "./components/ViewSection.vue"
+import EnvironmentSection from "./components/EnvironmentSection.vue"
 import SlicersSection from "./components/SlicersSection.vue"
 import SceneSection from "./components/SceneSection.vue"
 import LevelMenu from "./components/LevelMenu.vue"
@@ -360,6 +361,7 @@ onMounted(async () => {
     </main>
     <aside v-if="!minimal && !libError" class="sidebar right">
       <ViewSection />
+      <EnvironmentSection />
       <SlicersSection />
       <SceneSection />
     </aside>
