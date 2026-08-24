@@ -196,7 +196,10 @@ async function objZip(scene, caches, base) {
 }
 
 export async function exportScene({ format, name, root }) {
-  const scene = new THREE.Scene()
+  // the viewer builds at 16 units a block; a block is a metre, which is what
+  // gltf measures in, so the whole thing comes down to one unit a block
+  const scene = new THREE.Group()
+  scene.scale.setScalar(1 / 16)
   const caches = { mat: new Map(), tex: new Map(), tint: new Map(), perGroup: format === "obj" }
   if (root) bakeGroup(scene, root, caches)
   if (!scene.children.length) return
