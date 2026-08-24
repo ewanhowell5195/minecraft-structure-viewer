@@ -183,6 +183,7 @@ function makeHighlight() {
     blendDst: THREE.ZeroFactor
   })
   const lines = new THREE.LineSegments(geo, mat)
+  lines.userData.chrome = true
   lines.renderOrder = 999
   lines.frustumCulled = false
   lines.visible = false
@@ -279,6 +280,7 @@ function setGrids(rects, cave = null) {
     })
   }
   gridGroup = new THREE.Group()
+  gridGroup.userData.chrome = true
   gridGroup.visible = gridVisible()
   for (const r of rects) {
     gridGroup.add(makeRectGrid(r, cave?.has))
@@ -391,6 +393,8 @@ function resizeIfNeeded() {
   }
 }
 
+let shooting = false
+
 // preset directions from the target to the camera, at 30 degrees elevation
 const SHOT_ANGLES = (() => {
   const y = 0.5, h = Math.sqrt(3) / 2, c = h / Math.SQRT2
@@ -410,6 +414,14 @@ function renderShot({ size = 1920, aa = false, angle = "current", crop = false, 
   const savedQuat = camera.quaternion.clone()
   const savedSky = skyGroup
   if (!sky) skyGroup = null
+  shooting = true
+  const hidden = []
+  scene.traverse(o => {
+    if (o.userData.chrome && o.visible) {
+      o.visible = false
+      hidden.push(o)
+    }
+  })
   const dir = SHOT_ANGLES[angle]
   if (dir) {
     const dist = Math.max(camera.position.distanceTo(controls.target), 1)
@@ -452,6 +464,8 @@ function renderShot({ size = 1920, aa = false, angle = "current", crop = false, 
   ctx.imageSmoothingEnabled = true
   ctx.imageSmoothingQuality = "high"
   ctx.drawImage(canvas, rx * ratio, ry * ratio, rw * ratio, rh * ratio, 0, 0, out.width, out.height)
+  for (const o of hidden) o.visible = true
+  shooting = false
   skyGroup = savedSky
   if (dir) {
     camera.position.copy(savedPos)
@@ -572,7 +586,7 @@ function drawPass() {
     grids.forEach((g, i) => g.visible = was[i])
   }
   scene.overrideMaterial = null
-  if (overlayScene.children.length) renderer.render(overlayScene, camera)
+  if (overlayScene.children.length && !shooting) renderer.render(overlayScene, camera)
 }
 
 function drawScene() {
@@ -582,7 +596,7 @@ function drawScene() {
   if (compare) {
     const left = compare.left(), right = compare.right(), leftGrid = compare.leftGrid()
     const x = Math.round(sizeW * compare.split())
-    const grid = gridVisible()
+    const grid = gridVisible() && !shooting
     const view = compare.view?.() ?? "slide"
     const show = isLeft => {
       if (left) left.visible = isLeft

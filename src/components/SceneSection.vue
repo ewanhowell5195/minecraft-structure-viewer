@@ -74,10 +74,10 @@ async function render() {
       </select>
       <label for="rsize" title="The size of the image's widest side">Size</label>
       <select id="rsize" v-model.number="size">
-        <option :value="1080">1080</option>
+        <option :value="1024">1024</option>
         <option :value="1920">1920</option>
+        <option :value="2560">2560</option>
         <option :value="3840">3840</option>
-        <option :value="7680">7680</option>
       </select>
     </div>
     <div class="checks">

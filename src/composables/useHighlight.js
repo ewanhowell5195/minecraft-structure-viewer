@@ -214,6 +214,7 @@ function draw(group, root, scene) {
       })
       mesh.instanceMatrix.needsUpdate = true
     }
+    mesh.userData.chrome = true
     mesh.frustumCulled = false
     mesh.renderOrder = group.front ? 997 : 0
     scene.add(mesh)
@@ -233,6 +234,7 @@ function draw(group, root, scene) {
       merge ? mergedEdges(cells, root, has, grow) : boxEdges(boxesOf(group, root), grow),
       material
     )
+    lines.userData.chrome = true
     lines.frustumCulled = false
     lines.renderOrder = group.front ? 998 : 1
     scene.add(lines)
