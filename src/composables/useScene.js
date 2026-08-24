@@ -499,10 +499,11 @@ function drawPass() {
   renderer.render(scene, camera)
   if (view.wireframe === "overlay") {
     scene.overrideMaterial = wireMat
-    const gv = gridGroup?.visible
-    if (gridGroup) gridGroup.visible = false
+    const grids = [gridGroup, compare?.leftGrid()].filter(Boolean)
+    const was = grids.map(g => g.visible)
+    for (const g of grids) g.visible = false
     renderer.render(scene, camera)
-    if (gridGroup) gridGroup.visible = gv
+    grids.forEach((g, i) => g.visible = was[i])
   }
   scene.overrideMaterial = null
   if (overlayScene.children.length) renderer.render(overlayScene, camera)
