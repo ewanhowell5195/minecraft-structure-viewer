@@ -45,6 +45,61 @@ function portableMaterial(mat, caches) {
   return out
 }
 
+// grass, foliage and water carry their biome tint as vertex colors, which gltf
+// keeps but obj has no notion of: there the tint becomes part of the material,
+// so the faces are grouped by it and each group gets its own
+function tintedMaterial(mat, key, caches) {
+  const id = mat.name + ":" + key
+  let out = caches.tint.get(id)
+  if (out) return out
+  const rgb = [key >> 16 & 255, key >> 8 & 255, key & 255].map(v => v / 255)
+  out = mat.clone()
+  out.name = `${mat.name}_${key.toString(16).padStart(6, "0")}`
+  out.userData.tint = rgb
+  out.color.setRGB(rgb[0], rgb[1], rgb[2], THREE.SRGBColorSpace)
+  caches.tint.set(id, out)
+  return out
+}
+
+const WHITE = 0xFFFFFF
+
+function withIndex(geometry, index) {
+  const geo = new THREE.BufferGeometry()
+  for (const [name, attr] of Object.entries(geometry.attributes)) geo.setAttribute(name, attr)
+  geo.setIndex(index)
+  return geo
+}
+
+function addBaked(scene, geometry, material, matrix, caches) {
+  const colors = caches.perGroup ? geometry.getAttribute("color") : null
+  const index = geometry.index
+  if (colors && index) {
+    const rgb = colors.array
+    const buckets = new Map()
+    for (let i = 0; i < index.count; i += 3) {
+      const v = index.getX(i)
+      const key = rgb[v * 3] << 16 | rgb[v * 3 + 1] << 8 | rgb[v * 3 + 2]
+      let list = buckets.get(key)
+      if (!list) buckets.set(key, list = [])
+      list.push(v, index.getX(i + 1), index.getX(i + 2))
+    }
+    if (buckets.size > 1 || !buckets.has(WHITE)) {
+      for (const [key, list] of buckets) {
+        const mesh = new THREE.Mesh(
+          withIndex(geometry, new THREE.BufferAttribute(new Uint32Array(list), 1)),
+          key === WHITE ? material : tintedMaterial(material, key, caches)
+        )
+        mesh.applyMatrix4(matrix)
+        scene.add(mesh)
+      }
+      return
+    }
+  }
+  const mesh = new THREE.Mesh(geometry, material)
+  mesh.applyMatrix4(matrix)
+  scene.add(mesh)
+}
+
 // exporters can't represent invisible material groups, so those meshes explode
 // into one mesh per visible group. obj can't carry a multi-material mesh at all,
 // only one usemtl per object, so there every group goes its own way
@@ -56,19 +111,19 @@ function bakeMesh(scene, o, matrix, caches, geometry = o.geometry) {
     for (const g of groups) {
       const m = mats[g.materialIndex]
       if (!m || m.visible === false) continue
-      const geo = new THREE.BufferGeometry()
-      for (const [name, attr] of Object.entries(geometry.attributes)) geo.setAttribute(name, attr)
-      geo.setIndex(new THREE.BufferAttribute(src.array.slice(g.start, g.start + g.count), 1))
-      const mesh = new THREE.Mesh(geo, portableMaterial(m, caches))
-      mesh.applyMatrix4(matrix)
-      scene.add(mesh)
+      const geo = withIndex(geometry, new THREE.BufferAttribute(src.array.slice(g.start, g.start + g.count), 1))
+      addBaked(scene, geo, portableMaterial(m, caches), matrix, caches)
     }
     return
   }
   const conv = mats.map(m => portableMaterial(m, caches))
-  const mesh = new THREE.Mesh(geometry, Array.isArray(o.material) ? conv : conv[0])
-  mesh.applyMatrix4(matrix)
-  scene.add(mesh)
+  if (Array.isArray(o.material)) {
+    const mesh = new THREE.Mesh(geometry, conv)
+    mesh.applyMatrix4(matrix)
+    scene.add(mesh)
+    return
+  }
+  addBaked(scene, geometry, conv[0], matrix, caches)
 }
 
 // zero-scale instances are the hidden door state
@@ -103,7 +158,8 @@ function writeMtl(materials) {
   const out = []
   for (const mat of materials) {
     const file = mat.map?.userData.file
-    out.push(`newmtl ${mat.name}`, "Ka 0.000 0.000 0.000", "Kd 1.000 1.000 1.000", "Ks 0.000 0.000 0.000", "Ns 0")
+    const [r, g, b] = mat.userData.tint ?? [1, 1, 1]
+    out.push(`newmtl ${mat.name}`, "Ka 0.000 0.000 0.000", `Kd ${r.toFixed(3)} ${g.toFixed(3)} ${b.toFixed(3)}`, "Ks 0.000 0.000 0.000", "Ns 0")
     out.push(`illum ${mat.transparent ? 4 : 2}`)
     if (file) {
       out.push(`map_Kd ${file}`)
@@ -122,10 +178,13 @@ function pngBytes(canvas) {
 async function objZip(scene, caches, base) {
   const encoder = new TextEncoder()
   const obj = `mtllib ${base}.mtl\n` + new OBJExporter().parse(scene)
-  const materials = Array.from(caches.mat.values())
+  const materials = new Map()
+  scene.traverse(o => {
+    if (o.isMesh) for (const m of [].concat(o.material)) materials.set(m.name, m)
+  })
   const files = [
     { name: `${base}.obj`, data: encoder.encode(obj) },
-    { name: `${base}.mtl`, data: encoder.encode(writeMtl(materials)) }
+    { name: `${base}.mtl`, data: encoder.encode(writeMtl(materials.values())) }
   ]
   for (const tex of caches.tex.values()) {
     files.push({ name: tex.userData.file, data: await pngBytes(tex.image) })
@@ -135,11 +194,12 @@ async function objZip(scene, caches, base) {
 
 export async function exportScene({ format, name, root }) {
   const scene = new THREE.Scene()
-  const caches = { mat: new Map(), tex: new Map(), perGroup: format === "obj" }
+  const caches = { mat: new Map(), tex: new Map(), tint: new Map(), perGroup: format === "obj" }
   if (root) bakeGroup(scene, root, caches)
   if (!scene.children.length) return
 
-  const base = name?.split("/").pop() || "structure"
+  // a world selection is named "world · 16 chunks", which is no kind of filename
+  const base = (name?.split("/").pop() ?? "").replace(/[^\w.-]+/g, "_").replace(/^_+|_+$/g, "") || "structure"
   let blob, ext = format
   if (format === "glb") {
     const buf = await new GLTFExporter().parseAsync(scene, { binary: true })
