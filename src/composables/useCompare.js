@@ -447,17 +447,22 @@ const worldOpened = () => stop()
 async function refresh() {
   if (!state.on || entering) return
   const at = state.split
-  if (state.mode === "versions") {
-    if (files.main || files.panel) await enterFiles()
-    else if (rightRel) await enterVersion(rightRel)
-  } else {
-    const a = leftRel, b = rightRel, cut = snapCut()
-    exit()
-    await settled()
-    const { useStructure } = await import("./useStructure.js")
-    await useStructure().loadVanilla(a)
-    applyCut(cut)
-    await enter(b)
+  const { useStructure } = await import("./useStructure.js")
+  useStructure().setQuietLoads(true)
+  try {
+    if (state.mode === "versions") {
+      if (files.main || files.panel) await enterFiles()
+      else if (rightRel) await enterVersion(rightRel)
+    } else {
+      const a = leftRel, b = rightRel, cut = snapCut()
+      exit()
+      await settled()
+      await useStructure().loadVanilla(a)
+      applyCut(cut)
+      await enter(b)
+    }
+  } finally {
+    useStructure().setQuietLoads(false)
   }
   if (state.on) state.split = at
 }

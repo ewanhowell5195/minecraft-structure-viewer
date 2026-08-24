@@ -108,6 +108,10 @@ let initializing = false
 export function beginInit() { initializing = true; buildApi.setRestoreGate(true) }
 export function endInit() { initializing = false; buildApi.setRestoreGate(false) }
 
+// compare's internal reloads replace the url rather than stacking history
+let quietLoad = false
+const setQuietLoads = on => { quietLoad = on }
+
 async function loadDefault() {
   if (!structures.has(DEFAULT_REL)) return
   implicitLoad = true
@@ -135,7 +139,7 @@ function setStructureParam(rel, featureRel, featureSeed, featureField, keepWorld
     ...!keepWorldParams && { wy: null, wsel: null, wloaded: null }
   })
   const changed = key(u.searchParams) !== before
-  history[changed && !initializing ? "pushState" : "replaceState"](null, "", u)
+  history[changed && !initializing && !quietLoad ? "pushState" : "replaceState"](null, "", u)
 }
 
 addEventListener("popstate", async () => {
@@ -739,7 +743,7 @@ async function onAssetsSwapped() {
 packs.setSwapHandler(onAssetsSwapped)
 
 export function useStructure() {
-  return { state: readonly(state), structure, apply, loadVanilla, loadDefault, loadMany, loadFile, closeFile, loadObject, loadDebug, loadFeature, loadFeatures, loadFeatureField, clickFeature, cancelReading, setReading, readCancelled }
+  return { state: readonly(state), structure, apply, loadVanilla, loadDefault, loadMany, loadFile, closeFile, loadObject, loadDebug, loadFeature, loadFeatures, loadFeatureField, clickFeature, cancelReading, setReading, readCancelled, setQuietLoads }
 }
 
 
