@@ -15,7 +15,7 @@ const { locked } = useLock()
 const collapsed = ref(false)
 
 const angle = ref("current")
-const quality = ref(1)
+const size = ref(1920)
 const aa = ref(true)
 const crop = ref(false)
 const sky = ref(false)
@@ -37,7 +37,7 @@ async function render() {
   rendering.value = true
   try {
     const blob = await sceneApi.renderShot({
-      scale: quality.value,
+      size: size.value,
       aa: aa.value,
       angle: angle.value,
       crop: crop.value,
@@ -72,11 +72,12 @@ async function render() {
       <select id="rangle" v-model="angle">
         <option v-for="[id, label] in ANGLES" :key="id" :value="id">{{ label }}</option>
       </select>
-      <label for="rquality">Quality</label>
-      <select id="rquality" v-model.number="quality">
-        <option :value="1">1x</option>
-        <option :value="2">2x</option>
-        <option :value="4">4x</option>
+      <label for="rsize" title="The size of the image's widest side">Size</label>
+      <select id="rsize" v-model.number="size">
+        <option :value="1080">1080</option>
+        <option :value="1920">1920</option>
+        <option :value="3840">3840</option>
+        <option :value="7680">7680</option>
       </select>
     </div>
     <div class="checks">
