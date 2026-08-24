@@ -37,20 +37,10 @@ const lighting = computed({
         <input type="checkbox" v-model="lighting" :disabled="locked">
         Lighting
       </label>
-      <template v-if="buildState.lighting === 'world'">
-        <label class="check">
-          <input type="checkbox" v-model="buildState.fullbright" :disabled="locked">
-          Fullbright
-        </label>
-        <label v-if="!buildState.fullbright && lightDim === 'overworld'" class="check daytime">
-          Daytime
-          <input type="range" min="0" max="23999" v-model.number="buildState.daytime">
-          <span class="value">{{ buildState.daytime }}</span>
-          <button class="reset" title="Reset to noon" :disabled="buildState.daytime === NOON" @click.prevent="buildState.daytime = NOON">
-            <span class="material-symbols-outlined">restart_alt</span>
-          </button>
-        </label>
-      </template>
+      <label v-if="buildState.lighting === 'world'" class="check">
+        <input type="checkbox" v-model="buildState.fullbright" :disabled="locked">
+        Fullbright
+      </label>
       <label class="check" title="Show barrier, light, and structure void blocks as their icons">
         <input type="checkbox" v-model="buildState.technical">
         Technical blocks
@@ -75,6 +65,14 @@ const lighting = computed({
           <option value="the_nether">Nether</option>
           <option value="the_end">The End</option>
         </select>
+      </label>
+      <label v-if="buildState.lighting === 'world' && !buildState.fullbright && lightDim === 'overworld'" class="check daytime">
+        Daytime
+        <input type="range" min="0" max="23999" v-model.number="buildState.daytime">
+        <span class="value">{{ buildState.daytime }}</span>
+        <button class="reset" title="Reset to noon" :disabled="buildState.daytime === NOON" @click.prevent="buildState.daytime = NOON">
+          <span class="material-symbols-outlined">restart_alt</span>
+        </button>
       </label>
     </div>
     <button @click="sceneApi.fit()">
