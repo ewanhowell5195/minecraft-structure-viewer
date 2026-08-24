@@ -177,6 +177,9 @@ function pngBytes(canvas) {
 
 async function objZip(scene, caches, base) {
   const encoder = new TextEncoder()
+  // the obj exporter reads matrixWorld, which nothing has computed yet: without
+  // this every mesh writes out at the origin, doors and all
+  scene.updateMatrixWorld(true)
   const obj = `mtllib ${base}.mtl\n` + new OBJExporter().parse(scene)
   const materials = new Map()
   scene.traverse(o => {
