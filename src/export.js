@@ -17,7 +17,8 @@ function portableTexture(tex, cache) {
   c.height = img.height
   c.getContext("2d").drawImage(img, 0, 0)
   out = new THREE.CanvasTexture(c)
-  out.userData.file = `textures/texture_${cache.size}.png`
+  out.userData.index = cache.size
+  out.userData.file = `textures/atlas_${cache.size}.png`
   out.colorSpace = tex.colorSpace
   out.flipY = tex.flipY
   out.wrapS = tex.wrapS
@@ -28,19 +29,32 @@ function portableTexture(tex, cache) {
   return out
 }
 
+// obj identifies materials by name alone, so they have to be unique; past the
+// atlas and how it blends there is nothing left to tell two of them apart
+function uniqueName(want, taken) {
+  let name = want
+  for (let n = 2; taken.has(name); n++) name = `${want}_${n}`
+  taken.add(name)
+  return name
+}
+
 function portableMaterial(mat, caches) {
   let out = caches.mat.get(mat)
   if (out) return out
   const tex = matMap(mat)
+  const map = tex ? portableTexture(tex, caches.tex) : null
   out = new THREE.MeshStandardMaterial({
-    map: tex ? portableTexture(tex, caches.tex) : null,
+    map,
     transparent: mat.transparent === true,
     alphaTest: mat.transparent ? 0 : 0.5,
     roughness: 1,
     metalness: 0,
     side: mat.side
   })
-  out.name = `material_${caches.mat.size}`
+  const parts = [map ? `atlas_${map.userData.index}` : "untextured"]
+  if (mat.transparent === true) parts.push("blend")
+  if (mat.side === THREE.DoubleSide) parts.push("2s")
+  out.name = uniqueName(parts.join("_"), caches.names)
   caches.mat.set(mat, out)
   return out
 }
@@ -54,7 +68,7 @@ function tintedMaterial(mat, key, caches) {
   if (out) return out
   const rgb = [key >> 16 & 255, key >> 8 & 255, key & 255].map(v => v / 255)
   out = mat.clone()
-  out.name = `${mat.name}_${key.toString(16).padStart(6, "0")}`
+  out.name = `${mat.name}_tint_${key.toString(16).padStart(6, "0")}`
   out.userData.tint = rgb
   out.color.setRGB(rgb[0], rgb[1], rgb[2], THREE.SRGBColorSpace)
   caches.tint.set(id, out)
@@ -159,11 +173,19 @@ function writeMtl(materials) {
   for (const mat of materials) {
     const file = mat.map?.userData.file
     const [r, g, b] = mat.userData.tint ?? [1, 1, 1]
-    out.push(`newmtl ${mat.name}`, "Ka 0.000 0.000 0.000", `Kd ${r.toFixed(3)} ${g.toFixed(3)} ${b.toFixed(3)}`, "Ks 0.000 0.000 0.000", "Ns 0")
-    out.push(`illum ${mat.transparent ? 4 : 2}`)
+    out.push(
+      `newmtl ${mat.name}`,
+      "Ns 0.000",
+      "Ka 0.000 0.000 0.000",
+      `Kd ${r.toFixed(3)} ${g.toFixed(3)} ${b.toFixed(3)}`,
+      "Ks 0.000 0.000 0.000",
+      "Ni 1.000",
+      "d 1.000",
+      "illum 2"
+    )
     if (file) {
       out.push(`map_Kd ${file}`)
-      // the atlas is a cutout: without this the leaves come out as solid squares
+      // the alpha rides in the atlas: without this the leaves come out as solid squares
       out.push(`map_d ${file}`)
     }
     out.push("")
@@ -200,7 +222,7 @@ export async function exportScene({ format, name, root }) {
   // gltf measures in, so the whole thing comes down to one unit a block
   const scene = new THREE.Group()
   scene.scale.setScalar(1 / 16)
-  const caches = { mat: new Map(), tex: new Map(), tint: new Map(), perGroup: format === "obj" }
+  const caches = { mat: new Map(), tex: new Map(), tint: new Map(), names: new Set(), perGroup: format === "obj" }
   if (root) bakeGroup(scene, root, caches)
   if (!scene.children.length) return
 

@@ -28,8 +28,19 @@ async function deflate(bytes) {
   }
 }
 
+// zip keeps its timestamps in the dos pair: seconds land on even numbers, and
+// nothing before 1980 can be expressed
+function dosStamp(date) {
+  const year = Math.max(date.getFullYear(), 1980)
+  return {
+    time: date.getHours() << 11 | date.getMinutes() << 5 | date.getSeconds() >> 1,
+    date: year - 1980 << 9 | date.getMonth() + 1 << 5 | date.getDate()
+  }
+}
+
 export async function makeZip(files) {
   const encoder = new TextEncoder()
+  const stamp = dosStamp(new Date())
   const parts = []
   const central = []
   let offset = 0
@@ -38,12 +49,16 @@ export async function makeZip(files) {
     const packed = await deflate(file.data)
     const deflated = packed && packed.length < file.data.length
     const body = deflated ? packed : file.data
+    const method = deflated ? 8 : 0
+    const crc = crc32(file.data)
     const head = new DataView(new ArrayBuffer(30))
     head.setUint32(0, 0x04034B50, true)
     head.setUint16(4, 20, true)
     head.setUint16(6, UTF8, true)
-    head.setUint16(8, deflated ? 8 : 0, true)
-    head.setUint32(14, crc32(file.data), true)
+    head.setUint16(8, method, true)
+    head.setUint16(10, stamp.time, true)
+    head.setUint16(12, stamp.date, true)
+    head.setUint32(14, crc, true)
     head.setUint32(18, body.length, true)
     head.setUint32(22, file.data.length, true)
     head.setUint16(26, name.length, true)
@@ -54,8 +69,10 @@ export async function makeZip(files) {
     entry.setUint16(4, 20, true)
     entry.setUint16(6, 20, true)
     entry.setUint16(8, UTF8, true)
-    entry.setUint16(10, deflated ? 8 : 0, true)
-    entry.setUint32(16, crc32(file.data), true)
+    entry.setUint16(10, method, true)
+    entry.setUint16(12, stamp.time, true)
+    entry.setUint16(14, stamp.date, true)
+    entry.setUint32(16, crc, true)
     entry.setUint32(20, body.length, true)
     entry.setUint32(24, file.data.length, true)
     entry.setUint16(28, name.length, true)
