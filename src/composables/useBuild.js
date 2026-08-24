@@ -1522,8 +1522,9 @@ async function build(structure = source, refit = true, slice = false, fresh = fa
     if (streamS.state.session && !streamS.state.on) streamS.shutdown()
     const [sx, sy, sz] = structure.size
     state.status = "building…"
-    buildDim = !state.fullbright && /^(the_nether|the_end)$/.test(unsliced.dimension) ? unsliced.dimension : "overworld"
-    state.dimension = buildDim
+    // the sky keeps the structure's dimension even when fullbright flattens the lighting's
+    state.dimension = /^(the_nether|the_end)$/.test(unsliced.dimension) ? unsliced.dimension : "overworld"
+    buildDim = state.fullbright ? "overworld" : state.dimension
     await resolveLegacyNames(structure, lib, assets)
     await precomputeMapArt(structure, lib, assets)
     await ensureOcclusionCache(lib, assets)

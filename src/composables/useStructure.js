@@ -13,7 +13,7 @@ import { makeDebug } from "../debug.js"
 import { yieldTask } from "../yield.js"
 import { useFeatures } from "./useFeatures.js"
 import { generateFeature } from "../features/index.js"
-import { mix, rand32, rnd } from "../transforms.js"
+import { mix, pathDimension, rand32, rnd } from "../transforms.js"
 import { paramUrl, setParams } from "../params.js"
 import { isRemote, prefetchRemote, fetchRemote, remoteName } from "../remote.js"
 import { applyProcessors, seedFor } from "../processors.js"
@@ -338,12 +338,15 @@ async function apply(refit = true) {
   buildApi.state.manual = !loaded.every(e => e.rel && !e.feature && structures.has(e.rel))
   structures.stateMut.selected = loaded.filter(e => e.rel && !e.feature).map(e => e.rel)
   features.stateMut.selected = Array.from(new Set(loaded.filter(e => e.feature).map(e => e.rel)))
+  const dims = new Set(loaded.map(e => pathDimension(e.rel)))
+  const dim = dims.size === 1 ? dims.values().next().value : ""
+  const withDim = s => (dim && !s.dimension && (s.dimension = dim), s)
   if (state.field) {
     const { rel, base } = state.field
     state.name = `${rel} (field of ${loaded.length})`
     setStructureParam(null, rel, base === features.defaultSeed(rel) ? 0 : base, true)
     const s = loaded.length === 1 ? loaded[0].structure : await packField()
-    if (await buildApi.build(s, refit, false, true) === false) return false
+    if (await buildApi.build(withDim(s), refit, false, true) === false) return false
     session.endSession()
     return
   }
@@ -352,11 +355,11 @@ async function apply(refit = true) {
     state.name = name
     if (feature) {
       setStructureParam(null, rel, seed === features.defaultSeed(rel) ? 0 : seed)
-      if (await buildApi.build(s, refit, false, true) === false) return false
+      if (await buildApi.build(withDim(s), refit, false, true) === false) return false
       session.endSession()
     } else {
       if (rel) setStructureParam(rel)
-      if (await buildApi.build(s, refit, false, true) === false) return false
+      if (await buildApi.build(withDim(s), refit, false, true) === false) return false
       await session.startSession(s, name)
     }
   } else {
@@ -366,7 +369,7 @@ async function apply(refit = true) {
     if (allFeatures) setStructureParam(null, loaded.map(e => e.rel).join(","))
     else if (allStructures) setStructureParam(await encodeRels(loaded.map(e => e.rel)))
     else setStructureParam(null)
-    if (await buildApi.build(await packLoaded(), refit, false, true) === false) return false
+    if (await buildApi.build(withDim(await packLoaded()), refit, false, true) === false) return false
     session.endSession()
   }
 }

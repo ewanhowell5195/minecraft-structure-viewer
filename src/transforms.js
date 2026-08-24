@@ -72,6 +72,15 @@ export const strip = s => s.replace(/^minecraft:/, "")
 
 export const leafName = p => p.slice(p.lastIndexOf("/") + 1)
 
+// a nether or end token in any path segment marks the structure's home dimension
+export function pathDimension(rel) {
+  for (const part of String(rel ?? "").toLowerCase().split("/")) {
+    if (part.includes("nether")) return "the_nether"
+    if (/(^|_)end(_|$)/.test(part)) return "the_end"
+  }
+  return ""
+}
+
 export function parseState(str) {
   const m = typeof str === "string" && str.trim().match(/^([\w./-]+(?::[\w./-]+)?)(?:\[(.*)\])?$/)
   if (!m) return { Name: "minecraft:air" }

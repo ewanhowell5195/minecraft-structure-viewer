@@ -10,7 +10,7 @@ import { useScene } from "./useScene.js"
 import { useLock } from "./useLock.js"
 import { readStructure } from "../nbt.js"
 import { setParams } from "../params.js"
-import { AIR, EMPTY, JIGSAW, mix, parseState, poolTemplates, rand32, rnd } from "../transforms.js"
+import { AIR, EMPTY, JIGSAW, mix, parseState, pathDimension, poolTemplates, rand32, rnd } from "../transforms.js"
 import { hasDataMarkers, processDataMarkers } from "../markers.js"
 import { applyProcessors, seedFor } from "../processors.js"
 import { runJigsaw } from "../jigsaw.js"
@@ -158,6 +158,7 @@ async function regenerate() {
       buildApi.state.status = `couldn't assemble: ${err}`
       return
     }
+    if (!structure.dimension) structure.dimension = pathDimension(baseName)
     await buildApi.build(structure, false)
     const root = buildApi.getRoot()
     const a = structure.anchor ?? [0, 0, 0]

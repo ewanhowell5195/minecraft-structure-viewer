@@ -9,7 +9,7 @@ import { useLock } from "./useLock.js"
 import { setOverlay } from "./useHighlight.js"
 import { readStructure } from "../nbt.js"
 import { setParams } from "../params.js"
-import { leafName as leaf } from "../transforms.js"
+import { leafName as leaf, pathDimension } from "../transforms.js"
 import { readStructureFile, structureName } from "../formats.js"
 import { cellContents } from "../structdiff.js"
 
@@ -233,6 +233,7 @@ async function enterVersion(rel) {
     const bytes = await comparePacks.readStructureBytes(rel)
     if (!bytes) return
     const rightStruct = await useStructure().processVanilla(rel, await readStructure(bytes))
+    rightStruct.dimension ||= pathDimension(rel)
     if (await buildRightSplit(rightStruct, packs.state.baseId || "current", comparePacks.state.baseId)) {
       leftRel = rightRel = rel
       applyCut(cut)
@@ -254,6 +255,7 @@ async function enterOnly(rel) {
     const bytes = await comparePacks.readStructureBytes(rel)
     if (!bytes) return
     const structure = await readStructure(bytes)
+    structure.dimension ||= pathDimension(rel)
     const { useStructure } = await import("./useStructure.js")
     build.setAssetsOverride(comparePacks.assets.value)
     onlyRel = rel
