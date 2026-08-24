@@ -423,25 +423,23 @@ function exit() {
   if (root && structure) slicers.setSpan(boxOf(root, structure).min, structure.size, [root])
 }
 
-// the user-facing exit: in version mode it disarms the panel and rebuilds the
-// main-assets view first, so the comparison cache isn't freed under live meshes
+// the user-facing exit: while the live build holds the comparison stack's
+// assets (a versions split, or a single-sided view), the main-assets view is
+// rebuilt first so the comparison cache isn't freed under live meshes
 async function stop() {
   setFile("main", null)
   setFile("panel", null)
-  if (state.mode !== "versions") return exit()
+  const rebuild = comparePacks.state.armed && (state.mode === "versions" || !!onlyRel)
   exit()
-  const { useStructure } = await import("./useStructure.js")
-  await useStructure().apply(false)
-  await comparePacks.deactivate()
+  if (rebuild) {
+    const { useStructure } = await import("./useStructure.js")
+    await useStructure().apply(false)
+  }
+  if (comparePacks.state.armed) await comparePacks.deactivate()
 }
 
 // a world replaces the scene wholesale, so comparison mode goes with it
-async function worldOpened() {
-  setFile("main", null)
-  setFile("panel", null)
-  if (state.on) exit()
-  if (comparePacks.state.armed) await comparePacks.deactivate()
-}
+const worldOpened = () => stop()
 
 // a setting that rebuilds only rebuilds the right half, so both are rebuilt
 // from scratch to keep the two sides comparable
