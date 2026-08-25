@@ -405,10 +405,27 @@ const SHOT_ANGLES = (() => {
   }
 })()
 
+function alphaBounds(image) {
+  const d = image.data, w = image.width, h = image.height
+  let minX = w, minY = h, maxX = -1, maxY = -1
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (d[(y * w + x) * 4 + 3]) {
+        if (x < minX) minX = x
+        if (x > maxX) maxX = x
+        if (y < minY) minY = y
+        if (y > maxY) maxY = y
+      }
+    }
+  }
+  return maxX < 0 ? null : { minX, minY, maxX, maxY }
+}
+
 // one frame on the live canvas, sized so the image's widest side lands on
 // `size` (double with aa, then halved), captured before the next rAF restores
-// the real pixel ratio
-function renderShot({ size = 1920, aa = false, angle = "current", sky = false } = {}) {
+// the real pixel ratio. crop trims the finished image to its own pixels, so it
+// can never cut into anything that rendered
+function renderShot({ size = 1920, aa = false, angle = "current", crop = false, sky = false } = {}) {
   if (!renderer || !canvas || released) return null
   const savedPos = camera.position.clone()
   const savedQuat = camera.quaternion.clone()
@@ -435,13 +452,23 @@ function renderShot({ size = 1920, aa = false, angle = "current", sky = false } 
   renderer.setPixelRatio(ratio)
   renderer.setSize(sizeW, sizeH, false)
   drawScene()
-  const out = document.createElement("canvas")
+  let out = document.createElement("canvas")
   out.width = Math.max(1, Math.round(sizeW * ratio / factor))
   out.height = Math.max(1, Math.round(sizeH * ratio / factor))
   const ctx = out.getContext("2d")
   ctx.imageSmoothingEnabled = true
   ctx.imageSmoothingQuality = "high"
   ctx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, out.width, out.height)
+  if (crop && !skyGroup) {
+    const rect = alphaBounds(ctx.getImageData(0, 0, out.width, out.height))
+    if (rect && (rect.minX || rect.minY || rect.maxX < out.width - 1 || rect.maxY < out.height - 1)) {
+      const trimmed = document.createElement("canvas")
+      trimmed.width = rect.maxX - rect.minX + 1
+      trimmed.height = rect.maxY - rect.minY + 1
+      trimmed.getContext("2d").drawImage(out, -rect.minX, -rect.minY)
+      out = trimmed
+    }
+  }
   for (const o of hidden) o.visible = true
   shooting = false
   skyGroup = savedSky
