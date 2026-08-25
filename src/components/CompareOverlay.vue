@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue"
 import { useCompare } from "../composables/useCompare.js"
 import { useContainer } from "../composables/useContainer.js"
+import { minimal } from "../minimal.js"
 
 const { state, stateMut, stop } = useCompare()
 const container = useContainer()
@@ -29,7 +30,7 @@ function up(e) {
 }
 
 function onKey(e) {
-  if (e.key === "Escape" && state.on && !container.state.open) stop()
+  if (e.key === "Escape" && state.on && !container.state.open && !minimal) stop()
 }
 
 onMounted(() => addEventListener("keydown", onKey))
@@ -43,7 +44,7 @@ onBeforeUnmount(() => removeEventListener("keydown", onKey))
         <span class="material-symbols-outlined">code</span>
       </div>
     </div>
-    <button class="quit" title="Stop comparing" @click="stop">
+    <button v-if="!minimal" class="quit" title="Stop comparing" @click="stop">
       <span class="material-symbols-outlined">close</span>
       Exit Compare
     </button>
