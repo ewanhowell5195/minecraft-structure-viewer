@@ -4,7 +4,7 @@ import { usePacks } from "./usePacks.js"
 import { numeric, strip, rnd, normStatesDeep } from "../transforms.js"
 import { matchIndex } from "../advfilter.js"
 import { generateFeature } from "../features/index.js"
-import { readStructure } from "../nbt.js"
+import { readStructure } from "minecraft-block-reader"
 import { useStructures } from "./useStructures.js"
 import { yieldTask } from "../yield.js"
 

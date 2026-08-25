@@ -8,8 +8,7 @@ import { useCompare } from "./composables/useCompare.js"
 import { useComparePacks } from "./composables/useComparePacks.js"
 import { setHighlights } from "./composables/useHighlight.js"
 import { useSky } from "./composables/useSky.js"
-import { readStructure } from "./nbt.js"
-import { readerFor } from "./formats.js"
+import { readStructure, readerFor } from "minecraft-block-reader"
 
 const SOURCE = "structure-viewer"
 const AIR = /(^|:)(air|cave_air|void_air)$/

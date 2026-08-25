@@ -1,6 +1,6 @@
 import fs from "node:fs"
 import { readZip, unzipEntry } from "../builtin/zip.js"
-import { readStructure } from "../../src/nbt.js"
+import { readStructure } from "minecraft-block-reader"
 import { normStatesDeep } from "../../src/transforms.js"
 
 export function featureFilesFromZip(zipPath) {

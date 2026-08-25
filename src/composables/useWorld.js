@@ -1,6 +1,6 @@
 import { reactive, readonly } from "vue"
 import { readWorldZip, readRegionFile, buildSelection, unzipEntry, chunkSurface, chunkYExtent, readChunk, switchDimension } from "../world.js"
-import { readNBT } from "../nbt.js"
+import { readNBT } from "minecraft-block-reader"
 import { useStructure } from "./useStructure.js"
 import { useBuild } from "./useBuild.js"
 import { useStructures } from "./useStructures.js"

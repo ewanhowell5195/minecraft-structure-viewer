@@ -49,12 +49,12 @@ export const numeric = new Intl.Collator("en", { numeric: true }).compare
 
 export function statePicker() {
   const palette = [], palIdx = new Map()
-  const stateFor = (Name, Properties) => {
-    const pk = Name + "|" + JSON.stringify(Properties ?? null)
+  const stateFor = (id, properties) => {
+    const pk = id + "|" + JSON.stringify(properties ?? null)
     let i = palIdx.get(pk)
     if (i === undefined) {
       i = palette.length
-      palette.push(Properties ? { Name, Properties } : { Name })
+      palette.push(properties ? { id, properties } : { id })
       palIdx.set(pk, i)
     }
     return i
@@ -83,30 +83,8 @@ export function pathDimension(rel) {
   return ""
 }
 
-export function parseState(str) {
-  const m = typeof str === "string" && str.trim().match(/^([\w./-]+(?::[\w./-]+)?)(?:\[(.*)\])?$/)
-  if (!m) return { Name: "minecraft:air" }
-  const Name = m[1].includes(":") ? m[1] : "minecraft:" + m[1]
-  if (!m[2]) return { Name }
-  const Properties = {}
-  for (const kv of m[2].split(",")) {
-    const [k, v] = kv.split("=")
-    if (k && v !== undefined) Properties[k.trim()] = v.trim()
-  }
-  return { Name, Properties }
-}
-
-// 26.3-snapshot-7 renamed the block state fields Name -> id and Properties ->
-// properties, and writes a default state as the bare block id. older packs still
-// ship the old shape, so both get folded back to it
-const STATE_STR = /^[\w./-]+(?::[\w./-]+)?(?:\[.*\])?$/
-
-export function normState(v) {
-  if (typeof v === "string") return STATE_STR.test(v.trim()) ? parseState(v) : v
-  if (!v || typeof v !== "object" || Array.isArray(v)) return v
-  if (typeof v.id !== "string") return v
-  return v.properties ? { Name: v.id, Properties: v.properties } : { Name: v.id }
-}
+import { normState } from "minecraft-block-reader"
+export { parseState, normState, AIR, REAL_AIR } from "minecraft-block-reader"
 
 // keys the feature and processor json store block states under
 const STATE_FIELDS = new Set([
@@ -203,17 +181,15 @@ export function mirrorState(props, mir) {
   return p
 }
 
-export const AIR = /(^|:)(air|cave_air|void_air|structure_void)$/
 export const STRUCT_VOID = /(^|:)structure_void$/
-export const REAL_AIR = /(^|:)(air|cave_air|void_air)$/
 export const JIGSAW = /(^|:)jigsaw$/
 
 export function jigsawsOf(struct) {
   const out = []
   for (const b of struct.blocks) {
     const e = struct.palette[b.state]
-    if (!JIGSAW.test(e?.Name || "")) continue
-    const or = e.Properties?.orientation || "north_up"
+    if (!JIGSAW.test(e?.id || "")) continue
+    const or = e.properties?.orientation || "north_up"
     const i = or.lastIndexOf("_")
     const n = b.nbt ?? {}
     out.push({

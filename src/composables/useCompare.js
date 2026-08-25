@@ -8,10 +8,9 @@ import { useComparePacks } from "./useComparePacks.js"
 import { useSky } from "./useSky.js"
 import { useLock } from "./useLock.js"
 import { setOverlay } from "./useHighlight.js"
-import { readStructure } from "../nbt.js"
 import { setParams } from "../params.js"
 import { leafName as leaf, pathDimension } from "../transforms.js"
-import { readStructureFile, structureName } from "../formats.js"
+import { readStructure, readStructureFile, structureName } from "minecraft-block-reader"
 import { cellContents } from "../structdiff.js"
 
 const build = useBuild()

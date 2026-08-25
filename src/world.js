@@ -1,287 +1,5 @@
-import { readNBT } from "./nbt.js"
-import { normState } from "./transforms.js"
-
-const AIR = /(^|:)(air|cave_air|void_air)$/
-
-async function inflate(data, format) {
-  const stream = new Blob([data]).stream().pipeThrough(new DecompressionStream(format))
-  return new Uint8Array(await new Response(stream).arrayBuffer())
-}
-
-const sliceBytes = async (blob, start, end) => new Uint8Array(await blob.slice(start, end).arrayBuffer())
-
-// central directory only (zip64 aware); entry bytes stay on disk until read,
-// so multi-GB world zips never need the whole file in memory
-export async function parseZipBlob(blob) {
-  const size = blob.size
-  const tail = await sliceBytes(blob, Math.max(0, size - 66000), size)
-  let e = -1
-  for (let i = tail.length - 22; i >= 0; i--) {
-    if (tail[i] === 0x50 && tail[i + 1] === 0x4b && tail[i + 2] === 0x05 && tail[i + 3] === 0x06) { e = i; break }
-  }
-  if (e === -1) throw new Error("not a zip file (no end of central directory record)")
-  const tdv = new DataView(tail.buffer, tail.byteOffset, tail.byteLength)
-  let count = tdv.getUint16(e + 10, true)
-  let cdSize = tdv.getUint32(e + 12, true)
-  let cdOff = tdv.getUint32(e + 16, true)
-  if ((cdOff === 0xFFFFFFFF || cdSize === 0xFFFFFFFF || count === 0xFFFF) && e >= 20 && tdv.getUint32(e - 20, true) === 0x07064b50) {
-    const off64 = Number(tdv.getBigUint64(e - 12, true))
-    const rec = await sliceBytes(blob, off64, off64 + 56)
-    const rdv = new DataView(rec.buffer)
-    if (rdv.getUint32(0, true) === 0x06064b50) {
-      count = Number(rdv.getBigUint64(32, true))
-      cdSize = Number(rdv.getBigUint64(40, true))
-      cdOff = Number(rdv.getBigUint64(48, true))
-    }
-  }
-  const cd = await sliceBytes(blob, cdOff, cdOff + cdSize)
-  const dv = new DataView(cd.buffer, cd.byteOffset, cd.byteLength)
-  const td = new TextDecoder()
-  const files = new Map()
-  let o = 0
-  for (let i = 0; i < count && o + 46 <= cd.length; i++) {
-    const nameLen = dv.getUint16(o + 28, true)
-    const extraLen = dv.getUint16(o + 30, true)
-    const commentLen = dv.getUint16(o + 32, true)
-    const filePath = td.decode(cd.subarray(o + 46, o + 46 + nameLen))
-    if (!filePath.endsWith("/")) {
-      const method = dv.getUint16(o + 10, true)
-      let compressedSize = dv.getUint32(o + 20, true)
-      const uncompressedSize = dv.getUint32(o + 24, true)
-      let localOffset = dv.getUint32(o + 42, true)
-      if (compressedSize === 0xFFFFFFFF || localOffset === 0xFFFFFFFF || uncompressedSize === 0xFFFFFFFF) {
-        let eo = o + 46 + nameLen
-        const end = eo + extraLen
-        while (eo + 4 <= end) {
-          const id = dv.getUint16(eo, true), sz = dv.getUint16(eo + 2, true)
-          if (id === 1) {
-            let fo = eo + 4
-            if (uncompressedSize === 0xFFFFFFFF) fo += 8
-            if (compressedSize === 0xFFFFFFFF) {
-              compressedSize = Number(dv.getBigUint64(fo, true))
-              fo += 8
-            }
-            if (localOffset === 0xFFFFFFFF) localOffset = Number(dv.getBigUint64(fo, true))
-            break
-          }
-          eo += 4 + sz
-        }
-      }
-      files.set(filePath, { method, blob, localOffset, compressedSize })
-    }
-    o += 46 + nameLen + extraLen + commentLen
-  }
-  return files
-}
-
-async function entryStart(entry) {
-  const head = await sliceBytes(entry.blob, entry.localOffset, entry.localOffset + 30)
-  const dv = new DataView(head.buffer)
-  return entry.localOffset + 30 + dv.getUint16(26, true) + dv.getUint16(28, true)
-}
-
-async function entryData(entry) {
-  if (entry.data) return entry.data
-  const start = await entryStart(entry)
-  return sliceBytes(entry.blob, start, start + entry.compressedSize)
-}
-
-export const unzipEntry = async entry => {
-  const data = await entryData(entry)
-  return entry.method === 8 ? inflate(data, "deflate-raw") : data
-}
-
-// the first `want` decompressed bytes without inflating the rest: region
-// headers are 8KB out of multi-MB entries
-async function entryPrefix(entry, want) {
-  if (entry.data) return (await unzipEntry(entry)).subarray(0, want)
-  const start = await entryStart(entry)
-  if (entry.method !== 8) return sliceBytes(entry.blob, start, start + Math.min(want, entry.compressedSize))
-  const reader = entry.blob.slice(start, start + entry.compressedSize).stream()
-    .pipeThrough(new DecompressionStream("deflate-raw")).getReader()
-  const chunks = []
-  let got = 0
-  while (got < want) {
-    const { done, value } = await reader.read()
-    if (done) break
-    chunks.push(value)
-    got += value.length
-  }
-  reader.cancel().catch(() => {})
-  const out = new Uint8Array(Math.min(got, want))
-  let off = 0
-  for (const c of chunks) {
-    const n = Math.min(c.length, out.length - off)
-    out.set(c.subarray(0, n), off)
-    off += n
-    if (off >= out.length) break
-  }
-  return out
-}
-
-const DIM_ORDER = { overworld: 0, the_nether: 1, the_end: 2 }
-
-export async function readWorldZip(blob, onProgress) {
-  const files = await parseZipBlob(blob)
-  const prefixes = new Set()
-  for (const p of files.keys()) {
-    const m = p.match(/^(.*?)region\/r\.-?\d+\.-?\d+\.mca$/)
-    if (m) prefixes.add(m[1])
-  }
-  if (!prefixes.size) throw new Error("no region files found (is this a world zip?)")
-
-  const dims = []
-  const modern = [...prefixes].filter(p => /(^|\/)dimensions\/[^/]+\/.+\/$/.test(p))
-  if (modern.length) {
-    for (const p of modern) {
-      const m = p.match(/^(.*?)dimensions\/([^/]+)\/(.+)\/$/)
-      dims.push({ id: m[2] === "minecraft" ? m[3] : m[2] + ":" + m[3], prefix: p, root: m[1] })
-    }
-  } else {
-    const over = [...prefixes].filter(p => !/DIM-?1\/$/.test(p)).sort((a, b) => a.length - b.length)[0]
-    const base = over ?? [...prefixes][0].replace(/DIM-?1\/$/, "")
-    if (over !== undefined) dims.push({ id: "overworld", prefix: over, root: base })
-    if (prefixes.has(base + "DIM-1/")) dims.push({ id: "the_nether", prefix: base + "DIM-1/", root: base })
-    if (prefixes.has(base + "DIM1/")) dims.push({ id: "the_end", prefix: base + "DIM1/", root: base })
-  }
-  dims.sort((a, b) => (DIM_ORDER[a.id] ?? 3) - (DIM_ORDER[b.id] ?? 3) || a.root.length - b.root.length || a.id.localeCompare(b.id))
-  const root = dims[0].root
-
-  let name = ""
-  const levelEntry = files.get(root + "level.dat")
-  if (levelEntry) {
-    try { name = (await readNBT(await unzipEntry(levelEntry))).Data?.LevelName ?? "" } catch {}
-  }
-
-  const structures = new Map()
-  const structList = []
-  for (const [p, entry] of files) {
-    const m = p.match(/^(.*?)generated\/([^/]+)\/structures?\/(.+)\.nbt$/)
-    if (!m || m[1] !== root) continue
-    const rel = "world/" + (m[2] === "minecraft" ? "" : m[2] + "/") + m[3]
-    structures.set(rel, entry)
-    structList.push({ rel, ns: m[2], path: m[3] })
-  }
-  const data = await readDimension(files, dims[0].prefix, onProgress)
-  return { name, structures, structList, files, root, dims, dimension: dims[0].id, ...data }
-}
-
-async function readDimension(files, prefix, onProgress) {
-  const regions = [], eRegions = []
-  for (const [p, entry] of files) {
-    const m = p.match(/^(.*?)region\/r\.(-?\d+)\.(-?\d+)\.mca$/)
-    if (m && m[1] === prefix) regions.push([m, entry])
-    const em = p.match(/^(.*?)entities\/r\.(-?\d+)\.(-?\d+)\.mca$/)
-    if (em && em[1] === prefix) eRegions.push([em, entry])
-  }
-  const regionBufs = new Map()
-  const entityBufs = new Map()
-  const chunks = []
-  let done = 0
-  const total = regions.length + eRegions.length
-  for (const [m, entry] of regions) {
-    onProgress?.(done++, total)
-    const header = await entryPrefix(entry, 4096)
-    if (header.length < 4096) continue
-    const key = m[2] + "," + m[3]
-    regionBufs.set(key, entry)
-    scanRegion(header, Number(m[2]), Number(m[3]), key, chunks)
-  }
-  if (!chunks.length) throw new Error("the region files contain no chunks")
-  for (const [m, entry] of eRegions) {
-    onProgress?.(done++, total)
-    entityBufs.set(m[2] + "," + m[3], entry)
-  }
-  return { regionBufs, entityBufs, chunks, regionCache: new Map() }
-}
-
-export async function switchDimension(world, id, onProgress) {
-  const d = world.dims?.find(d => d.id === id)
-  if (!d) throw new Error("unknown dimension " + id)
-  const data = await readDimension(world.files, d.prefix, onProgress)
-  return { ...world, dimension: id, ...data }
-}
-
-function scanRegion(bytes, rx, rz, key, chunks) {
-  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
-  for (let i = 0; i < 1024; i++) {
-    if (dv.getUint32(i * 4) === 0) continue
-    chunks.push({ cx: rx * 32 + (i & 31), cz: rz * 32 + (i >> 5), region: key, index: i })
-  }
-}
-
-export function readRegionFile(buf, fileName) {
-  const bytes = new Uint8Array(buf)
-  if (bytes.length < 8192) throw new Error("not a region file")
-  const m = fileName.match(/r\.(-?\d+)\.(-?\d+)\.mca$/i)
-  const rx = m ? Number(m[1]) : 0, rz = m ? Number(m[2]) : 0
-  const key = rx + "," + rz
-  const chunks = []
-  scanRegion(bytes, rx, rz, key, chunks)
-  if (!chunks.length) throw new Error("the region file contains no chunks")
-  return { name: "", regionBufs: new Map([[key, bytes]]), entityBufs: new Map(), chunks, structures: new Map(), regionCache: new Map() }
-}
-
-// fields no consumer reads; skipping them halves the NBT work per chunk
-const CHUNK_SKIP = new Set([
-  "Heightmaps", "biomes", "block_light", "sky_light", "BlockLight", "SkyLight",
-  "fluid_ticks", "block_ticks", "PostProcessing", "structures", "blending_data",
-  "CarvingMasks", "Lights", "isLightOn", "TileTicks", "LiquidTicks", "ToBeTicked", "LiquidsToBeTicked"
-])
-
-function normChunk(nbt) {
-  for (const s of nbt?.sections ?? []) {
-    const pal = s.block_states?.palette
-    if (pal) s.block_states.palette = pal.map(normState)
-  }
-  return nbt
-}
-
-async function readChunkFrom(bytes, index) {
-  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
-  const loc = dv.getUint32(index * 4)
-  if (!loc) return null
-  const off = (loc >>> 8) * 4096
-  const len = dv.getUint32(off)
-  const method = bytes[off + 4]
-  const payload = bytes.subarray(off + 5, off + 4 + len)
-  if (method === 3) return normChunk(await readNBT(payload, { skip: CHUNK_SKIP }))
-  if (method === 1 || method === 2) return normChunk(await readNBT(await inflate(payload, method === 1 ? "gzip" : "deflate"), { skip: CHUNK_SKIP }))
-  throw new Error(`unsupported chunk compression ${method}`)
-}
-
-// lazy worlds keep zip entries in the bufs maps; inflated regions live in a
-// small LRU so a browse can't accumulate the whole world in memory. The cap is
-// byte-based: full-height regions inflate to 100MB+ each, so an entry-count cap
-// alone can balloon into gigabytes
-const REGION_CACHE_MAX = 24
-const REGION_CACHE_BYTES = 320 * 1024 * 1024
-async function regionData(world, kind, key) {
-  const src = kind === "entity" ? world.entityBufs : world.regionBufs
-  const v = src?.get(key)
-  if (!v) return null
-  if (v instanceof Uint8Array) return v
-  const cache = world.regionCache
-  const ck = kind + ":" + key
-  const hit = cache.get(ck)
-  if (hit) {
-    cache.delete(ck)
-    cache.set(ck, hit)
-    return hit
-  }
-  const bytes = await unzipEntry(v)
-  cache.set(ck, bytes)
-  let total = 0
-  for (const b of cache.values()) total += b.byteLength
-  while ((cache.size > REGION_CACHE_MAX || total > REGION_CACHE_BYTES) && cache.size > 1) {
-    const k0 = cache.keys().next().value
-    total -= cache.get(k0).byteLength
-    cache.delete(k0)
-  }
-  return bytes
-}
-
-export const readChunk = async (world, chunk) => readChunkFrom(await regionData(world, "region", chunk.region), chunk.index)
+import { readWorldZip, readRegionFile, switchDimension, readChunk, readEntityChunk, chunkYExtent, unzipEntry, parseZipBlob, REAL_AIR } from "minecraft-block-reader"
+export { readWorldZip, readRegionFile, switchDimension, readChunk, chunkYExtent, unzipEntry, parseZipBlob }
 
 const PLANTS = new Set(["poppy", "dandelion", "oxeye_daisy", "azure_bluet", "cornflower", "allium",
   "lilac", "peony", "sunflower", "wither_rose", "wheat", "beetroots", "carrots", "potatoes",
@@ -350,20 +68,6 @@ function manmade(name) {
     DYE_PREFIX.test(n)
 }
 
-// scratch for the packed-index halves; palettes cap at 4096 so 820 longs is the most
-
-export async function chunkYExtent(world, chunk) {
-  const nbt = await readChunk(world, chunk)
-  let top = -Infinity, bottom = Infinity
-  for (const s of nbt.sections ?? []) {
-    const pal = s.block_states?.palette
-    if (!pal || !pal.some(e => !AIR.test(e?.Name ?? ""))) continue
-    if (s.Y * 16 + 15 > top) top = s.Y * 16 + 15
-    if (s.Y * 16 < bottom) bottom = s.Y * 16
-  }
-  return top === -Infinity ? null : { top, bottom }
-}
-
 export async function chunkSurface(world, chunk, yMin = -Infinity, yMax = Infinity) {
   const nbt = await readChunk(world, chunk)
   const sections = (nbt.sections ?? [])
@@ -377,11 +81,11 @@ export async function chunkSurface(world, chunk, yMin = -Infinity, yMax = Infini
     const yTop = Math.min(15, Math.floor(yMax) - s.Y * 16)
     const yBot = Math.max(0, Math.ceil(yMin) - s.Y * 16)
     const pal = s.block_states.palette
-    const airMask = pal.map(e => AIR.test(e.Name))
+    const airMask = pal.map(e => REAL_AIR.test(e.id))
     if (!airMask.includes(false)) continue
-    const codes = pal.map(e => surfaceCode(e.Name))
-    const wts = pal.map(e => manmade(e.Name) ? 3 : 1)
-    // nbt.js already hands longs over as [lo, hi] uint32 pairs; only
+    const codes = pal.map(e => surfaceCode(e.id))
+    const wts = pal.map(e => manmade(e.id) ? 3 : 1)
+    // readNBT already hands longs over as [lo, hi] uint32 pairs; only
     // unresolved columns get probed
     let bits = 0, vpl = 0, mask = 0, u32 = null
     if (pal.length > 1) {
@@ -553,7 +257,7 @@ export async function buildSelection(world, selected, { yMin = -Infinity, yMax =
     }
     for (const s of nbt.sections) {
       const pal = s.block_states?.palette
-      if (!inRange(s) || !pal || pal.every(e => AIR.test(e.Name))) continue
+      if (!inRange(s) || !pal || pal.every(e => REAL_AIR.test(e.id))) continue
       minSec = Math.min(minSec, s.Y)
       maxSec = Math.max(maxSec, s.Y)
     }
@@ -572,11 +276,11 @@ export async function buildSelection(world, selected, { yMin = -Infinity, yMax =
 
   const palette = [], palIdx = new Map()
   const stateFor = e => {
-    const k = e.Name + "|" + JSON.stringify(e.Properties ?? null)
+    const k = e.id + "|" + JSON.stringify(e.properties ?? null)
     let i = palIdx.get(k)
     if (i === undefined) {
       i = palette.length
-      palette.push(e.Properties ? { Name: e.Name, Properties: e.Properties } : { Name: e.Name })
+      palette.push(e.properties ? { id: e.id, properties: e.properties } : { id: e.id })
       palIdx.set(k, i)
     }
     return i
@@ -599,9 +303,8 @@ export async function buildSelection(world, selected, { yMin = -Infinity, yMax =
     if (blocks.length > cap) { capped = true; break }
     if ((loaded & 15) === 15 && over()) { truncated = true; break }
     loaded++
-    const ebytes = await regionData(world, "entity", c.region)
-    if (ebytes && ebytes.length >= 8192) {
-      const enbt = await readChunkFrom(ebytes, c.index)
+    const enbt = await readEntityChunk(world, c)
+    if (enbt) {
       for (const e of enbt?.Entities ?? []) {
         const p = e.Pos
         // the user's y range, not the terrain's: flying entities sit above the
@@ -626,7 +329,7 @@ export async function buildSelection(world, selected, { yMin = -Infinity, yMax =
       const pal = bs?.palette
       if (!pal) continue
       const sy = s.Y * 16 - y0
-      const map = pal.map(e => AIR.test(e.Name) ? -1 : stateFor(e))
+      const map = pal.map(e => REAL_AIR.test(e.id) ? -1 : stateFor(e))
       const hasBE = beMap.size > 0
       const put = (i, st) => {
         const y = sy + (i >> 8)
@@ -720,13 +423,13 @@ export async function chunkGrid(world, c, { yMin, yMax }) {
       if (!pal || s.Y * 16 + 15 < yMin || s.Y * 16 > yMax) continue
       const sy = s.Y * 16
       const map = pal.map(e => {
-        if (AIR.test(e.Name)) return 0
-        const k = e.Name + "|" + (e.Properties ? JSON.stringify(e.Properties) : "")
+        if (REAL_AIR.test(e.id)) return 0
+        const k = e.id + "|" + (e.properties ? JSON.stringify(e.properties) : "")
         let gi = palKey.get(k)
         if (gi === undefined) {
           gi = palette.length + 1
           palKey.set(k, gi)
-          palette.push({ id: e.Name, properties: e.Properties ?? null })
+          palette.push({ id: e.id, properties: e.properties ?? null })
         }
         return gi
       })

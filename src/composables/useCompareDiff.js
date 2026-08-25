@@ -5,7 +5,7 @@ import { useComparePacks } from "./useComparePacks.js"
 import { useStructures, STRUCT_RE } from "./useStructures.js"
 import { numeric } from "../transforms.js"
 import { yieldTask } from "../yield.js"
-import { readStructure } from "../nbt.js"
+import { readStructure } from "minecraft-block-reader"
 import { sameStructure } from "../structdiff.js"
 
 // which files the comparison version gained, dropped and changed. equal bytes
