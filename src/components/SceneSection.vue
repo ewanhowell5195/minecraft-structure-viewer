@@ -17,7 +17,7 @@ const collapsed = ref(false)
 const angle = ref("current")
 const size = ref(1920)
 const aa = ref(true)
-const crop = ref(false)
+const crop = ref(true)
 const sky = ref(false)
 const rendering = ref(false)
 

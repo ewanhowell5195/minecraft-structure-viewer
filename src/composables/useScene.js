@@ -408,7 +408,7 @@ const SHOT_ANGLES = (() => {
 // one frame on the live canvas, sized so the image's widest side lands on
 // `size` (double with aa, then halved), captured before the next rAF restores
 // the real pixel ratio
-function renderShot({ size = 1920, aa = false, angle = "current", crop = false, sky = false } = {}) {
+function renderShot({ size = 1920, aa = false, angle = "current", sky = false } = {}) {
   if (!renderer || !canvas || released) return null
   const savedPos = camera.position.clone()
   const savedQuat = camera.quaternion.clone()
@@ -429,41 +429,19 @@ function renderShot({ size = 1920, aa = false, angle = "current", crop = false, 
     camera.lookAt(controls.target)
   }
   camera.updateMatrixWorld(true)
-  camera.matrixWorldInverse.copy(camera.matrixWorld).invert()
-  // the target rect in css px, so the scale can aim `size` at its widest side
-  let rx = 0, ry = 0, rw = sizeW, rh = sizeH
-  if (crop) {
-    const box = sceneBounds()
-    if (!box.isEmpty()) {
-      const v = new THREE.Vector3()
-      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
-      for (let i = 0; i < 8; i++) {
-        v.set(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z).project(camera)
-        minX = Math.min(minX, v.x); maxX = Math.max(maxX, v.x)
-        minY = Math.min(minY, v.y); maxY = Math.max(maxY, v.y)
-      }
-      const x0 = Math.max(0, (minX + 1) / 2 * sizeW - 8)
-      const x1 = Math.min(sizeW, (maxX + 1) / 2 * sizeW + 8)
-      const y0 = Math.max(0, (1 - maxY) / 2 * sizeH - 8)
-      const y1 = Math.min(sizeH, (1 - minY) / 2 * sizeH + 8)
-      if (x1 - x0 >= 2 && y1 - y0 >= 2) {
-        rx = x0; ry = y0; rw = x1 - x0; rh = y1 - y0
-      }
-    }
-  }
   const factor = aa ? 2 : 1
-  let ratio = size / Math.max(rw, rh, 1) * factor
+  let ratio = size / Math.max(sizeW, sizeH, 1) * factor
   ratio = Math.min(ratio, (renderer.capabilities.maxTextureSize || 16384) / Math.max(sizeW, sizeH, 1))
   renderer.setPixelRatio(ratio)
   renderer.setSize(sizeW, sizeH, false)
   drawScene()
   const out = document.createElement("canvas")
-  out.width = Math.max(1, Math.round(rw * ratio / factor))
-  out.height = Math.max(1, Math.round(rh * ratio / factor))
+  out.width = Math.max(1, Math.round(sizeW * ratio / factor))
+  out.height = Math.max(1, Math.round(sizeH * ratio / factor))
   const ctx = out.getContext("2d")
   ctx.imageSmoothingEnabled = true
   ctx.imageSmoothingQuality = "high"
-  ctx.drawImage(canvas, rx * ratio, ry * ratio, rw * ratio, rh * ratio, 0, 0, out.width, out.height)
+  ctx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, out.width, out.height)
   for (const o of hidden) o.visible = true
   shooting = false
   skyGroup = savedSky
