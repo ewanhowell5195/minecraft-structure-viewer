@@ -1,6 +1,7 @@
 import { reactive, readonly, shallowRef } from "vue"
 import { loadLibrary } from "../lib.js"
 import { loadMojangJar } from "../mojang.js"
+import { proxyFetch, remoteName } from "../remote.js"
 import { setParams } from "../params.js"
 import { mb } from "../format.js"
 import { useLock } from "./useLock.js"
@@ -45,11 +46,12 @@ function fromParam(value) {
 
 async function rebuild() {
   const lib = await loadLibrary()
-  const sources = zipSources()
+  const sources = allSources()
   const prev = assets.value
   assets.value = sources.length ? await lib.prepareAssets(sources, { cache: true, defaults: "game" }) : null
   structPath = new Map()
   for (const src of Array.from(sources).reverse()) {
+    if (!(src instanceof Uint8Array)) continue
     for (const k of lib.parseZip(src).keys()) {
       const m = k.match(STRUCT_RE)
       if (m) structPath.set(m[1] + "/" + m[2], k)
@@ -144,9 +146,86 @@ async function movePack(id, delta) {
   })
 }
 
+// set by the embed API, which owns the channel a virtual source reads over
+let makeHandler = () => { throw new Error("virtual sources need the embed API") }
+const setHandlerFactory = fn => { makeHandler = fn }
+
+async function toBytes(source) {
+  if (source instanceof Uint8Array) return source
+  if (source instanceof ArrayBuffer) return new Uint8Array(source)
+  if (typeof source === "string") return proxyFetch(source)
+  if (source?.arrayBuffer) return new Uint8Array(await source.arrayBuffer())
+  throw new Error("unsupported pack source")
+}
+
+async function applyEmbedBase(base) {
+  state.version = ""
+  state.baseType = ""
+  if (base === null) {
+    baseBytes = null
+    state.baseId = ""
+    return
+  }
+  if (base?.handler) {
+    baseBytes = makeHandler(base.handler)
+    state.baseId = base.name ?? base.handler
+    return
+  }
+  if (typeof base === "string") {
+    const channel = base === "release" || base === "snapshot" ? base : "release"
+    const version = channel === base ? "" : base
+    try {
+      const r = await loadMojangJar(channel, (got, total, ver) => {
+        state.baseStatus = `downloading ${ver}… ${mb(got)}/${mb(total)}MB`
+        state.baseProgress = total ? got / total : 0
+      }, version)
+      baseBytes = r.bytes
+      state.channel = channel
+      state.version = version
+      state.baseId = r.id
+      state.baseType = r.type
+    } finally {
+      state.baseStatus = ""
+      state.baseProgress = 0
+    }
+    return
+  }
+  baseBytes = await toBytes(base?.data ?? base)
+  state.baseId = base?.name ?? "custom"
+}
+
+async function setEmbedPacks(packs) {
+  const resolved = await Promise.all(packs.map(async entry => {
+    if (entry?.handler) return { name: entry.name ?? entry.handler, source: makeHandler(entry.handler) }
+    const source = entry?.data ?? entry
+    const name = entry?.name ?? (typeof source === "string" ? remoteName(source) : "pack")
+    return { name, source: await toBytes(source) }
+  }))
+  for (const p of state.packs) bytesById.delete(p.id)
+  state.packs = resolved.map(({ name, source }) => {
+    const id = nextId++
+    bytesById.set(id, source)
+    return { id, name }
+  })
+}
+
+// the embed API's stack: same source shapes as the main side's loadPacks, no
+// URL params written, and clearing everything disarms
+async function loadSources({ base, packs } = {}) {
+  await withBusy(state, async () => {
+    if (base !== undefined) await applyEmbedBase(base)
+    if (packs !== undefined) await setEmbedPacks(packs)
+    if (allSources().length) {
+      state.armed = true
+      await rebuild()
+    } else if (state.armed) await deactivate()
+  })
+}
+
 const has = rel => structPath.has(rel)
 const names = () => Array.from(structPath.keys())
-const zipSources = () => state.packs.map(p => bytesById.get(p.id)).concat(baseBytes).filter(Boolean)
+const allSources = () => state.packs.map(p => bytesById.get(p.id)).concat(baseBytes).filter(Boolean)
+const zipSources = () => allSources().filter(s => s instanceof Uint8Array)
 
 async function readStructureBytes(rel) {
   const zp = structPath.get(rel)
@@ -156,5 +235,5 @@ async function readStructureBytes(rel) {
 }
 
 export function useComparePacks() {
-  return { state: readonly(state), assets, activate, deactivate, fromParam, paramValue, addPacks, removePack, movePack, has, names, readStructureBytes, zipSources }
+  return { state: readonly(state), assets, activate, deactivate, fromParam, paramValue, addPacks, removePack, movePack, has, names, readStructureBytes, zipSources, loadSources, setHandlerFactory }
 }

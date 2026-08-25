@@ -304,6 +304,53 @@ view does (it starts on, unless [`?nosky`](#url-params) says otherwise) and
 `active` is whether the sky is showing right now. The sky follows the viewer's
 Daytime, which this command doesn't set.
 
+#### `loadComparePacks`
+
+`{ base, packs }`, both optional, taking exactly the shapes
+[`loadPacks`](#loadpacks) does. Replies `{ armed, version }`.
+
+Loads the comparison side's own asset stack, which [`compare`](#compare) renders
+its right half with. It is independent of the main stack: sending both is how a
+version-against-version or pack-against-pack view gets its two sides.
+
+Passing `base: null, packs: []` clears the stack, ending any comparison with it.
+A virtual handler source works here too, but serves assets only: structures
+can't be listed out of one, so pair it with `compare`'s file mode.
+
+#### `compare`
+
+Starts, changes or ends a comparison. Replies `{ on, mode, counts }`, where
+`counts` is `{ added, changed, removed }` in blocks. Pick one of:
+
+```js
+{ path: "minecraft/igloo/top" }        // the same structure from both stacks
+{ left: <file>, right: <file> }        // two structure files
+{ against: "minecraft/igloo/bottom" }  // two structures, same assets both sides
+{ off: true }                          // leave the split
+```
+
+- `path` renders the structure from the main stack on the left and the
+  comparison stack on the right. When only the comparison stack has it, it
+  loads normally from there instead of splitting, and the reply's `on` says so
+- `left` and `right` are structure files, as bytes or `{ data, name }` with
+  `name` picking the format as [`loadStructure`](#loadstructure) does. `right`
+  renders with the comparison assets. Give one side alone to render the same
+  file under both stacks, comparing just the assets
+- `against` compares the currently loaded structure to another from the same
+  main stack, so it needs no comparison stack. Pass `path` too to choose the
+  left side in the same call
+- `off` ends the split but keeps the comparison stack loaded, so a later call
+  starts again without resending anything. Clear the stack itself with
+  `loadComparePacks`
+
+Any call can also adjust the view:
+
+```js
+{ show: { added: true, changed: true, removed: false } }  // diff highlights
+{ view: "before" }                                        // "slide", "before" or "after"
+{ split: 0.3 }                                            // slider position, 0 to 1
+```
+
 ### Virtual sources
 
 A source given as `{ handler: "<id>" }` holds no bytes. The viewer asks the page

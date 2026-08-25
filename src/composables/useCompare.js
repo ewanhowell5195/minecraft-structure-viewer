@@ -51,7 +51,8 @@ function syncHlUrl() {
 let stash = null
 let leftGrid = null
 let leftRel = "", rightRel = ""
-let entering = false
+const flags = reactive({ entering: false })
+const entering = () => flags.entering
 // the structure on screen came from the comparison version alone
 let onlyRel = ""
 // with one side missing, the same file renders on both, comparing just the assets
@@ -168,10 +169,10 @@ function wireSplit(mode, leftLabel, rightLabel) {
 }
 
 async function enter(rel) {
-  if (state.on || entering || build.state.building) return
+  if (state.on || entering() || build.state.building) return
   const from = structures.state.selected[0]
   if (!from || !build.getRoot() || from === rel) return
-  entering = true
+  flags.entering = true
   try {
     const { useStructure } = await import("./useStructure.js")
     const grid = scene.takeGrid()
@@ -195,7 +196,7 @@ async function enter(rel) {
     writeUrl(from, rel)
     wireSplit("structs", leaf(from), leaf(rel))
   } finally {
-    entering = false
+    flags.entering = false
   }
 }
 
@@ -219,8 +220,8 @@ async function buildRightSplit(rightStruct, leftLabel, rightLabel) {
 }
 
 async function enterVersion(rel) {
-  if (entering || build.state.building || !comparePacks.state.armed) return
-  entering = true
+  if (entering() || build.state.building || !comparePacks.state.armed) return
+  flags.entering = true
   try {
     setFile("main", null)
     setFile("panel", null)
@@ -240,14 +241,14 @@ async function enterVersion(rel) {
       applyCut(cut)
     }
   } finally {
-    entering = false
+    flags.entering = false
   }
 }
 
 // the override stays on afterwards, so a setting that rebuilds keeps these assets
 async function enterOnly(rel) {
-  if (entering || build.state.building || !comparePacks.state.armed) return
-  entering = true
+  if (entering() || build.state.building || !comparePacks.state.armed) return
+  flags.entering = true
   try {
     setFile("main", null)
     setFile("panel", null)
@@ -265,7 +266,7 @@ async function enterOnly(rel) {
     structures.stateMut.selected = [rel]
     writeUrl(rel, null)
   } finally {
-    entering = false
+    flags.entering = false
   }
 }
 
@@ -283,11 +284,11 @@ async function loadMainOnly(rel) {
 }
 
 async function enterFiles() {
-  if (entering || !comparePacks.state.armed) return
+  if (entering() || !comparePacks.state.armed) return
   const leftFile = files.main ?? files.panel
   const rightFile = files.panel ?? files.main
   if (!leftFile) return
-  entering = true
+  flags.entering = true
   try {
     const cut = snapCut()
     exit()
@@ -305,7 +306,7 @@ async function enterFiles() {
       applyCut(cut)
     }
   } finally {
-    entering = false
+    flags.entering = false
   }
 }
 
@@ -322,6 +323,12 @@ const setMainFile = file => {
 const setPanelFile = file => {
   setFile("panel", file)
   return enterFiles()
+}
+
+function setFiles(main, panel) {
+  setFile("main", main)
+  setFile("panel", panel)
+  if (files.main || files.panel) return enterFiles()
 }
 
 const fileName = side => state.files[side]
@@ -346,7 +353,7 @@ function dropOverride() {
 }
 
 function exit() {
-  if (!entering) dropOverride()
+  if (!entering()) dropOverride()
   if (!state.on) return
   const wasVersions = state.mode === "versions"
   setOverlay("compare", [])
@@ -378,7 +385,7 @@ function exit() {
 
 // while the live build holds the comparison stack's assets, the main view is
 // rebuilt first so the cache isn't freed under live meshes
-async function stop() {
+async function leave() {
   setFile("main", null)
   setFile("panel", null)
   const rebuild = comparePacks.state.armed && (state.mode === "versions" || !!onlyRel)
@@ -387,6 +394,10 @@ async function stop() {
     const { useStructure } = await import("./useStructure.js")
     await useStructure().apply(false)
   }
+}
+
+async function stop() {
+  await leave()
   if (comparePacks.state.armed) await comparePacks.deactivate()
 }
 
@@ -394,7 +405,7 @@ const worldOpened = () => stop()
 
 // a setting that rebuilds only touches the live half, so both are rebuilt
 async function refresh() {
-  if (!state.on || entering) return
+  if (!state.on || entering()) return
   const at = state.split
   const { useStructure } = await import("./useStructure.js")
   useStructure().setQuietLoads(true)
@@ -417,7 +428,7 @@ async function refresh() {
 }
 
 function tryAutoEnter() {
-  if (entering || !comparePacks.state.armed) return
+  if (entering() || !comparePacks.state.armed) return
   if (state.on) {
     if (state.mode !== "structs") return
     exit()
@@ -456,5 +467,5 @@ import("./useWorld.js").then(({ useWorld }) => {
 const versionArmed = () => comparePacks.state.armed
 
 export function useCompare() {
-  return { state: readonly(state), stateMut: state, enter, enterVersion, openVersion, setMainFile, setPanelFile, clearFile, fileName, exit, stop, versionArmed }
+  return { state: readonly(state), stateMut: state, enter, enterVersion, openVersion, setMainFile, setPanelFile, setFiles, clearFile, fileName, exit, leave, stop, versionArmed, busy: entering }
 }

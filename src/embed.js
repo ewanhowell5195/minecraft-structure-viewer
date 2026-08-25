@@ -1,8 +1,11 @@
+import { watch } from "vue"
 import { usePacks } from "./composables/usePacks.js"
 import { useStructure } from "./composables/useStructure.js"
 import { useStructures } from "./composables/useStructures.js"
 import { useWorld } from "./composables/useWorld.js"
 import { useBuild } from "./composables/useBuild.js"
+import { useCompare } from "./composables/useCompare.js"
+import { useComparePacks } from "./composables/useComparePacks.js"
 import { setHighlights } from "./composables/useHighlight.js"
 import { useSky } from "./composables/useSky.js"
 import { readStructure } from "./nbt.js"
@@ -172,7 +175,71 @@ const COMMANDS = {
     const sky = useSky()
     if (on !== undefined) sky.enabled.value = !!on
     return { on: sky.enabled.value, active: sky.active.value }
+  },
+  async loadComparePacks({ base, packs } = {}) {
+    const comparePacks = useComparePacks()
+    await compareIdle()
+    if (base === null && Array.isArray(packs) && !packs.length) {
+      await useCompare().stop()
+    } else {
+      await comparePacks.loadSources({ base, packs })
+    }
+    return { armed: comparePacks.state.armed, version: comparePacks.state.baseId }
+  },
+  async compare({ off, path, against, left, right, show, view, split } = {}) {
+    const compare = useCompare()
+    const comparePacks = useComparePacks()
+    await compareIdle()
+    const armed = () => {
+      if (!comparePacks.state.armed) throw new Error("no comparison assets: call loadComparePacks first")
+    }
+    if (off) {
+      await compare.leave()
+    } else if (against !== undefined) {
+      if (!useStructures().has(against)) throw new Error(`structure not found: ${against}`)
+      if (path) await COMMANDS.loadStructure({ path })
+      await compare.enter(against)
+      if (!compare.state.on) throw new Error("nothing to compare against: load a different structure first")
+    } else if (left !== undefined || right !== undefined) {
+      armed()
+      const asFile = v => v == null ? null : toFile(v?.data ?? v, v?.name)
+      await compare.setFiles(asFile(left), asFile(right))
+    } else if (path) {
+      armed()
+      if (!useStructures().has(path) && !comparePacks.has(path)) {
+        throw new Error(`structure not found on either side: ${path}`)
+      }
+      await compare.openVersion(path)
+    }
+    if (show) {
+      for (const kind of ["added", "changed", "removed"]) {
+        if (kind in show) compare.stateMut.show[kind] = !!show[kind]
+      }
+    }
+    if (view !== undefined) {
+      if (!["slide", "before", "after"].includes(view)) throw new Error(`unknown view: ${view}`)
+      compare.stateMut.view = view
+    }
+    if (typeof split === "number") compare.stateMut.split = Math.min(Math.max(split, 0), 1)
+    const { on, mode, counts } = compare.state
+    return { on, mode, counts: { ...counts } }
   }
+}
+
+// arming fires useCompare's auto-enter, so a command right behind it would hit
+// the entering guard and silently no-op
+function compareIdle() {
+  const compare = useCompare()
+  const build = useBuild()
+  const idle = () => !compare.busy() && !build.state.building
+  if (idle()) return Promise.resolve()
+  return new Promise(resolve => {
+    const stop = watch([() => compare.busy(), () => build.state.building], () => {
+      if (!idle()) return
+      stop()
+      resolve()
+    })
+  })
 }
 
 const isPair = v => Array.isArray(v) && v.length === 2 && v.every(n => typeof n === "number")
@@ -205,6 +272,7 @@ function worldBounds(world) {
 
 export function initEmbedApi() {
   usePacks().setHandlerFactory(makeHandler)
+  useComparePacks().setHandlerFactory(makeHandler)
   addEventListener("message", async event => {
     const data = event.data
     if (data?.source !== SOURCE) return
