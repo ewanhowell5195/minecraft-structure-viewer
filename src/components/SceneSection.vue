@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from "vue"
+import { computed, ref, watch } from "vue"
 import { useBuild } from "../composables/useBuild.js"
 import { useStructure } from "../composables/useStructure.js"
 import { useScene } from "../composables/useScene.js"
@@ -26,6 +26,12 @@ const ANGLES = [
   ["northeast", "North East"], ["north", "North"], ["northwest", "North West"], ["west", "West"],
   ["southwest", "South West"], ["top", "Top"]
 ]
+
+const SIZES = [1024, 1280, 1920, 2048, 2560, 3840, 4096, 5120, 7680, 8192]
+const sizes = computed(() => SIZES.filter(s => s <= sceneApi.maxShotSize(aa.value)))
+watch(sizes, list => {
+  if (list.length && !list.includes(size.value)) size.value = list[list.length - 1]
+})
 
 function onExport(ev) {
   const v = ev.target.value
@@ -74,10 +80,7 @@ async function render() {
       </select>
       <label for="rsize" title="The size of the image's widest side">Size</label>
       <select id="rsize" v-model.number="size">
-        <option :value="1024">1024</option>
-        <option :value="1920">1920</option>
-        <option :value="2560">2560</option>
-        <option :value="3840">3840</option>
+        <option v-for="s in sizes" :key="s" :value="s">{{ s }}</option>
       </select>
     </div>
     <div class="checks">
@@ -91,7 +94,7 @@ async function render() {
       </label>
       <label v-if="skyOn" class="check" title="Include the sky, or keep the background transparent">
         <input type="checkbox" v-model="sky">
-        Sky
+        Include sky
       </label>
     </div>
     <button :disabled="locked || rendering || !buildState.info" @click="render">

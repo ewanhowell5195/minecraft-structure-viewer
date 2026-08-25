@@ -1,4 +1,4 @@
-import { reactive, watch } from "vue"
+import { reactive, ref, watch } from "vue"
 import * as THREE from "three"
 import { OrbitControls } from "three/addons/controls/OrbitControls.js"
 import { debounce } from "../yield.js"
@@ -405,6 +405,32 @@ const SHOT_ANGLES = (() => {
   }
 })()
 
+// the same probe the lib uses for its atlas: a canvas silently caps its size,
+// so draw at the far edge and check the pixel survived
+let canvas2DMax = 0
+function max2DCanvas() {
+  if (canvas2DMax) return canvas2DMax
+  canvas2DMax = 4096
+  for (const size of [32768, 16384, 8192]) {
+    try {
+      const c = document.createElement("canvas")
+      c.width = size
+      c.height = 1
+      const ctx = c.getContext("2d")
+      ctx.fillRect(size - 1, 0, 1, 1)
+      if (ctx.getImageData(size - 1, 0, 1, 1).data[3] === 255) {
+        canvas2DMax = size
+        break
+      }
+    } catch {}
+  }
+  return canvas2DMax
+}
+
+// aa renders double, so the gl canvas caps the deliverable size at half its max
+const glMax = ref(0)
+const maxShotSize = aa => Math.min(max2DCanvas(), Math.floor((glMax.value || 16384) / (aa ? 2 : 1)))
+
 function alphaBounds(image) {
   const d = image.data, w = image.width, h = image.height
   let minX = w, minY = h, maxX = -1, maxY = -1
@@ -527,6 +553,7 @@ function init(canvasEl) {
   canvas = canvasEl
   renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: false })
   renderer.debug.checkShaderErrors = false
+  glMax.value = renderer.capabilities.maxTextureSize || 16384
   // three re-asks for WEBGL_multi_draw on every BatchedMesh draw and warns when
   // it's missing, so Firefox logs once per door batch per frame
   const ext = renderer.extensions
@@ -643,7 +670,7 @@ function setOrthoManual(on) {
 export function useScene() {
   return {
     view, scene, overlayScene, init, fit, setGrids, sceneBounds, setOrtho, setOrthoManual, setSky, setCompare,
-    takeGrid, disposeGrid, setGridOffset, renderShot,
+    takeGrid, disposeGrid, setGridOffset, renderShot, maxShotSize,
     makeHighlight,
     getGridRects: () => gridRects,
     contentRoots, animators, perspCam, FOV, updateProjection, setWalkUpdate, syncAspect,
