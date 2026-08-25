@@ -133,13 +133,23 @@ const splashName = computed(() => current.name.replace(/\//g, "/\u200B"))
 
 const working = computed(() => packsState.busy || buildState.building || !!current.reading || !!buildState.status)
 
+// an embedding page's commands arrive with millisecond gaps between them, so
+// the waiting state only returns after a quiet second, and the last step is
+// held up across the gaps rather than flickering through the fallbacks
+const idle = ref(true)
+const heldStatus = ref("")
+let idleTimer = null
+
 // one splash screen, many states: minimal-mode landing/progress/error and the
 // stream world-prepare screen all reduce to a SplashScreen config here
 const splash = computed(() => {
   if (!minimalReady.value) {
     if (notFound.value) return { error: notFound.value, link: { label: "Open the full site", href: homeUrl } }
     if (splashCancelled.value) return { blurb: true, link: { label: "Open the full site", href: mainSiteUrl.value } }
-    if (manual && !working.value) return { status: "Waiting for the embedding page…" }
+    if (manual && !working.value) {
+      if (idle.value) return { status: "Waiting for the embedding page…" }
+      return { name: splashName.value, spinner: true, status: heldStatus.value }
+    }
     return {
       name: splashName.value,
       blurb: !splashName.value && !manual,
@@ -172,6 +182,19 @@ const splashStatus = computed(() => {
     return `${stage}… ${Math.min(100, Math.round(p.done / p.total * 100))}%`
   }
   return buildState.status || "loading…"
+})
+
+watch([working, splashStatus], ([w, s]) => {
+  clearTimeout(idleTimer)
+  if (w) {
+    idle.value = false
+    heldStatus.value = s
+    return
+  }
+  idleTimer = setTimeout(() => {
+    idle.value = true
+    heldStatus.value = ""
+  }, 1000)
 })
 
 function stats(i) {
