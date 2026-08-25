@@ -2,6 +2,8 @@
 // single splash/loading screen: the minimal-mode landing state, load progress,
 // and the stream "preparing world" screen all render through this with
 // different configs (see the `splash` computed in App.vue)
+import { customBackground, lightBackground } from "../background.js"
+
 defineProps({
   title: { type: String, default: "Structure Viewer" },
   blurb: Boolean,
@@ -17,7 +19,7 @@ defineEmits(["cancel", "linkdown"])
 </script>
 
 <template>
-  <div class="splash-overlay">
+  <div class="splash-overlay" :class="{ light: lightBackground }" :style="customBackground ? { background: customBackground } : null">
     <h1>{{ title }}</h1>
     <p v-if="error" class="splash-error">{{ error }}</p>
     <p v-if="name" class="splash-name">Opening: {{ name }}</p>
@@ -104,6 +106,13 @@ p {
   color: #6f6f7a;
   max-width: 420px;
 }
+
+.light { color: #4a4a55; }
+.light h1 { color: #17171c; }
+.light .splash-name { color: #2c2c33; }
+.light .splash-status,
+.light .splash-note { color: #5a5a64; }
+.light .spinner circle { stroke: #00000021; }
 
 @keyframes spin {
   to { transform: rotate(360deg); }
