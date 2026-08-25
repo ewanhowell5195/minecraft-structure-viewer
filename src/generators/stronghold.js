@@ -51,12 +51,12 @@ const flipCells = (cells, depth) => cells.map(([p, ...rest]) => [[p[0], p[1], de
 // a stamp shares the parent's size so it rides the same orientation transform
 function stamp(size, cells) {
   const palette = [], palIdx = new Map(), blocks = []
-  for (const [pos, Name, Properties, nbt] of cells) {
-    const pk = Name + "|" + JSON.stringify(Properties ?? null)
+  for (const [pos, id, properties, nbt] of cells) {
+    const pk = id + "|" + JSON.stringify(properties ?? null)
     let i = palIdx.get(pk)
     if (i === undefined) {
       i = palette.length
-      palette.push(Properties ? { Name, Properties } : { Name })
+      palette.push(properties ? { id, properties } : { id })
       palIdx.set(pk, i)
     }
     const b = { state: i, pos }
@@ -66,9 +66,9 @@ function stamp(size, cells) {
   return { size, palette, blocks }
 }
 
-const boxCells = (x0, y0, z0, x1, y1, z1, Name, Properties) => {
+const boxCells = (x0, y0, z0, x1, y1, z1, id, properties) => {
   const out = []
-  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) for (let z = z0; z <= z1; z++) out.push([[x, y, z], Name, Properties])
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) for (let z = z0; z <= z1; z++) out.push([[x, y, z], id, properties])
   return out
 }
 

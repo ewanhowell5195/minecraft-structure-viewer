@@ -117,7 +117,7 @@ function dataRowsFor(name, p, nbt) {
     add("Name", stripNs(nbt?.name), true)
     add("Target", stripNs(nbt?.target), true)
     const fin = parseState(typeof nbt?.final_state === "string" ? nbt.final_state : "")
-    rows.push({ label: "Turns into", value: stripNs(fin.Name), mono: true, props: fin.Properties, full: true, block: /(^|:)air$/.test(fin.Name) ? null : fin.Name })
+    rows.push({ label: "Turns into", value: stripNs(fin.id), mono: true, props: fin.properties, full: true, block: /(^|:)air$/.test(fin.id) ? null : fin.id })
     add("Joint", nbt?.joint)
     add("Orientation", p.orientation, true)
     if (nbt?.selection_priority) add("Selection priority", nbt.selection_priority)
@@ -419,9 +419,9 @@ const SIDE_VEC = { north: [0, -1], east: [1, 0], south: [0, 1], west: [-1, 0] }
 let openLids = []
 function poseLids(block, entry, on) {
   const positions = [block.pos]
-  const t = entry?.Properties?.type
-  if ((t === "left" || t === "right") && entry?.Properties?.facing) {
-    let dir = CW[entry.Properties.facing] ?? "east"
+  const t = entry?.properties?.type
+  if ((t === "left" || t === "right") && entry?.properties?.facing) {
+    let dir = CW[entry.properties.facing] ?? "east"
     if (t === "right") dir = CW[CW[dir]]
     const v = SIDE_VEC[dir]
     positions.push([block.pos[0] + v[0], block.pos[1], block.pos[2] + v[1]])
@@ -437,7 +437,7 @@ function poseLids(block, entry, on) {
 // the other half of a double chest, so the modal can show both inventories;
 // in game the type "right" half provides the first 27 slots
 function chestPartner(block, entry) {
-  const p = entry?.Properties ?? {}
+  const p = entry?.properties ?? {}
   if ((p.type !== "left" && p.type !== "right") || !p.facing) return null
   let dir = CW[p.facing] ?? "east"
   if (p.type === "right") dir = CW[CW[dir]]
@@ -447,7 +447,7 @@ function chestPartner(block, entry) {
   if (streamApi.state.session) {
     const h = streamApi.provider.blockEntryAt(pos[0] * 16, pos[1] * 16, pos[2] * 16)
     if (h?.cell?.entry) {
-      e = { Name: h.cell.entry.id, Properties: h.cell.entry.properties }
+      e = { id: h.cell.entry.id, properties: h.cell.entry.properties }
       nbt = h.cell.entry.nbt
     }
   } else if (buildApi.getRoot()) {
@@ -458,14 +458,14 @@ function chestPartner(block, entry) {
       nbt = b.nbt
     }
   }
-  if (!e?.Name || stripNs(e.Name) !== stripNs(entry.Name)) return null
-  if (e.Properties?.type !== (p.type === "left" ? "right" : "left")) return null
+  if (!e?.id || stripNs(e.id) !== stripNs(entry.id)) return null
+  if (e.properties?.type !== (p.type === "left" ? "right" : "left")) return null
   return { nbt }
 }
 
 async function open(block) {
   const entry = block.entry ?? buildApi.current.value?.palette[block.state]
-  const name = entry?.Name ?? "minecraft:chest"
+  const name = entry?.id ?? "minecraft:chest"
   poseLids(block, entry, true)
   state.pick = null
   state.error = ""
@@ -488,12 +488,12 @@ async function open(block) {
     state.stacks = []
     state.gui = null
     state.guiTitle = ""
-    state.dataRows = dataRowsFor(bare, entry?.Properties ?? {}, block.nbt)
-    if (bare === "jigsaw") state.blurb = jigsawBlurb(entry?.Properties ?? {}, block.nbt)
+    state.dataRows = dataRowsFor(bare, entry?.properties ?? {}, block.nbt)
+    if (bare === "jigsaw") state.blurb = jigsawBlurb(entry?.properties ?? {}, block.nbt)
     openSeq++
     state.open = true
     if (bare === "jigsaw" && block.nbt?.pool && stripNs(block.nbt.pool) !== "empty") loadPoolEntries(block.nbt.pool)
-    if (bare === "trial_spawner") loadTrialRows(entry?.Properties ?? {}, block.nbt)
+    if (bare === "trial_spawner") loadTrialRows(entry?.properties ?? {}, block.nbt)
     return
   }
   if (bare === "decorated_pot") {
@@ -538,7 +538,7 @@ async function open(block) {
   }
   const partner = /chest$/.test(bare) ? chestPartner(block, entry) : null
   const parts = partner
-    ? (entry.Properties.type === "right"
+    ? (entry.properties.type === "right"
         ? [{ nbt: block.nbt, off: 0 }, { nbt: partner.nbt, off: 27 }]
         : [{ nbt: partner.nbt, off: 0 }, { nbt: block.nbt, off: 27 }])
     : [{ nbt: block.nbt, off: 0 }]
@@ -766,8 +766,8 @@ function aimFor(h) {
   const b = h?.door?.b ?? h?.container ?? h?.block
   if (!b) return null
   const e = b.entry ?? buildApi.current.value?.palette[b.state]
-  if (!e?.Name) return null
-  return { name: stripNs(e.Name), props: e.Properties ?? null }
+  if (!e?.id) return null
+  return { name: stripNs(e.id), props: e.properties ?? null }
 }
 
 function clearHover(canvas) {

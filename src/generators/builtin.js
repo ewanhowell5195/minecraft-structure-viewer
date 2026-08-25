@@ -44,23 +44,23 @@ function cellMap(s) {
 }
 
 function statePicker(s) {
-  const byKey = new Map(s.palette.map((e, i) => [e.Name + "|" + JSON.stringify(e.Properties ?? null), i]))
-  return (Name, Properties) => {
-    const pk = Name + "|" + JSON.stringify(Properties ?? null)
+  const byKey = new Map(s.palette.map((e, i) => [e.id + "|" + JSON.stringify(e.properties ?? null), i]))
+  return (id, properties) => {
+    const pk = id + "|" + JSON.stringify(properties ?? null)
     let i = byKey.get(pk)
     if (i === undefined) {
       i = s.palette.length
-      s.palette.push(Properties ? { Name, Properties } : { Name })
+      s.palette.push(properties ? { id, properties } : { id })
       byKey.set(pk, i)
     }
     return i
   }
 }
 
-function setCell(s, cells, stateFor, pos, Name, Properties, nbt) {
+function setCell(s, cells, stateFor, pos, id, properties, nbt) {
   const b = cells.get(key(pos))
   if (!b) return
-  b.state = stateFor(Name, Properties)
+  b.state = stateFor(id, properties)
   if (nbt !== undefined) {
     if (nbt) b.nbt = nbt
     else delete b.nbt
@@ -124,7 +124,7 @@ function fixDungeon(s, masks, rand, seed) {
   const STEP = { north: [0, -1], south: [0, 1], west: [-1, 0], east: [1, 0] }
   const CW = { north: "east", east: "south", south: "west", west: "north" }
   const at = (p, d) => [p[0] + STEP[d][0], 1, p[2] + STEP[d][1]]
-  const nameAt = p => s.palette[cells.get(key(p))?.state]?.Name || ""
+  const nameAt = p => s.palette[cells.get(key(p))?.state]?.id || ""
   const empty = p => !cells.has(key(p)) || AIRISH.test(nameAt(p))
   // wall counting is isSolid; the facing pick is isSolidRender (full cubes only)
   const isSolid = p => cells.has(key(p)) && !AIRISH.test(nameAt(p))
@@ -175,13 +175,13 @@ function fixDungeon(s, masks, rand, seed) {
     }
   }
   // same-facing neighbours join into doubles; clockwise of facing = left
-  const chests = s.blocks.filter(b => /(^|:)chest$/.test(s.palette[b.state]?.Name || ""))
+  const chests = s.blocks.filter(b => /(^|:)chest$/.test(s.palette[b.state]?.id || ""))
   for (const c of chests) {
-    const f = s.palette[c.state].Properties.facing
+    const f = s.palette[c.state].properties.facing
     for (const d of [CW[f], OPP[CW[f]]]) {
       const other = cells.get(key(at(c.pos, d)))
-      if (!other || !/(^|:)chest$/.test(s.palette[other.state]?.Name || "")) continue
-      if (s.palette[other.state].Properties.facing !== f) continue
+      if (!other || !/(^|:)chest$/.test(s.palette[other.state]?.id || "")) continue
+      if (s.palette[other.state].properties.facing !== f) continue
       c.state = stateFor("minecraft:chest", { facing: f, type: d === CW[f] ? "left" : "right" })
     }
   }

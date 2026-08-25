@@ -76,7 +76,7 @@ export const makeEndSpikes = active => async (loadStruct, { seed } = {}) => {
   let off = [0, 0, 0]
   if (portal) {
     off = [-Math.floor(portal.size[0] / 2), PORTAL_Y, -Math.floor(portal.size[2] / 2)]
-    const map = portal.palette.map(e => stateFor(e.Name, e.Properties))
+    const map = portal.palette.map(e => stateFor(e.id, e.properties))
     for (const b of portal.blocks) {
       const block = { state: map[b.state], pos: [b.pos[0] + off[0], b.pos[1] + off[1], b.pos[2] + off[2]] }
       if (b.nbt) block.nbt = b.nbt

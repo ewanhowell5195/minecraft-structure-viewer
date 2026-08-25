@@ -275,12 +275,12 @@ export function makeMineshaft(typeName, single = null, fixedSections = null) {
     const kept = pieces.map((p, i) => [p, i]).filter(([p]) => p.genDepth <= maxDepth)
 
     const palette = [], palIdx = new Map()
-    const stateFor = (Name, Properties) => {
-      const pk = Name + "|" + JSON.stringify(Properties ?? null)
+    const stateFor = (id, properties) => {
+      const pk = id + "|" + JSON.stringify(properties ?? null)
       let i = palIdx.get(pk)
       if (i === undefined) {
         i = palette.length
-        palette.push(Properties ? { Name, Properties } : { Name })
+        palette.push(properties ? { id, properties } : { id })
         palIdx.set(pk, i)
       }
       return i
@@ -292,18 +292,18 @@ export function makeMineshaft(typeName, single = null, fixedSections = null) {
     const AIRRE = /(^|:)(cave_)?air$/
 
     // the mineshaft never overwrites its own planks/wood/fences/chains
-    function place(wx, wy, wz, Name, Properties, nbt) {
+    function place(wx, wy, wz, id, properties, nbt) {
       const k = key(wx, wy, wz)
       const existing = cells.get(k)
-      if (existing && KEEP.test(palette[existing.state].Name)) return
-      if (AIRRE.test(Name)) { cells.set(k, { state: stateFor("minecraft:cave_air"), pos: [wx, wy, wz] }) ; return }
-      const cell = { state: stateFor(Name, Properties), pos: [wx, wy, wz] }
+      if (existing && KEEP.test(palette[existing.state].id)) return
+      if (AIRRE.test(id)) { cells.set(k, { state: stateFor("minecraft:cave_air"), pos: [wx, wy, wz] }) ; return }
+      const cell = { state: stateFor(id, properties), pos: [wx, wy, wz] }
       if (nbt) cell.nbt = nbt
       cells.set(k, cell)
     }
     const solidAt = (wx, wy, wz) => {
       const c = cells.get(key(wx, wy, wz))
-      return !!c && !AIRRE.test(palette[c.state].Name)
+      return !!c && !AIRRE.test(palette[c.state].id)
     }
 
     for (const [p, index] of kept) {
@@ -453,7 +453,7 @@ export function makeMineshaft(typeName, single = null, fixedSections = null) {
         for (const x of [0, 2]) {
           const [wx, wy, wz] = orient(p, x, -1, z)
           const floor = cells.get(key(wx, wy, wz))
-          if (floor && palette[floor.state].Name === T.planks) pillarOrChain(wx, wy, wz)
+          if (floor && palette[floor.state].id === T.planks) pillarOrChain(wx, wy, wz)
         }
       }
       doubleSupport(2)
@@ -470,14 +470,14 @@ export function makeMineshaft(typeName, single = null, fixedSections = null) {
       }
     }
 
-    function placeOriented(p, x, y, z, Name, Properties, nbt) {
+    function placeOriented(p, x, y, z, id, properties, nbt) {
       const [wx, wy, wz] = orient(p, x, y, z)
-      let props = Properties
+      let props = properties
       if (props) {
         if (p.dir === "south" || p.dir === "west") props = mirrorState(props, "lr")
         if (p.dir === "west" || p.dir === "east") props = rotateState(props, 1)
       }
-      place(wx, wy, wz, Name, props, nbt)
+      place(wx, wy, wz, id, props, nbt)
     }
 
     function railShape(p, shape) {
@@ -497,7 +497,7 @@ export function makeMineshaft(typeName, single = null, fixedSections = null) {
       const [wx, wy, wz] = orient(p, x, y, z)
       if (solidAt(wx, wy, wz)) return
       const below = cells.get(key(wx, wy - 1, wz))
-      if (!below || AIRRE.test(palette[below.state].Name)) return
+      if (!below || AIRRE.test(palette[below.state].id)) return
       place(wx, wy, wz, "minecraft:rail", { shape: railShape(p, r() < 0.5 ? "north_south" : "east_west") })
       entities.push({ pos: [wx + 0.5, wy + 0.5, wz + 0.5], nbt: { id: "minecraft:chest_minecart", LootTable: "minecraft:chests/abandoned_mineshaft" } })
     }
@@ -506,13 +506,13 @@ export function makeMineshaft(typeName, single = null, fixedSections = null) {
 
     const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity]
     for (const c of cells.values()) {
-      if (AIRRE.test(palette[c.state].Name)) continue
+      if (AIRRE.test(palette[c.state].id)) continue
       for (let i = 0; i < 3; i++) { lo[i] = Math.min(lo[i], c.pos[i]); hi[i] = Math.max(hi[i], c.pos[i]) }
     }
-    if (lo[0] > hi[0]) return { structure: { size: [1, 1, 1], palette: [{ Name: "minecraft:air" }], blocks: [{ state: 0, pos: [0, 0, 0] }], entities: [], anchor: [0, 0, 0] }, maxDepth: naturalMax }
+    if (lo[0] > hi[0]) return { structure: { size: [1, 1, 1], palette: [{ id: "minecraft:air" }], blocks: [{ state: 0, pos: [0, 0, 0] }], entities: [], anchor: [0, 0, 0] }, maxDepth: naturalMax }
     const blocks = []
     for (const c of cells.values()) {
-      if (AIRRE.test(palette[c.state].Name)) continue
+      if (AIRRE.test(palette[c.state].id)) continue
       const block = { state: c.state, pos: [c.pos[0] - lo[0], c.pos[1] - lo[1], c.pos[2] - lo[2]] }
       if (c.nbt) block.nbt = c.nbt
       blocks.push(block)

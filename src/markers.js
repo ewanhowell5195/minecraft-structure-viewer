@@ -10,7 +10,7 @@ export function markerFamily(name) {
 
 export function hasDataMarkers(structure, name) {
   if (!structure || !markerFamily(name)) return false
-  return structure.blocks.some(b => SB.test(structure.palette[b.state]?.Name ?? "") && b.nbt?.mode === "DATA")
+  return structure.blocks.some(b => SB.test(structure.palette[b.state]?.id ?? "") && b.nbt?.mode === "DATA")
 }
 
 const SHIPWRECK_LOOT = {
@@ -24,14 +24,14 @@ const FRAME_FACING = { north: 2, south: 3, west: 4, east: 5 }
 export function processDataMarkers(structure, name, rand) {
   const family = markerFamily(name)
   const palette = structure.palette.slice()
-  const paletteIdx = new Map(palette.map((e, i) => [e?.Name + "|" + JSON.stringify(e?.Properties ?? null), i]))
-  function stateFor(Name, Properties) {
-    const key = Name + "|" + JSON.stringify(Properties ?? null)
+  const paletteIdx = new Map(palette.map((e, i) => [e?.id + "|" + JSON.stringify(e?.properties ?? null), i]))
+  function stateFor(id, properties) {
+    const key = id + "|" + JSON.stringify(properties ?? null)
     let i = paletteIdx.get(key)
     if (i === undefined) {
       i = palette.length
       paletteIdx.set(key, i)
-      palette.push(Properties ? { Name, Properties } : { Name })
+      palette.push(properties ? { id, properties } : { id })
     }
     return i
   }
@@ -39,7 +39,7 @@ export function processDataMarkers(structure, name, rand) {
   const blocks = []
   const markers = []
   for (const b of structure.blocks) {
-    if (SB.test(palette[b.state]?.Name ?? "") && b.nbt?.mode === "DATA") markers.push(b)
+    if (SB.test(palette[b.state]?.id ?? "") && b.nbt?.mode === "DATA") markers.push(b)
     else blocks.push(b)
   }
   const entities = structure.entities ? structure.entities.slice() : []

@@ -248,9 +248,9 @@ const WATER_FLUID = /(^|:)(water|bubble_column|kelp|kelp_plant|seagrass|tall_sea
 const LAVA_FLUID = /(^|:)lava$/
 function fluidOf(b) {
   if (!b) return null
-  const name = b.Name || ""
+  const name = b.id || ""
   if (LAVA_FLUID.test(name)) return "lava"
-  if (WATER_FLUID.test(name) || b.Properties?.waterlogged === "true") return "water"
+  if (WATER_FLUID.test(name) || b.properties?.waterlogged === "true") return "water"
   return null
 }
 
@@ -268,7 +268,7 @@ function fluidState() {
   if (fluidOf(wapi().blockAt(walk.pos.x, bottom + 24, walk.pos.z)) === type) {
     top = bottom + 32
   } else {
-    const level = /(^|:)(water|lava)$/.test(b.Name || "") ? Number(b.Properties?.level ?? 0) : 0
+    const level = /(^|:)(water|lava)$/.test(b.id || "") ? Number(b.properties?.level ?? 0) : 0
     top = bottom + (level === 0 ? 8 / 9 : level >= 8 ? 1 : (8 - level) / 9) * 16
   }
   if (top <= walk.pos.y) return null
@@ -287,7 +287,7 @@ function canClimbOut(vx, vz) {
 function onClimbable() {
   for (const y of [walk.pos.y + 1, walk.pos.y + walk.h * 0.5]) {
     const b = wapi().blockAt(walk.pos.x, y, walk.pos.z)
-    if (b && CLIMB.test(b.Name || "")) return true
+    if (b && CLIMB.test(b.id || "")) return true
   }
   return false
 }
@@ -450,7 +450,7 @@ function tickSim() {
       walk.vel.x = Math.max(-2.4, Math.min(2.4, walk.vel.x))
       walk.vel.z = Math.max(-2.4, Math.min(2.4, walk.vel.z))
       walk.vel.y = Math.max(walk.vel.y, -2.4)
-      if (walk.crouched && walk.vel.y < 0 && !/scaffolding$/.test(wapi().blockAt(walk.pos.x, walk.pos.y + 1, walk.pos.z)?.Name || "")) walk.vel.y = 0
+      if (walk.crouched && walk.vel.y < 0 && !/scaffolding$/.test(wapi().blockAt(walk.pos.x, walk.pos.y + 1, walk.pos.z)?.id || "")) walk.vel.y = 0
     }
     walk.onGround = false
     // guard within a step of ground, not only grounded: stair-step falls must not slip off edges
@@ -468,7 +468,7 @@ function tickSim() {
         // gravity tick of fall speed, suppressed by sneaking; the formula
         // pre-compensates for the gravity and drag the travel step applies next
         const below = wapi().blockAt(walk.pos.x, walk.pos.y - 3.2, walk.pos.z)
-        const name = (below?.Name || "").replace(/^minecraft:/, "")
+        const name = (below?.id || "").replace(/^minecraft:/, "")
         const restitution = name === "slime_block" ? 1 : /_bed$/.test(name) ? 0.75 : 0
         if (restitution > 0 && !sneakKey && -walk.vel.y > GRAVITY) {
           const portion = Math.min(Math.max((yBefore - walk.pos.y) / -walk.vel.y, 0), 1)

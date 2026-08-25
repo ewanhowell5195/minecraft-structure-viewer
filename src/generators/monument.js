@@ -92,12 +92,12 @@ export async function runMonument(loadStruct, { maxDepth = Infinity, seed, stats
   const building = { dir: direction, box: makeBox(0, 39, 0, direction, 58, 23, 58) }
 
   const palette = [], palIdx = new Map()
-  const stateFor = Name => {
-    let i = palIdx.get(Name)
+  const stateFor = id => {
+    let i = palIdx.get(id)
     if (i === undefined) {
       i = palette.length
-      palette.push({ Name })
-      palIdx.set(Name, i)
+      palette.push({ id })
+      palIdx.set(id, i)
     }
     return i
   }
@@ -117,7 +117,7 @@ export async function runMonument(loadStruct, { maxDepth = Infinity, seed, stats
 
   function getBlockName(p, x, y, z) {
     const c = cells.get(key(worldX(p, x, z), worldY(p, y), worldZ(p, x, z)))
-    return c ? palette[c.state].Name : AIR
+    return c ? palette[c.state].id : AIR
   }
 
   function generateBox(p, x0, y0, z0, x1, y1, z1, name) {
@@ -1195,7 +1195,7 @@ export async function runMonument(loadStruct, { maxDepth = Infinity, seed, stats
 
   // ---- normalise; the water only exists to carve like the game, dropped from output
 
-  const dropped = c => palette[c.state].Name === AIR || palette[c.state].Name === WATER
+  const dropped = c => palette[c.state].id === AIR || palette[c.state].id === WATER
   const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity]
   for (const c of cells.values()) {
     if (dropped(c)) continue

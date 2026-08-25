@@ -16,7 +16,7 @@ function shuffle(arr, rand) {
 // vanilla shuffles all six directions, then drops the vertical ones
 const shuffledHorizDirs = rand => shuffle([null, null, HORIZ[0], HORIZ[2], HORIZ[3], HORIZ[1]], rand).filter(Boolean)
 
-function isLeaves(cell) { return !!cell && LEAVES.test(cell.Name.replace("minecraft:", "")) }
+function isLeaves(cell) { return !!cell && LEAVES.test(cell.id.replace("minecraft:", "")) }
 
 export function makeTreeCtx(world, config, rand) {
   const logs = [], leaves = [], leafSet = new Set()
@@ -27,7 +27,7 @@ export function makeTreeCtx(world, config, rand) {
     placeLog(x, y, z, axisOverride) {
       if (!validTreePos(x, y, z)) return false
       let state = sampleState(config.trunk_provider, rand)
-      if (axisOverride && state.Properties && "axis" in state.Properties) state = { Name: state.Name, Properties: { ...state.Properties, axis: axisOverride } }
+      if (axisOverride && state.properties && "axis" in state.properties) state = { id: state.id, properties: { ...state.properties, axis: axisOverride } }
       world.set(x, y, z, state)
       logs.push([x, y, z])
       return true
@@ -491,7 +491,7 @@ const FOLIAGE = {
         const px = at.x + dx, py = at.y + h - 4, pz = at.z + dz
         if (!ctx.leafAt(px, py, pz)) continue
         let state = sampleState(ctx.config.trunk_provider, rand)
-        if (state.Properties && "axis" in state.Properties) state = { Name: state.Name, Properties: { ...state.Properties, axis: az === 0 ? "x" : "z" } }
+        if (state.properties && "axis" in state.properties) state = { id: state.id, properties: { ...state.properties, axis: az === 0 ? "x" : "z" } }
         ctx.setState(px, py, pz, state)
       }
     }
@@ -544,7 +544,7 @@ function decorate(ctx, decorators, rand, opts) {
   const world = ctx.world
   const isAir = (x, y, z) => y >= 0 && !world.get(x, y, z)
   const vine = (x, y, z, dir) => {
-    if (!world.get(x, y, z) && y >= 0) world.set(x, y, z, { Name: "minecraft:vine", Properties: { [dir]: "true" } })
+    if (!world.get(x, y, z) && y >= 0) world.set(x, y, z, { id: "minecraft:vine", properties: { [dir]: "true" } })
   }
   for (const d of decorators ?? []) {
     switch ((d.type ?? "").replace("minecraft:", "")) {
@@ -578,7 +578,7 @@ function decorate(ctx, decorators, rand, opts) {
             if (rand() > 0.25) continue
             const px = x - dx, pz = z - dz
             if (!world.get(px, y, pz)) {
-              world.set(px, y, pz, { Name: "minecraft:cocoa", Properties: { age: String(nextInt(rand, 3)), facing } })
+              world.set(px, y, pz, { id: "minecraft:cocoa", properties: { age: String(nextInt(rand, 3)), facing } })
             }
           }
         }
@@ -597,7 +597,7 @@ function decorate(ctx, decorators, rand, opts) {
         shuffle(spots, rand)
         for (const [x, y, z] of spots) {
           if (world.get(x, y, z) || world.get(x, y, z + 1)) continue
-          world.set(x, y, z, { Name: "minecraft:bee_nest", Properties: { facing: "south", honey_level: "0" } })
+          world.set(x, y, z, { id: "minecraft:bee_nest", properties: { facing: "south", honey_level: "0" } })
           break
         }
         break
@@ -618,7 +618,7 @@ function decorate(ctx, decorators, rand, opts) {
         const topY = Math.max(logs[logs.length - 1][1], leaves.length ? leaves[leaves.length - 1][1] : 0)
         const solidAt = (x, y, z) => {
           const c = world.get(x, y, z)
-          if (c) return /_log|_wood|dirt|podzol|_nest/.test(c.Name)
+          if (c) return /_log|_wood|dirt|podzol|_nest/.test(c.id)
           return y === baseY - 1
         }
         for (let i = 0; i < (d.tries ?? 128); i++) {
@@ -626,12 +626,12 @@ function decorate(ctx, decorators, rand, opts) {
           const y = baseY - h + nextInt(rand, 2 * h + 1)
           const z = minZ - r + nextInt(rand, maxZ - minZ + 2 * r + 1)
           const above = world.get(x, y + 1, z)
-          if ((above && !/vine/.test(above.Name)) || !solidAt(x, y, z)) continue
+          if ((above && !/vine/.test(above.id)) || !solidAt(x, y, z)) continue
           // MOTION_BLOCKING_NO_LEAVES: nothing but leaves/vines overhead
           let clear = true
           for (let wy = y + 2; wy <= topY && clear; wy++) {
             const c = world.get(x, wy, z)
-            if (c && !/leaves|vine|litter/.test(c.Name)) clear = false
+            if (c && !/leaves|vine|litter/.test(c.id)) clear = false
           }
           if (!clear) continue
           const state = sampleState(d.block_state_provider, rand)
@@ -646,10 +646,10 @@ function decorate(ctx, decorators, rand, opts) {
           let buried = true
           for (const [dx, dy, dz] of Object.values(DIR)) {
             const c = world.get(x + dx, y + dy, z + dz)
-            if (!c || !/_log|_wood/.test(c.Name)) { buried = false; break }
+            if (!c || !/_log|_wood/.test(c.id)) { buried = false; break }
           }
           if (!buried) continue
-          world.set(x, y, z, { Name: "minecraft:creaking_heart", Properties: { axis: "y", creaking_heart_state: "dormant", natural: "true" } })
+          world.set(x, y, z, { id: "minecraft:creaking_heart", properties: { axis: "y", creaking_heart_state: "dormant", natural: "true" } })
           break
         }
         break
@@ -690,9 +690,9 @@ function decorate(ctx, decorators, rand, opts) {
       }
       case "shelf_mushroom": {
         if (rand() >= d.probability || !logs.length) break
-        const isShelf = (x, y, z) => world.get(x, y, z)?.Name === "minecraft:shelf_mushroom"
+        const isShelf = (x, y, z) => world.get(x, y, z)?.id === "minecraft:shelf_mushroom"
         const shelfNextTo = (x, y, z) => HORIZ.some(([hx, hz]) => isShelf(x + hx, y, z + hz))
-        const place = (x, y, z, facing) => world.set(x, y, z, { Name: "minecraft:shelf_mushroom", Properties: { age: String(nextInt(rand, 2)), facing } })
+        const place = (x, y, z, facing) => world.set(x, y, z, { id: "minecraft:shelf_mushroom", properties: { age: String(nextInt(rand, 2)), facing } })
         const first = logs[0], last = logs[logs.length - 1]
         if (first[1] === last[1]) {
           const facings = first[0] !== last[0] ? ["north", "south"] : ["east", "west"]
@@ -730,7 +730,7 @@ function decorate(ctx, decorators, rand, opts) {
         // vanilla runs the patch at origin.above() and lets its ground scan drop
         // to the soil; our patch grounds at origin-1 directly, so no +1 here
         if (rand() < d.ground_probability) opts?.runFeature?.("minecraft:pale_moss_patch", origin[0], origin[1], origin[2])
-        const moss = tip => ({ Name: "minecraft:pale_hanging_moss", Properties: { tip: String(tip) } })
+        const moss = tip => ({ id: "minecraft:pale_hanging_moss", properties: { tip: String(tip) } })
         const hang = (x, y, z) => {
           while (isAir(x, y - 1, z) && !(rand() < 0.5)) {
             world.set(x, y, z, moss(false))

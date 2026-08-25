@@ -233,9 +233,9 @@ async function probeDepth() {
 // otherwise get a session with no real levels
 async function jigsawsCanAct(structure) {
   for (const b of structure.blocks) {
-    if (!JIGSAW.test(structure.palette[b.state]?.Name || "")) continue
+    if (!JIGSAW.test(structure.palette[b.state]?.id || "")) continue
     const fs = parseState(typeof b.nbt?.final_state === "string" ? b.nbt.final_state : "")
-    if (!AIR.test(fs.Name)) return true
+    if (!AIR.test(fs.id)) return true
     let ref = typeof b.nbt?.pool === "string" ? b.nbt.pool : null
     const seen = new Set()
     while (ref && !seen.has(ref)) {
@@ -254,7 +254,7 @@ async function startSession(structure, name) {
   baseName = name
   prevAnchorWorld = null
   const proc = PROC.find(p => p.entry === name)
-  const isJigsaw = structure.palette.some(e => JIGSAW.test(e?.Name || ""))
+  const isJigsaw = structure.palette.some(e => JIGSAW.test(e?.id || ""))
   if (proc && generators[proc.gen]) {
     state.kind = proc.gen
     state.label = proc.label

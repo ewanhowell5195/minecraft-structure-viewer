@@ -19,9 +19,9 @@ export function cellContents(structure) {
   const map = new Map()
   for (const b of structure.blocks ?? []) {
     const e = structure.palette?.[b.state]
-    if (!e?.Name || REAL_AIR.test(e.Name)) continue
-    const props = Object.keys(e.Properties ?? {}).sort().map(k => k + "=" + e.Properties[k]).join(",")
-    map.set(key3(b.pos), e.Name + "[" + props + "]" + (b.nbt ? "#" + canon(b.nbt) : ""))
+    if (!e?.id || REAL_AIR.test(e.id)) continue
+    const props = Object.keys(e.properties ?? {}).sort().map(k => k + "=" + e.properties[k]).join(",")
+    map.set(key3(b.pos), e.id + "[" + props + "]" + (b.nbt ? "#" + canon(b.nbt) : ""))
   }
   const ents = new Map()
   for (const ent of structure.entities ?? []) {

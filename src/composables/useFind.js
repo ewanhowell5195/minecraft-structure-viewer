@@ -58,7 +58,7 @@ async function tint(item) {
     }
     const ne = nb && s.palette[nb.state]
     key.push(ne ? nb.state : "")
-    if (ne?.Name) neighbors[dir] = { id: ne.Name, ...(ne.Properties ?? {}) }
+    if (ne?.id) neighbors[dir] = { id: ne.id, ...(ne.properties ?? {}) }
   }
   const cacheKey = key.join(",")
   let hidden = cullCache.get(cacheKey)
@@ -66,7 +66,7 @@ async function tint(item) {
     const e = s.palette[item.state]
     try {
       const lib = await loadLibrary()
-      const faces = await lib.getCullFaces({ id: e.Name, blockstates: e.Properties ?? {}, neighbors, assets })
+      const faces = await lib.getCullFaces({ id: e.id, blockstates: e.properties ?? {}, neighbors, assets })
       for (const dir of buried) faces.add(dir)
       hidden = faces
     } catch { hidden = new Set() }

@@ -43,35 +43,35 @@ export function combine(pieces) {
     const { struct, rot = 0, off = [0, 0, 0], mir = null, ow = false, keepJigsaws = false } = piece
     for (const b of struct.blocks) {
       const e = struct.palette[b.state]
-      if (!e?.Name) continue
-      if (STRUCT_VOID.test(e.Name)) continue
+      if (!e?.id) continue
+      if (STRUCT_VOID.test(e.id)) continue
       const p = rotPos(mirrorPos(b.pos, mir), rot)
       const key = (p[0] + off[0]) + "," + (p[1] + off[1]) + "," + (p[2] + off[2])
-      if (REAL_AIR.test(e.Name)) {
+      if (REAL_AIR.test(e.id)) {
         if (ow) cells.delete(key)
         continue
       }
-      if (SB.test(e.Name)) {
+      if (SB.test(e.id)) {
         // DATA markers survive assembly; __rot keeps the piece rotation for facing-sensitive markers
         if (b.nbt?.mode !== "DATA") continue
         const nbt = rot ? { ...b.nbt, __rot: rot & 3 } : b.nbt
-        cells.set(key, { Name: e.Name, Properties: e.Properties, nbt })
+        cells.set(key, { id: e.id, properties: e.properties, nbt })
         continue
       }
-      if (JIGSAW.test(e.Name)) {
+      if (JIGSAW.test(e.id)) {
         // vanilla swaps in final_state only once a jigsaw has been processed
         if (!keepJigsaws) {
           const fs = parseState(typeof b.nbt?.final_state === "string" ? b.nbt.final_state : "")
-          if (AIR.test(fs.Name)) continue
-          cells.set(key, { Name: fs.Name, Properties: rotateState(mirrorState(fs.Properties, mir), rot) })
+          if (AIR.test(fs.id)) continue
+          cells.set(key, { id: fs.id, properties: rotateState(mirrorState(fs.properties, mir), rot) })
           continue
         }
       }
-      cells.set(key, { Name: e.Name, Properties: rotateState(mirrorState(e.Properties, mir), rot), nbt: b.nbt })
+      cells.set(key, { id: e.id, properties: rotateState(mirrorState(e.properties, mir), rot), nbt: b.nbt })
     }
   }
 
-  if (!cells.size) return { size: [1, 1, 1], palette: [{ Name: "minecraft:air" }], blocks: [{ state: 0, pos: [0, 0, 0] }], entities, anchor: [0, 0, 0] }
+  if (!cells.size) return { size: [1, 1, 1], palette: [{ id: "minecraft:air" }], blocks: [{ state: 0, pos: [0, 0, 0] }], entities, anchor: [0, 0, 0] }
 
   // anchor = where the start piece's local origin lands (kept visually fixed across levels)
   const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity]
@@ -86,11 +86,11 @@ export function combine(pieces) {
   }
   const palette = [], palIdx = new Map(), blocks = []
   for (const [pos, e] of parsed) {
-    const pk = e.Name + "|" + JSON.stringify(e.Properties ?? null)
+    const pk = e.id + "|" + JSON.stringify(e.properties ?? null)
     let idx = palIdx.get(pk)
     if (idx === undefined) {
       idx = palette.length
-      palette.push(e.Properties ? { Name: e.Name, Properties: e.Properties } : { Name: e.Name })
+      palette.push(e.properties ? { id: e.id, properties: e.properties } : { id: e.id })
       palIdx.set(pk, idx)
     }
     const block = { state: idx, pos: [pos[0] - lo[0], pos[1] - lo[1], pos[2] - lo[2]] }

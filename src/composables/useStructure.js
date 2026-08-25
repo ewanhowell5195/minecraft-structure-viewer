@@ -268,11 +268,11 @@ async function packField() {
 async function mergeParts(parts) {
   const palette = [], byKey = new Map()
   function stateFor(e) {
-    const k = e.Name + "|" + JSON.stringify(e.Properties ?? null) + "|" + (e.__biome ? JSON.stringify(e.__biome) : "")
+    const k = e.id + "|" + JSON.stringify(e.properties ?? null) + "|" + (e.__biome ? JSON.stringify(e.__biome) : "")
     let i = byKey.get(k)
     if (i === undefined) {
       i = palette.length
-      const entry = e.Properties ? { Name: e.Name, Properties: e.Properties } : { Name: e.Name }
+      const entry = e.properties ? { id: e.id, properties: e.properties } : { id: e.id }
       if (e.__biome) entry.__biome = e.__biome
       palette.push(entry)
       byKey.set(k, i)
@@ -285,9 +285,9 @@ async function mergeParts(parts) {
   let merged = 0
   for (const p of parts) {
     if (++merged % 40 === 0) await yieldTask()
-    const map = p.s.palette.map(e => e?.Name ? stateFor(e) : 0)
+    const map = p.s.palette.map(e => e?.id ? stateFor(e) : 0)
     // air culls like absence, so dropping it is lossless and shrinks all-structure loads
-    const drop = p.s.palette.map(e => !e?.Name || COMBINE_AIR.test(e.Name))
+    const drop = p.s.palette.map(e => !e?.id || COMBINE_AIR.test(e.id))
     for (const b of p.s.blocks) {
       if (drop[b.state]) continue
       const block = { state: map[b.state], pos: [b.pos[0] + p.off[0], b.pos[1] + p.off[1], b.pos[2] + p.off[2]] }
@@ -603,7 +603,7 @@ const FIELD_N = 256
 function shapeKey(s) {
   const rows = s.blocks.map(b => {
     const e = s.palette[b.state]
-    return `${b.pos[0] - s.anchor[0]},${b.pos[1]},${b.pos[2] - s.anchor[2]}|${e.Name}|${e.Properties ? JSON.stringify(e.Properties) : ""}`
+    return `${b.pos[0] - s.anchor[0]},${b.pos[1]},${b.pos[2] - s.anchor[2]}|${e.id}|${e.properties ? JSON.stringify(e.properties) : ""}`
   })
   return rows.sort().join("\n")
 }

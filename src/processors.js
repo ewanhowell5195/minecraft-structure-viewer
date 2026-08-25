@@ -130,19 +130,19 @@ async function resolveTags(index, readJson) {
 const REMOVED = Symbol("removed")
 
 function stateEquals(e, s) {
-  if (strip(e.Name) !== strip(s?.Name)) return false
-  const a = e.Properties ?? {}
-  return Object.entries(s?.Properties ?? {}).every(([k, v]) => String(a[k]) === String(v))
+  if (strip(e.id) !== strip(s?.id)) return false
+  const a = e.properties ?? {}
+  return Object.entries(s?.properties ?? {}).every(([k, v]) => String(a[k]) === String(v))
 }
 
 function matchInput(pred, e, rand) {
   switch (strip(pred?.predicate_type ?? "always_true")) {
     case "always_true": return true
-    case "block_match": return strip(e.Name) === strip(pred.block)
-    case "random_block_match": return strip(e.Name) === strip(pred.block) && rand() < (pred.probability ?? 1)
+    case "block_match": return strip(e.id) === strip(pred.block)
+    case "random_block_match": return strip(e.id) === strip(pred.block) && rand() < (pred.probability ?? 1)
     case "blockstate_match": return stateEquals(e, pred.block_state)
     case "random_blockstate_match": return stateEquals(e, pred.block_state) && rand() < (pred.probability ?? 1)
-    case "tag_match": return !!pred.__set?.has(ns(e.Name ?? ""))
+    case "tag_match": return !!pred.__set?.has(ns(e.id ?? ""))
     default: return false
   }
 }
@@ -161,7 +161,7 @@ function applyRule(proc, e, rand) {
     else if (mt === "append_loot") nbt = { ...(nbt ?? {}), LootTable: mod.loot_table }
     else if (mt === "append_static") nbt = { ...(nbt ?? {}), ...(mod.data ?? {}) }
     if (r.output_nbt) nbt = r.output_nbt
-    return { Name: out.Name ?? e.Name, Properties: out.Properties, nbt }
+    return { id: out.id ?? e.id, properties: out.properties, nbt }
   }
   return null
 }
@@ -170,28 +170,28 @@ const HORIZ = ["north", "south", "west", "east"]
 
 function applyBlockAge(proc, e, rand) {
   const mossiness = proc.mossiness ?? 0
-  const n = strip(e.Name)
-  const stairs = base => ({ Name: ns(base), Properties: { facing: HORIZ[(rand() * 4) | 0], half: rand() < 0.5 ? "top" : "bottom" }, nbt: e.nbt })
+  const n = strip(e.id)
+  const stairs = base => ({ id: ns(base), properties: { facing: HORIZ[(rand() * 4) | 0], half: rand() < 0.5 ? "top" : "bottom" }, nbt: e.nbt })
   if (n === "stone_bricks" || n === "stone" || n === "chiseled_stone_bricks") {
     if (rand() >= 0.5) return null
     const mossy = rand() < mossiness
-    if (rand() < 0.5) return { Name: ns(mossy ? "mossy_stone_bricks" : "cracked_stone_bricks"), nbt: e.nbt }
+    if (rand() < 0.5) return { id: ns(mossy ? "mossy_stone_bricks" : "cracked_stone_bricks"), nbt: e.nbt }
     return stairs(mossy ? "mossy_stone_brick_stairs" : "stone_brick_stairs")
   }
   if (n.endsWith("_stairs")) {
     if (rand() >= 0.5) return null
     if (rand() < mossiness) {
       if (rand() < 0.5) {
-        const p = e.Properties ?? {}
-        return { Name: ns("mossy_stone_brick_stairs"), Properties: { facing: p.facing ?? "north", half: p.half ?? "bottom" }, nbt: e.nbt }
+        const p = e.properties ?? {}
+        return { id: ns("mossy_stone_brick_stairs"), properties: { facing: p.facing ?? "north", half: p.half ?? "bottom" }, nbt: e.nbt }
       }
-      return { Name: ns("mossy_stone_brick_slab"), nbt: e.nbt }
+      return { id: ns("mossy_stone_brick_slab"), nbt: e.nbt }
     }
-    return { Name: ns(rand() < 0.5 ? "stone_slab" : "stone_brick_slab"), nbt: e.nbt }
+    return { id: ns(rand() < 0.5 ? "stone_slab" : "stone_brick_slab"), nbt: e.nbt }
   }
-  if (n.endsWith("_slab")) return rand() < mossiness ? { Name: ns("mossy_stone_brick_slab"), nbt: e.nbt } : null
-  if (n.endsWith("_wall")) return rand() < mossiness ? { Name: ns("mossy_stone_brick_wall"), nbt: e.nbt } : null
-  if (n === "obsidian") return rand() < 0.15 ? { Name: ns("crying_obsidian"), nbt: e.nbt } : null
+  if (n.endsWith("_slab")) return rand() < mossiness ? { id: ns("mossy_stone_brick_slab"), nbt: e.nbt } : null
+  if (n.endsWith("_wall")) return rand() < mossiness ? { id: ns("mossy_stone_brick_wall"), nbt: e.nbt } : null
+  if (n === "obsidian") return rand() < 0.15 ? { id: ns("crying_obsidian"), nbt: e.nbt } : null
   return null
 }
 
@@ -210,12 +210,12 @@ const BLACKSTONE = {
 }
 
 function applyBlackstone(e) {
-  const to = BLACKSTONE[strip(e.Name)]
+  const to = BLACKSTONE[strip(e.id)]
   if (!to) return null
-  const p = e.Properties ?? {}
+  const p = e.properties ?? {}
   const props = {}
   for (const k of ["facing", "half", "type"]) if (p[k] !== undefined) props[k] = p[k]
-  return { Name: ns(to), Properties: Object.keys(props).length ? props : undefined, nbt: e.nbt }
+  return { id: ns(to), properties: Object.keys(props).length ? props : undefined, nbt: e.nbt }
 }
 
 function applyOne(proc, e, rand) {
@@ -223,8 +223,8 @@ function applyOne(proc, e, rand) {
     case "rule": return applyRule(proc, e, rand)
     case "block_rot": {
       const rb = proc.rottable_blocks
-      if (proc.__rotSet) { if (!proc.__rotSet.has(ns(e.Name ?? ""))) return null }
-      else if (Array.isArray(rb) && !rb.map(strip).includes(strip(e.Name))) return null
+      if (proc.__rotSet) { if (!proc.__rotSet.has(ns(e.id ?? ""))) return null }
+      else if (Array.isArray(rb) && !rb.map(strip).includes(strip(e.id))) return null
       return rand() < (proc.integrity ?? 1) ? null : REMOVED
     }
     case "block_age": return applyBlockAge(proc, e, rand)
@@ -262,7 +262,7 @@ function runProcs(blocks, procs, rand) {
 
 const materialize = s => s.blocks.map(b => {
   const e = s.palette[b.state] ?? {}
-  return { Name: e.Name, Properties: e.Properties, nbt: b.nbt, pos: b.pos }
+  return { id: e.id, properties: e.properties, nbt: b.nbt, pos: b.pos }
 })
 
 export async function applyProcessors(structure, entry, rand, loadTemplate) {
@@ -271,7 +271,7 @@ export async function applyProcessors(structure, entry, rand, loadTemplate) {
     let tpl = null
     try { tpl = await loadTemplate(ov.loc) } catch {}
     if (!tpl) continue
-    const stamped = runProcs(materialize(tpl), ov.procs, rand).filter(b => !SKIP_OVERLAY.test(b.Name ?? ""))
+    const stamped = runProcs(materialize(tpl), ov.procs, rand).filter(b => !SKIP_OVERLAY.test(b.id ?? ""))
     const byPos = new Map(base.map((b, i) => [b.pos.join(","), i]))
     for (const ob of stamped) {
       const i = byPos.get(ob.pos.join(","))
@@ -281,7 +281,7 @@ export async function applyProcessors(structure, entry, rand, loadTemplate) {
   }
   const { palette, stateFor } = statePicker()
   const blocks = base.map(b => {
-    const out = { state: stateFor(b.Name, b.Properties), pos: b.pos }
+    const out = { state: stateFor(b.id, b.properties), pos: b.pos }
     if (b.nbt !== undefined) out.nbt = b.nbt
     return out
   })

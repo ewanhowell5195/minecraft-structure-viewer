@@ -68,7 +68,7 @@ export async function makeSignTexts(structure) {
   let font = null
   for (const b of structure.blocks) {
     const e = structure.palette[b.state]
-    const name = (e?.Name || "").replace(/^minecraft:/, "")
+    const name = (e?.id || "").replace(/^minecraft:/, "")
     const kind = name.match(/(?:^|_)(wall_hanging_sign|hanging_sign|wall_sign|sign)$/)?.[1]
     if (!kind || !b.nbt) continue
     const faces = []
@@ -84,7 +84,7 @@ export async function makeSignTexts(structure) {
     const hanging = kind.includes("hanging")
     const LH = hanging ? 9 : 10, MAXW = hanging ? 60 : 90
     const s = hanging ? 0.0140625 : 0.010416667
-    const p = e.Properties ?? {}
+    const p = e.properties ?? {}
     const yrot = kind === "sign" || kind === "hanging_sign"
       ? (parseInt(p.rotation) || 0) * 22.5
       : YROT[p.facing] ?? 0

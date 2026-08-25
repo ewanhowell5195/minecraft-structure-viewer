@@ -42,7 +42,7 @@ let legacyNames = new Map()
 async function resolveLegacyNames(structure, lib, assets) {
   legacyNames = new Map()
   for (const entry of structure.palette) {
-    const raw = entry?.Name
+    const raw = entry?.id
     if (!raw || legacyNames.has(raw)) continue
     const stripped = raw.replace("minecraft:", "")
     const renamed = LEGACY_RENAMES[stripped]
@@ -54,17 +54,17 @@ async function resolveLegacyNames(structure, lib, assets) {
 const SB = /(^|:)structure_block$/
 function stripStructureBlocks(structure) {
   function isTech(b) {
-    const n = structure.palette[b.state]?.Name || ""
+    const n = structure.palette[b.state]?.id || ""
     return JIGSAW.test(n) || SB.test(n)
   }
   if (!structure.blocks.some(isTech)) return structure
   const palette = structure.palette.slice()
   const idx = new Map()
   function stateFor(e) {
-    const key = e.Name + "|" + JSON.stringify(e.Properties ?? null)
+    const key = e.id + "|" + JSON.stringify(e.properties ?? null)
     let i = idx.get(key)
     if (i === undefined) {
-      i = palette.findIndex(pe => pe.Name === e.Name && sameProps(pe.Properties, e.Properties))
+      i = palette.findIndex(pe => pe.id === e.id && sameProps(pe.properties, e.properties))
       if (i < 0) { i = palette.length; palette.push(e) }
       idx.set(key, i)
     }
@@ -73,9 +73,9 @@ function stripStructureBlocks(structure) {
   const blocks = []
   for (const b of structure.blocks) {
     if (!isTech(b)) { blocks.push(b); continue }
-    if (JIGSAW.test(structure.palette[b.state].Name)) {
+    if (JIGSAW.test(structure.palette[b.state].id)) {
       const fs = parseState(typeof b.nbt?.final_state === "string" ? b.nbt.final_state : "")
-      if (!AIR.test(fs.Name)) blocks.push({ pos: b.pos, state: stateFor(fs) })
+      if (!AIR.test(fs.id)) blocks.push({ pos: b.pos, state: stateFor(fs) })
     }
   }
   return { ...structure, palette, blocks }
@@ -105,9 +105,9 @@ async function remapLoaderStates(structure, lib, assets) {
     if (matched.has(stateIdx)) return matched.get(stateIdx)
     let result = null
     const e = structure.palette[stateIdx]
-    if (e?.Name && !e.__fluidKey) {
+    if (e?.id && !e.__fluidKey) {
       try {
-        const models = await lib.parseBlockstate(assets, e.Name, { data: e.Properties ?? {}, ignoreAtlases: true })
+        const models = await lib.parseBlockstate(assets, e.id, { data: e.properties ?? {}, ignoreAtlases: true })
         const datas = []
         for (const m of models) datas.push(await lib.resolveModelData(assets, m))
         if (datas.some(d => loaders.some(l => l.match?.(d)))) result = datas
@@ -127,16 +127,16 @@ async function remapLoaderStates(structure, lib, assets) {
     for (const [dir, dx, dy, dz] of [["north", 0, 0, -1], ["south", 0, 0, 1], ["west", -1, 0, 0], ["east", 1, 0, 0], ["up", 0, 1, 0], ["down", 0, -1, 0]]) {
       const nb = byPos.get((bx + dx) + "," + (by + dy) + "," + (bz + dz))
       const ne = nb && structure.palette[nb.state]
-      if (ne?.Name) neighbors[dir] = { id: ne.Name, ...(ne.Properties ?? {}) }
+      if (ne?.id) neighbors[dir] = { id: ne.id, ...(ne.properties ?? {}) }
     }
-    const block = { id: e.Name, properties: e.Properties ?? {}, neighbors, nbt: b.nbt ?? null }
+    const block = { id: e.id, properties: e.properties ?? {}, neighbors, nbt: b.nbt ?? null }
     const variant = datas.map(d => lib.ModelLoader.variantKey(d, block) ?? "").join("/")
     const key = `${b.state}|${variant}|${JSON.stringify(b.nbt ?? null)}`
     let idx = byKey.get(key)
     if (idx === undefined) {
       idx = structure.palette.length
-      const entry = { Name: e.Name }
-      if (e.Properties) entry.Properties = e.Properties
+      const entry = { id: e.id }
+      if (e.properties) entry.properties = e.properties
       entry.__block = block
       entry.__loaderKey = key
       structure.palette.push(entry)
@@ -231,7 +231,7 @@ watch(() => state.fullbright, on => {
 
 const OPENABLE = /(^|:)([a-z_]+_)?(door|trapdoor|fence_gate)$/
 const isDoorName = name => /(^|:)([a-z_]+_)?door$/.test(name) && !/trapdoor$/.test(name)
-const isOpenable = e => !!(e?.Properties && "open" in e.Properties && OPENABLE.test(e.Name || ""))
+const isOpenable = e => !!(e?.properties && "open" in e.properties && OPENABLE.test(e.id || ""))
 function sameProps(a, b) {
   const ka = Object.keys(a || {})
   if (ka.length !== Object.keys(b || {}).length) return false
@@ -262,11 +262,11 @@ let fullBundle = null
 let rootSliced = false
 
 function stateWithOpen(structure, stateIdx, open) {
-  const e = structure.palette[stateIdx], props = { ...e.Properties, open }
-  let idx = structure.palette.findIndex(pe => pe.Name === e.Name && sameProps(pe.Properties, props))
+  const e = structure.palette[stateIdx], props = { ...e.properties, open }
+  let idx = structure.palette.findIndex(pe => pe.id === e.id && sameProps(pe.properties, props))
   if (idx < 0) {
     idx = structure.palette.length
-    structure.palette.push({ Name: e.Name, Properties: props })
+    structure.palette.push({ id: e.id, properties: props })
   }
   return idx
 }
@@ -523,13 +523,13 @@ function attachDoors(entries) {
     }
   }
   for (const e of entries) {
-    const open = structure.palette[e.b.state].Properties.open === "true"
+    const open = structure.palette[e.b.state].properties.open === "true"
     setDoorInstance(e.openIdx, e.openSlot, e.b.pos, open)
     setDoorInstance(e.closedIdx, e.closedSlot, e.b.pos, !open)
     doorByCell.set(e.b.pos.join(","), { b: e.b, openIdx: e.openIdx, closedIdx: e.closedIdx, openSlot: e.openSlot, closedSlot: e.closedSlot, pair: null })
   }
   for (const reg of doorByCell.values()) {
-    if (!isDoorName(structure.palette[reg.b.state].Name)) continue
+    if (!isDoorName(structure.palette[reg.b.state].id)) continue
     const [x, y, z] = reg.b.pos
     reg.pair = doorByCell.get(x + "," + (y + 1) + "," + z) || doorByCell.get(x + "," + (y - 1) + "," + z) || null
   }
@@ -874,7 +874,7 @@ async function attachEntities(structure, lib, assets) {
 async function attachSpawnerEggs(structure, lib, assets) {
   const texCache = new Map()
   for (const b of structure.blocks) {
-    if (!/(^|[:_])spawner$/.test(structure.palette[b.state]?.Name ?? "")) continue
+    if (!/(^|[:_])spawner$/.test(structure.palette[b.state]?.id ?? "")) continue
     let id = b.nbt?.SpawnData?.entity?.id ?? b.nbt?.SpawnPotentials?.[0]?.data?.entity?.id
     if (!id) {
       const cfg = await readTrialSpawnerConfig(b.nbt?.normal_config)
@@ -962,11 +962,11 @@ async function attachShelves(structure, lib, assets) {
   const cache = new Map()
   for (const b of structure.blocks) {
     const entry = structure.palette[b.state]
-    if (!/(^|_)shelf$/.test((entry?.Name ?? "").replace(/^minecraft:/, ""))) continue
+    if (!/(^|_)shelf$/.test((entry?.id ?? "").replace(/^minecraft:/, ""))) continue
     const items = b.nbt?.Items
     if (!Array.isArray(items) || !items.length) continue
     const alignBottom = Number(b.nbt.align_items_to_bottom ?? 0) === 1
-    const facing = entry.Properties?.facing ?? "north"
+    const facing = entry.properties?.facing ?? "north"
     const g = new THREE.Group()
     for (const it of items) {
       if (typeof it?.id !== "string" || !LIVE_ITEM.test(it.id)) continue
@@ -1003,7 +1003,7 @@ async function attachShelves(structure, lib, assets) {
     }
     if (!g.children.length) continue
     g.userData.daytime = daytimeUniform
-    g.rotation.y = SHELF_YAW[entry.Properties?.facing] ?? Math.PI
+    g.rotation.y = SHELF_YAW[entry.properties?.facing] ?? Math.PI
     g.position.set(b.pos[0] * 16, b.pos[1] * 16, b.pos[2] * 16)
     root.add(g)
   }
@@ -1043,7 +1043,7 @@ function markerUnderRay(ray, maxDist) {
 
 function toggleDoor(reg) {
   const structure = current.value
-  const open = structure.palette[reg.b.state].Properties.open !== "true"
+  const open = structure.palette[reg.b.state].properties.open !== "true"
   const regs = reg.pair ? [reg, reg.pair] : [reg]
   for (const r of regs) {
     r.b.state = open ? r.openIdx : r.closedIdx
@@ -1143,10 +1143,10 @@ function aimBoxesFor(i, stateIdx) {
 
 // open fence gates have no collision in game: you walk through the cell
 const GATE = /_fence_gate$/
-const gateOpen = e => !!(e?.Name && GATE.test(e.Name) && e.Properties?.open === "true")
+const gateOpen = e => !!(e?.id && GATE.test(e.id) && e.properties?.open === "true")
 // fluids collide as fluids in walk mode, never as solid boxes
 const FLUID_BLOCK = /(^|:)(water|flowing_water|lava|flowing_lava|bubble_column)$/
-const isFluidBlock = e => !!(e?.Name && FLUID_BLOCK.test(e.Name))
+const isFluidBlock = e => !!(e?.id && FLUID_BLOCK.test(e.id))
 
 
 // returns { door }, { container }, { entity } or a plain { block }; blocked by
@@ -1186,7 +1186,7 @@ function rayHit(ox, oy, oz, dx, dy, dz, REACH = 80) {
     const i = idx.get(key)
     if (i == null) continue
     const b = structure.blocks[i]
-    const bName = structure.palette[b.state]?.Name ?? ""
+    const bName = structure.palette[b.state]?.id ?? ""
     if (!state.technical && /(^|:)(barrier|light|structure_void)$/.test(bName)) continue
     const e = structure.palette[b.state]
     if ((isInspectable(bName) || b.nbt?.LootTable || /(^|[:_])spawner$/.test(bName)) && shapeT(bx, by, bz, e)) {
@@ -1204,11 +1204,11 @@ function rayHit(ox, oy, oz, dx, dy, dz, REACH = 80) {
 function tryRingBell(h, ox, oy, oz, dx, dy, dz) {
   if (!h?.block || !root) return false
   const e = current.value?.palette[h.block.state]
-  if (!/(^|:)bell$/.test(e?.Name ?? "")) return false
+  if (!/(^|:)bell$/.test(e?.id ?? "")) return false
   const bx = h.block.pos[0] * 16 + root.position.x - 8
   const by = h.block.pos[1] * 16 + root.position.y - 8
   const bz = h.block.pos[2] * 16 + root.position.z - 8
-  const dir = bellRingDir(ox, oy, oz, dx, dy, dz, bx, by, bz, e.Properties ?? {})
+  const dir = bellRingDir(ox, oy, oz, dx, dy, dz, bx, by, bz, e.properties ?? {})
   if (!dir) return false
   useBooks().ring(h.block.pos, dir)
   return true
@@ -1241,8 +1241,8 @@ const CW = { north: "east", east: "south", south: "west", west: "north" }
 const CCW = { north: "west", west: "south", south: "east", east: "north" }
 
 function shapeFor(e) {
-  const name = (e?.Name || "").replace(/^minecraft:/, "")
-  const p = e?.Properties ?? {}
+  const name = (e?.id || "").replace(/^minecraft:/, "")
+  const p = e?.properties ?? {}
   if (/fence_gate$/.test(name)) {
     const tall = p.in_wall === "true" ? 13 : 16
     return p.facing === "north" || p.facing === "south" ? [0, 0, 6, 16, tall, 10] : [6, 0, 0, 10, tall, 16]
@@ -1482,7 +1482,7 @@ async function build(structure = source, refit = true, slice = false, fresh = fa
     source = structure
     const techStates = new Set()
     structure.palette.forEach((e, i) => {
-      if (e?.Name && (JIGSAW.test(e.Name) || SB.test(e.Name))) techStates.add(i)
+      if (e?.id && (JIGSAW.test(e.id) || SB.test(e.id))) techStates.add(i)
     })
     state.hasStructureBlocks = techStates.size > 0 && structure.blocks.some(b => techStates.has(b.state))
     // no toggle to reach in minimal or on a manual load, so the structure is
@@ -1540,10 +1540,10 @@ async function build(structure = source, refit = true, slice = false, fresh = fa
         let sc = lightSC.get(b.state)
         if (sc === undefined) {
           const e = structure.palette[b.state]
-          if (!e?.Name || AIR.test(e.Name)) sc = null
+          if (!e?.id || AIR.test(e.id)) sc = null
           else {
-            const name = legacyNames.get(e.Name) ?? e.Name
-            sc = { id: name, properties: fixLegacyProps(name.replace("minecraft:", ""), e.Properties) ?? {} }
+            const name = legacyNames.get(e.id) ?? e.id
+            sc = { id: name, properties: fixLegacyProps(name.replace("minecraft:", ""), e.properties) ?? {} }
           }
           lightSC.set(b.state, sc)
         }
@@ -1579,8 +1579,8 @@ async function build(structure = source, refit = true, slice = false, fresh = fa
       g.userData.daytime = daytimeUniform
       let tmpl = null
       try {
-        const name = legacyNames.get(entry.Name) ?? entry.Name
-        const props = fixLegacyProps(name.replace("minecraft:", ""), entry.Properties)
+        const name = legacyNames.get(entry.id) ?? entry.id
+        const props = fixLegacyProps(name.replace("minecraft:", ""), entry.properties)
         const block = entry.__block ?? { id: name, properties: props ?? {} }
         const biome = entry.__biome ? { biome: entry.__biome } : null
         let any = false, allPlanes = true
@@ -1606,13 +1606,13 @@ async function build(structure = source, refit = true, slice = false, fresh = fa
       let sc = stateCache.get(state)
       if (sc === undefined) {
         const e = structure.palette[state]
-        if (!e?.Name || AIR.test(e.Name) || isOpenable(e) || e.__loaderKey) sc = null
+        if (!e?.id || AIR.test(e.id) || isOpenable(e) || e.__loaderKey) sc = null
         else {
-          const name = legacyNames.get(e.Name) ?? e.Name
+          const name = legacyNames.get(e.id) ?? e.id
           const short = name.replace(/^minecraft:/, "")
           sc = {
             name,
-            props: fixLegacyProps(short, e.Properties),
+            props: fixLegacyProps(short, e.properties),
             biome: e.__biome,
             isShelf: /(^|_)shelf$/.test(short),
             isBanner: /(^|_)banner$/.test(short),
@@ -1823,8 +1823,8 @@ async function build(structure = source, refit = true, slice = false, fresh = fa
         let key = null
         const rot = new THREE.Matrix4()
         try {
-          const name = legacyNames.get(entry.Name) ?? entry.Name
-          const props = fixLegacyProps(name.replace("minecraft:", ""), entry.Properties)
+          const name = legacyNames.get(entry.id) ?? entry.id
+          const props = fixLegacyProps(name.replace("minecraft:", ""), entry.properties)
           const models = await lib.parseBlockstate(assets, name, { data: props ?? {}, ignoreAtlases: true })
           const m = models.length === 1 ? models[0] : null
           if (m && !(m.uvlock && (m.x || m.y || m.z))) {

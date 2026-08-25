@@ -67,7 +67,7 @@ function endFillerStruct(selfSeed) {
   row(4, 5, ni(8))
   for (let x = 0; x <= 4; x++) row(x, 2, ni(5))
   for (let x = 0; x <= 4; x++) for (let y = 0; y <= 1; y++) row(x, y, ni(3))
-  return { size: [5, 10, 8], palette: [{ Name: "minecraft:nether_bricks" }], blocks }
+  return { size: [5, 10, 8], palette: [{ id: "minecraft:nether_bricks" }], blocks }
 }
 
 export async function runFortress(loadStruct, { maxDepth = Infinity, seed } = {}) {
@@ -211,7 +211,7 @@ export async function runFortress(loadStruct, { maxDepth = Infinity, seed } = {}
   const AIRRE = /(^|:)(cave_)?air$/
   for (const entry of placed) {
     for (const b of entry.struct.blocks) {
-      if (AIRRE.test(entry.struct.palette[b.state].Name)) continue
+      if (AIRRE.test(entry.struct.palette[b.state].id)) continue
       occupied.add((b.pos[0] + entry.off[0]) + "," + (b.pos[1] + entry.off[1]) + "," + (b.pos[2] + entry.off[2]))
     }
   }
@@ -232,7 +232,7 @@ export async function runFortress(loadStruct, { maxDepth = Infinity, seed } = {}
       }
     }
   }
-  if (legs.length) placed.push({ struct: { size: [1, 1, 1], palette: [{ Name: "minecraft:nether_bricks" }], blocks: legs }, rot: 0, off: [0, 0, 0], ow: false })
+  if (legs.length) placed.push({ struct: { size: [1, 1, 1], palette: [{ id: "minecraft:nether_bricks" }], blocks: legs }, rot: 0, off: [0, 0, 0], ow: false })
 
   // anchor on the start piece so the camera stays put across levels
   const structure = combine(placed)

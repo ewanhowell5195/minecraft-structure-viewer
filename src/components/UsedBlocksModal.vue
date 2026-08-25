@@ -39,17 +39,17 @@ function compute() {
   let total = 0
   for (const b of s.blocks) {
     const e = s.palette[b.state]
-    if (!e?.Name || AIR.test(e.Name)) continue
+    if (!e?.id || AIR.test(e.id)) continue
     total++
-    let g = groups.get(e.Name)
-    if (!g) groups.set(e.Name, g = { id: e.Name, count: 0, states: new Map() })
+    let g = groups.get(e.id)
+    if (!g) groups.set(e.id, g = { id: e.id, count: 0, states: new Map() })
     g.count++
-    const props = shownProps(e.Properties)
+    const props = shownProps(e.properties)
     const key = JSON.stringify(props)
     let st = g.states.get(key)
     if (!st) g.states.set(key, st = { props, count: 0, blocks: null })
     st.count++
-    if (isDataName(e.Name) || b.nbt?.LootTable) (st.blocks ??= []).push(b)
+    if (isDataName(e.id) || b.nbt?.LootTable) (st.blocks ??= []).push(b)
   }
   const blocks = Array.from(groups.values(), g => ({
     id: g.id,
@@ -157,8 +157,8 @@ function findBlocks(id, props, entries) {
   const hits = []
   for (const b of s.blocks) {
     const e = s.palette[b.state]
-    if (e?.Name !== id) continue
-    if (key !== null && JSON.stringify(shownProps(e.Properties)) !== key) continue
+    if (e?.id !== id) continue
+    if (key !== null && JSON.stringify(shownProps(e.properties)) !== key) continue
     hits.push(b)
   }
   if (!hits.length) return

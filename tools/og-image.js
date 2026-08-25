@@ -83,7 +83,7 @@ const wkey = (x, y, z) => x + "," + y + "," + z
 const groundY = village.anchor[1]
 let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity
 for (const b of village.blocks) {
-  if (AIR.test(village.palette[b.state]?.Name ?? "")) continue
+  if (AIR.test(village.palette[b.state]?.id ?? "")) continue
   minX = Math.min(minX, b.pos[0]); maxX = Math.max(maxX, b.pos[0])
   minZ = Math.min(minZ, b.pos[2]); maxZ = Math.max(maxZ, b.pos[2])
 }
@@ -125,8 +125,8 @@ function heightAt(x, z) {
   return Math.round(n * HILL_AMP * f)
 }
 
-const GRASS = { Name: "minecraft:grass_block", Properties: { snowy: "false" } }
-const DIRT = { Name: "minecraft:dirt" }
+const GRASS = { id: "minecraft:grass_block", properties: { snowy: "false" } }
+const DIRT = { id: "minecraft:dirt" }
 const H = new Map()
 for (let x = vcx - EXT; x <= vcx + EXT; x++) {
   for (let z = vcz - EXT; z <= vcz + EXT; z++) {
@@ -147,7 +147,7 @@ for (let x = vcx - EXT; x <= vcx + EXT; x++) {
 
 for (const b of village.blocks) {
   const e = village.palette[b.state]
-  if (!e?.Name || AIR.test(e.Name)) continue
+  if (!e?.id || AIR.test(e.id)) continue
   world.set(wkey(...b.pos), e)
 }
 
@@ -196,8 +196,8 @@ for (let x = vcx - EXT; x <= vcx + EXT; x++) {
     const gy = grassTop(x, z)
     if (gy === null) continue
     const roll = trand()
-    if (roll < 0.11) world.set(wkey(x, gy + 1, z), { Name: "minecraft:short_grass" })
-    else if (roll < 0.125) world.set(wkey(x, gy + 1, z), { Name: FLOWERS[Math.floor(trand() * FLOWERS.length)] })
+    if (roll < 0.11) world.set(wkey(x, gy + 1, z), { id: "minecraft:short_grass" })
+    else if (roll < 0.125) world.set(wkey(x, gy + 1, z), { id: FLOWERS[Math.floor(trand() * FLOWERS.length)] })
     else continue
     cover++
   }
@@ -209,7 +209,7 @@ log("computing light…")
 const lightBlocks = []
 for (const [k, e] of world) {
   const [x, y, z] = k.split(",").map(Number)
-  lightBlocks.push({ id: e.Name, properties: e.Properties ?? {}, pos: [x, y, z] })
+  lightBlocks.push({ id: e.id, properties: e.properties ?? {}, pos: [x, y, z] })
 }
 const sceneLight = await lib.computeSceneLight(lightBlocks, { assets })
 const LIGHT = { light: sceneLight, daytime: DAYTIME }
@@ -222,14 +222,14 @@ const RSEEDS = Array.from({ length: 16 }, (_, i) => Math.imul(i + 1, 0x9E3779B1)
 const templates = new Map()
 const stateBuckets = new Map()
 async function buckets(e) {
-  const stateKey = e.Name + "|" + JSON.stringify(e.Properties ?? null)
+  const stateKey = e.id + "|" + JSON.stringify(e.properties ?? null)
   if (stateBuckets.has(stateKey)) return stateBuckets.get(stateKey)
   const byModels = new Map()
   const keys = []
   for (const seed of RSEEDS) {
     let tk = null
     try {
-      const models = await lib.parseBlockstate(assets, e.Name, { data: e.Properties ?? {}, ignoreAtlases: true, seed })
+      const models = await lib.parseBlockstate(assets, e.id, { data: e.properties ?? {}, ignoreAtlases: true, seed })
       const mk = JSON.stringify(models)
       tk = byModels.get(mk)
       if (tk === undefined) {
@@ -273,17 +273,17 @@ async function fluidTemplate(e, type, x, y, z) {
   const neighbors = {}
   for (const [key, dx, dy, dz] of FLUID_DIRS) {
     const n = world.get(wkey(x + dx, y + dy, z + dz))
-    if (n?.Name) neighbors[key] = { id: n.Name, ...(n.Properties ?? {}) }
+    if (n?.id) neighbors[key] = { id: n.id, ...(n.properties ?? {}) }
   }
   const h = await lib.fluidHeights(assets, type, neighbors)
   const ov = h.overlay ? (h.overlay.north ? "n" : "") + (h.overlay.south ? "s" : "") + (h.overlay.east ? "e" : "") + (h.overlay.west ? "w" : "") : ""
   const sm = h.same ? (h.same.north ? "n" : "") + (h.same.south ? "s" : "") + (h.same.east ? "e" : "") + (h.same.west ? "w" : "") + (h.same.up ? "u" : "") + (h.same.down ? "d" : "") : ""
-  const key = `${e.Name}|${JSON.stringify(e.Properties ?? null)}|${h.nw.toFixed(3)},${h.ne.toFixed(3)},${h.sw.toFixed(3)},${h.se.toFixed(3)}|${h.full ? 1 : 0}|${h.angle == null ? "" : h.angle.toFixed(2)}|${ov}|${sm}`
+  const key = `${e.id}|${JSON.stringify(e.properties ?? null)}|${h.nw.toFixed(3)},${h.ne.toFixed(3)},${h.sw.toFixed(3)},${h.se.toFixed(3)}|${h.full ? 1 : 0}|${h.angle == null ? "" : h.angle.toFixed(2)}|${ov}|${sm}`
   let t = fluidTemplates.get(key)
   if (t === undefined) {
     let g = new THREE.Group()
     try {
-      for (const model of await lib.parseBlockstate(assets, e.Name, { data: e.Properties ?? {}, ignoreAtlases: true })) {
+      for (const model of await lib.parseBlockstate(assets, e.id, { data: e.properties ?? {}, ignoreAtlases: true })) {
         await lib.loadModel(g, assets, await lib.resolveModelData(assets, model), { display: {}, lighting: LIGHT, animate: false, fluidHeights: h })
       }
     } catch {}
@@ -302,7 +302,7 @@ const placements = []
 let placed = 0
 for (const [k, e] of world) {
   const [x, y, z] = k.split(",").map(Number)
-  const type = lib.fluidTypeOf(e.Name, e.Properties)
+  const type = lib.fluidTypeOf(e.id, e.properties)
   let t
   if (type) {
     t = await fluidTemplate(e, type, x, y, z)
@@ -312,13 +312,13 @@ for (const [k, e] of world) {
   }
   if (!t) continue
   const nEntries = Object.entries(DIRS).map(([dir, [dx, dy, dz]]) => [dir, world.get(wkey(x + dx, y + dy, z + dz))])
-  const mkey = e.Name + "|" + JSON.stringify(e.Properties ?? null) + "|" +
-    nEntries.map(([, n]) => n ? n.Name + JSON.stringify(n.Properties ?? null) : "").join(",")
+  const mkey = e.id + "|" + JSON.stringify(e.properties ?? null) + "|" +
+    nEntries.map(([, n]) => n ? n.id + JSON.stringify(n.properties ?? null) : "").join(",")
   let cull = cullMemo.get(mkey)
   if (cull === undefined) {
     const neighbors = {}
-    for (const [dir, n] of nEntries) if (n) neighbors[dir] = { id: n.Name, ...(n.Properties ?? {}) }
-    cull = await lib.getCullFaces({ id: e.Name, blockstates: e.Properties ?? {}, neighbors, assets })
+    for (const [dir, n] of nEntries) if (n) neighbors[dir] = { id: n.id, ...(n.properties ?? {}) }
+    cull = await lib.getCullFaces({ id: e.id, blockstates: e.properties ?? {}, neighbors, assets })
     cullMemo.set(mkey, cull)
   }
   placements.push({ pos: [x, y, z], group: t, cull })

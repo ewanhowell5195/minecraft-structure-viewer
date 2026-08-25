@@ -176,7 +176,7 @@ const HANDPICKED_SEEDS = {
 function shapeKey(s) {
   return s.blocks.map(b => {
     const e = s.palette[b.state]
-    return `${b.pos[0] - s.anchor[0]},${b.pos[1]},${b.pos[2] - s.anchor[2]}|${e.Name}|${e.Properties ? JSON.stringify(e.Properties) : ""}`
+    return `${b.pos[0] - s.anchor[0]},${b.pos[1]},${b.pos[2] - s.anchor[2]}|${e.id}|${e.properties ? JSON.stringify(e.properties) : ""}`
   }).sort().join("\n")
 }
 
@@ -184,8 +184,8 @@ function shapeKey(s) {
 function isDoublePlant(s) {
   if (s.blocks.length !== 2) return false
   const [a, b] = s.blocks.map(x => s.palette[x.state])
-  if (a.Name !== b.Name) return false
-  const halves = new Set([a.Properties?.half, b.Properties?.half])
+  if (a.id !== b.id) return false
+  const halves = new Set([a.properties?.half, b.properties?.half])
   return halves.has("lower") && halves.has("upper")
 }
 

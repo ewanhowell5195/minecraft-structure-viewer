@@ -157,9 +157,9 @@ const COMMANDS = {
     const blocks = []
     for (const b of structure.blocks) {
       const entry = structure.palette[b.state]
-      if (!entry?.Name || AIR.test(entry.Name)) continue
-      const out = { pos: b.pos.slice(), id: entry.Name }
-      if (entry.Properties) out.properties = { ...entry.Properties }
+      if (!entry?.id || AIR.test(entry.id)) continue
+      const out = { pos: b.pos.slice(), id: entry.id }
+      if (entry.properties) out.properties = { ...entry.properties }
       if (b.nbt) out.nbt = jsonSafe(b.nbt)
       blocks.push(out)
     }

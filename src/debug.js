@@ -17,10 +17,10 @@ export const DEBUG_SCENES = [
 
 export function makeDebug(kind) {
   const palette = [], pi = new Map()
-  function st(Name, Properties = {}) {
-    const k = Name + JSON.stringify(Properties)
+  function st(id, properties = {}) {
+    const k = id + JSON.stringify(properties)
     if (!pi.has(k)) {
-      palette.push({ Name: "minecraft:" + Name, Properties })
+      palette.push({ id: "minecraft:" + id, properties })
       pi.set(k, palette.length - 1)
     }
     return pi.get(k)

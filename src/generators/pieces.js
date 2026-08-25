@@ -22,10 +22,10 @@ export function orientStruct(struct, dir) {
   const mir = dir === "south" || dir === "west" ? "lr" : null
   const rot = dir === "west" || dir === "east" ? 1 : 0
   const palette = struct.palette.map(e => {
-    let props = e.Properties
+    let props = e.properties
     if (props && mir) props = mirrorState(props, mir)
     if (props && rot) props = rotateState(props, rot)
-    return props ? { Name: e.Name, Properties: props } : { Name: e.Name }
+    return props ? { id: e.id, properties: props } : { id: e.id }
   })
   const pos = dir === "south" ? ([x, y, z]) => [x, y, d - 1 - z]
     : dir === "west" ? ([x, y, z]) => [z, y, x]

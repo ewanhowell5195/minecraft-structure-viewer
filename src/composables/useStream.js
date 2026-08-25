@@ -499,12 +499,12 @@ const provider = {
     const gx = Math.round(wx / 16), gy = Math.round(wy / 16), gz = Math.round(wz / 16)
     const t = tiles.get(tkeyAt(gx, gz))
     const cell = cellAt(t, gx, gy, gz)
-    if (cell) return { Name: cell.entry.id, Properties: cell.entry.properties ?? undefined }
+    if (cell) return { id: cell.entry.id, properties: cell.entry.properties ?? undefined }
     const key = gx + "," + gy + "," + gz
     const reg = t?.doors?.regs.get(key)
-    if (reg) return { Name: reg.id, Properties: reg.props }
+    if (reg) return { id: reg.id, properties: reg.props }
     const dyn = t?.dyn?.regs.get(key)
-    return dyn ? { Name: dyn.id, Properties: dyn.properties } : null
+    return dyn ? { id: dyn.id, properties: dyn.properties } : null
   },
   blockEntryAt(wx, wy, wz) {
     const gx = Math.round(wx / 16), gy = Math.round(wy / 16), gz = Math.round(wz / 16)
@@ -577,7 +577,7 @@ const provider = {
       tiles.get(tkeyAt(c.bell.pos[0], c.bell.pos[2]))?.dyn?.ring?.(c.bell.pos, c.bell.dir)
       return false
     }
-    return { pos: c.cell.pos, entry: { Name: c.entry.id, Properties: c.entry.properties }, nbt: c.entry.nbt }
+    return { pos: c.cell.pos, entry: { id: c.entry.id, properties: c.entry.properties }, nbt: c.entry.nbt }
   },
   ringBell(ox, oy, oz, dx, dy, dz) {
     const c = marchContainer(ox, oy, oz, dx, dy, dz, 4000, true)
@@ -592,7 +592,7 @@ const provider = {
     const s = containerShape(c.entry.id, c.entry.properties ?? {})
     const bx = c.gx * 16 - 8, by = c.gy * 16 - 8, bz = c.gz * 16 - 8
     return {
-      container: { pos: c.cell.pos, entry: { Name: c.entry.id, Properties: c.entry.properties }, nbt: c.entry.nbt },
+      container: { pos: c.cell.pos, entry: { id: c.entry.id, properties: c.entry.properties }, nbt: c.entry.nbt },
       box: new THREE.Box3(
         new THREE.Vector3(bx + s[0], by + s[1], bz + s[2]),
         new THREE.Vector3(bx + s[3], by + s[4], bz + s[5]))

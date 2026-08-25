@@ -66,14 +66,14 @@ async function populate() {
   if (state.selected.length) state.selected = state.selected.filter(rel => featurePath.has(rel))
 }
 
-// feature configs name blocks as BlockState objects ({ Name, Properties }) at
+// feature configs name blocks as BlockState objects ({ id, properties }) at
 // varied depths (ore targets, tree trunk/foliage providers, flower lists...);
-// a deep walk for Name values catches them all regardless of feature type
+// a deep walk for id values catches them all regardless of feature type
 function collectBlockNames(node, out) {
   if (Array.isArray(node)) {
     for (const v of node) collectBlockNames(v, out)
   } else if (node && typeof node === "object") {
-    if (typeof node.Name === "string") out.add(strip(node.Name))
+    if (typeof node.id === "string") out.add(strip(node.id))
     for (const v of Object.values(node)) collectBlockNames(v, out)
   }
 }
@@ -107,7 +107,7 @@ async function computeAdvIndex() {
       collectBlockNames(j, names)
       try {
         const s = await generateFeature(rel, j, rnd(defaultSeed(rel)), resolvePlaced, loadStruct, {}, loadProcessors)
-        for (const e of s.palette) if (typeof e?.Name === "string") names.add(strip(e.Name))
+        for (const e of s.palette) if (typeof e?.id === "string") names.add(strip(e.id))
       } catch {}
       for (const b of names) {
         if (AIR.has(b)) continue
