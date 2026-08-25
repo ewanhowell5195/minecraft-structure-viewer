@@ -145,17 +145,24 @@ async function readJson(zipPath) {
   return buf ? normStatesDeep(JSON.parse(textDecoder.decode(buf))) : null
 }
 
+// pre-26.3 files nest the payload under config; the generators speak the
+// current flat shape
+const flatConfig = j =>
+  j && typeof j === "object" && j.type !== undefined && j.config && typeof j.config === "object"
+    ? { type: j.type, ...j.config }
+    : j
+
 // the old registry folder goes first: the bundled copies live at the new path,
 // so asking for that first answers 26.3 data off an older jar
 async function readFeature(rel) {
   const slash = rel.indexOf("/")
   const ns = rel.slice(0, slash), name = rel.slice(slash + 1)
   const legacy = await readJson(`data/${ns}/worldgen/configured_feature/${name}.json`)
-  if (legacy) return legacy
+  if (legacy) return flatConfig(legacy)
   const current = await readJson(`data/${ns}/worldgen/feature/${name}.json`)
-  if (current) return current
+  if (current) return flatConfig(current)
   const zp = featurePath.get(rel)
-  return zp ? readJson(zp) : null
+  return zp ? flatConfig(await readJson(zp)) : null
 }
 
 const nsPath = ref => ref.includes(":") ? ref.replace(":", "/") : "minecraft/" + ref
@@ -171,7 +178,7 @@ async function resolvePlaced(ref) {
   if (ref == null) return null
   if (typeof ref === "object") {
     if (ref.type === undefined && ref.feature !== undefined) return resolveFeatureRef(ref.feature)
-    return ref
+    return flatConfig(ref)
   }
   const rel = nsPath(ref)
   const placed = await readJson(`data/${rel.replace("/", "/worldgen/placed_feature/")}.json`)
@@ -189,7 +196,7 @@ async function resolvePlacedRel(ref) {
 
 async function resolveFeatureRef(ref) {
   if (ref == null) return null
-  if (typeof ref === "object") return ref.type === undefined && ref.feature !== undefined ? resolveFeatureRef(ref.feature) : ref
+  if (typeof ref === "object") return ref.type === undefined && ref.feature !== undefined ? resolveFeatureRef(ref.feature) : flatConfig(ref)
   return readFeature(nsPath(ref))
 }
 
