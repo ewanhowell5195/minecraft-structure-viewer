@@ -8,7 +8,7 @@ import { generateFeature } from "../features/index.js"
 import { useBuild } from "./useBuild.js"
 import { useScene } from "./useScene.js"
 import { useLock } from "./useLock.js"
-import { readStructure } from "minecraft-block-reader"
+import { read } from "minecraft-block-reader"
 import { setParams } from "../params.js"
 import { AIR, EMPTY, JIGSAW, mix, parseState, pathDimension, poolTemplates, rand32, rnd } from "../transforms.js"
 import { hasDataMarkers, processDataMarkers } from "../markers.js"
@@ -68,7 +68,7 @@ async function loadRaw(rel) {
   if (!zp) return null
   const lib = await loadLibrary()
   const buf = await lib.readFile(zp, packs.assets.value)
-  return buf ? readStructure(buf) : null
+  return buf ? read(buf) : null
 }
 
 async function loadStruct(ref) {

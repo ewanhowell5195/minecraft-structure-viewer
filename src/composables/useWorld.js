@@ -1,5 +1,5 @@
 import { reactive, readonly } from "vue"
-import { readWorldZip, readRegionFile, buildSelection, unzipEntry, chunkSurface, chunkYExtent, readChunk, switchDimension } from "../world.js"
+import { read, regionCoords, buildSelection, chunkSurface } from "../world.js"
 import { readNBT } from "minecraft-block-reader"
 import { useStructure } from "./useStructure.js"
 import { useBuild } from "./useBuild.js"
@@ -33,6 +33,8 @@ const state = reactive({
 })
 
 let world = null
+let worldGen = 0
+const worldRels = new Map()
 const selected = new Set()
 
 const surface = new Map()
@@ -68,9 +70,9 @@ function setScanFocus(x0, z0, x1, z1) {
 async function pump() {
   if (pumping) return
   pumping = true
-  const w = world
+  const w = world, g = worldGen
   let t0 = performance.now(), lastRev = t0
-  while (qi < queue.length && world === w) {
+  while (qi < queue.length && world === w && g === worldGen) {
     const c = queue[qi++]
     const key = c.cx + "," + c.cz
     if (!surface.has(key)) {
@@ -84,7 +86,7 @@ async function pump() {
     }
   }
   pumping = false
-  if (world === w) {
+  if (world === w && g === worldGen) {
     state.rev++
     evalRange()
   }
@@ -117,16 +119,16 @@ function evalRange() {
 }
 
 async function applySuggestedRange() {
-  const w = world
+  const w = world, g = worldGen
   if (!w) return
   let chunks = visibleChunks()
   if (!chunks.length) chunks = w.chunks
   const step = Math.max(1, Math.floor(chunks.length / 12))
   let top = -Infinity, bottom = Infinity
   for (let i = 0; i < chunks.length; i += step) {
-    if (world !== w) return
+    if (world !== w || g !== worldGen) return
     let r = null
-    try { r = await chunkYExtent(w, chunks[i]) } catch {}
+    try { r = await w.chunkExtent(chunks[i]) } catch {}
     if (!r) continue
     if (r.top > top) top = r.top
     if (r.bottom < bottom) bottom = r.bottom
@@ -174,18 +176,17 @@ async function openWorld(file, cacheIt = true) {
   autoRange = true
   try {
     state.regionFile = /\.mca$/i.test(file.name)
-    world = state.regionFile
-      ? readRegionFile(await file.arrayBuffer(), file.name)
-      : await readWorldZip(file, (done, total) => { state.loading = { done, total } })
+    world = await read(file, { region: regionCoords(file.name), onProgress: (done, total) => { state.loading = { done, total } } })
+    worldGen++
     selected.clear()
     state.name = world.name || file.name.replace(/\.(zip|mca)$/i, "")
     state.chunkCount = world.chunks.length
     state.selCount = 0
-    state.dimensions = world.dims?.map(d => d.id) ?? []
+    state.dimensions = world.dimensions ?? []
     state.dimension = world.dimension ?? ""
     for (const c of world.chunks.slice(0, 8)) {
       try {
-        const nbt = await readChunk(world, c)
+        const nbt = await world.chunk(c)
         if (nbt.sections) break
         if (nbt.Level) {
           state.oldWorld = true
@@ -193,8 +194,14 @@ async function openWorld(file, cacheIt = true) {
         }
       } catch {}
     }
-    useStructures().setWorldStructures([...world.structures.keys()])
-    state.structs = world.structList ?? []
+    worldRels.clear()
+    for (const libRel of world.structures) {
+      const slash = libRel.indexOf("/")
+      const ns = libRel.slice(0, slash), path = libRel.slice(slash + 1)
+      worldRels.set("world/" + (ns === "minecraft" ? "" : ns + "/") + path, { libRel, ns, path })
+    }
+    useStructures().setWorldStructures(Array.from(worldRels.keys()))
+    state.structs = Array.from(worldRels, ([rel, v]) => ({ rel, ns: v.ns, path: v.path }))
     if (cacheIt) cacheFile("world", file)
   } catch (err) {
     world = null
@@ -214,7 +221,8 @@ async function openWorld(file, cacheIt = true) {
 }
 
 async function applyDimension(id) {
-  world = await switchDimension(world, id, (done, total) => { state.loading = { done, total } })
+  await world.setDimension(id, (done, total) => { state.loading = { done, total } })
+  worldGen++
   state.dimension = id
   state.chunkCount = world.chunks.length
   selected.clear()
@@ -428,8 +436,8 @@ function loadForecast() {
   return est > headroom * 0.8
 }
 
-const hasStructure = rel => !!world?.structures.has(rel)
-const readStructureBytes = rel => unzipEntry(world.structures.get(rel))
+const hasStructure = rel => worldRels.has(rel) && !!world
+const readWorldStructure = rel => world.structure(worldRels.get(rel).libRel)
 
 function mapEntry(id) {
   const root = world?.root ?? ""
@@ -439,11 +447,14 @@ function mapEntry(id) {
 
 const hasMap = id => !!mapEntry(id)
 
+async function readMapBytes(id) {
+  return await world.file("data/minecraft/maps/" + id + ".dat") ?? world.file("data/map_" + id + ".dat")
+}
+
 async function readMap(id) {
-  const entry = mapEntry(id)
-  if (!entry) return null
+  if (!hasMap(id)) return null
   try {
-    const nbt = await readNBT(await unzipEntry(entry))
+    const nbt = await readNBT(await readMapBytes(id))
     const c = nbt.data?.colors
     if (!c || c.length < 16384) return null
     return Array.isArray(c) ? Uint8Array.from(c) : new Uint8Array(c.buffer, c.byteOffset, c.length)
@@ -474,7 +485,7 @@ function setYRange(lo, hi) {
 export function useWorld() {
   return {
     state: readonly(state), openWorld, toggleChunk, isSelected, clearSelection, selectRect, rectHasSelected, selectionBounds, loadSelected, closeWorld,
-    hasStructure, readStructureBytes, readMap, hasMap, setYRange, applySuggestedRange,
+    hasStructure, readWorldStructure, readMap, hasMap, setYRange, applySuggestedRange,
     getChunks: () => world?.chunks ?? [],
     getWorld: () => world,
     getWorldFile: () => worldFile,

@@ -1,6 +1,6 @@
 import fs from "node:fs"
 import { readZip, unzipEntry } from "../builtin/zip.js"
-import { readStructure } from "minecraft-block-reader"
+import { read } from "minecraft-block-reader"
 import { normStatesDeep } from "../../src/transforms.js"
 
 export function featureFilesFromZip(zipPath) {
@@ -30,7 +30,7 @@ export function buildGenCtx(files, clientJarPath) {
   const nsPath = ref => ref.includes(":") ? ref.replace(":", "/") : "minecraft/" + ref
   const loadStruct = async ref => {
     const e = clientZip?.get("data/" + nsPath(ref).replace(/^([^/]+)\//, "$1/structure/") + ".nbt")
-    return e ? readStructure(Buffer.from(unzipEntry(e))) : null
+    return e ? read(Buffer.from(unzipEntry(e))) : null
   }
   // a placed feature's inner ref points at the FEATURE registry, never back
   // through placed: ids collide across the two registries

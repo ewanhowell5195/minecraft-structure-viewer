@@ -5,14 +5,14 @@ import { useStructures } from "./useStructures.js"
 import { useBuild } from "./useBuild.js"
 import { useSession } from "./useSession.js"
 import { useLock } from "./useLock.js"
-import { readStructure, readerFor, structureName } from "minecraft-block-reader"
+import { read } from "minecraft-block-reader"
 import { useWorld } from "./useWorld.js"
 import { fixBuiltin, GENERATED } from "../generators/builtin.js"
 import { makeDebug } from "../debug.js"
 import { yieldTask } from "../yield.js"
 import { useFeatures } from "./useFeatures.js"
 import { generateFeature } from "../features/index.js"
-import { mix, pathDimension, rand32, rnd } from "../transforms.js"
+import { mix, pathDimension, rand32, rnd, structureName } from "../transforms.js"
 import { paramUrl, setParams } from "../params.js"
 import { isRemote, prefetchRemote, fetchRemote, remoteName } from "../remote.js"
 import { applyProcessors, seedFor } from "../processors.js"
@@ -378,14 +378,13 @@ async function apply(refit = true) {
 async function remoteEntry(url) {
   const bytes = await fetchRemote(url)
   const name = remoteName(url)
-  const reader = readerFor(name)
-  const s = await reader(bytes.buffer)
+  const s = await read(bytes)
   return { structure: s, name: structureName(name), rel: url }
 }
 
 async function readVanilla(rel) {
   const w = useWorld()
-  if (w.hasStructure(rel)) return readStructure(await w.readStructureBytes(rel))
+  if (w.hasStructure(rel)) return w.readWorldStructure(rel)
   const zp = structures.zipPathOf(rel)
   if (!zp) {
     const gen = GENERATED[rel]
@@ -393,7 +392,7 @@ async function readVanilla(rel) {
     return (await gen(undefined, { seed: 0 })).structure
   }
   const lib = await loadLibrary()
-  const s = await processVanilla(rel, await readStructure(await lib.readFile(zp, packs.assets.value)))
+  const s = await processVanilla(rel, await read(await lib.readFile(zp, packs.assets.value)))
   // randomised builtins load deterministically at seed 0; Re-roll picks a fresh seed
   return fixBuiltin(rel, s, 0)
 }
@@ -407,7 +406,7 @@ async function processVanilla(rel, s) {
   const lib = await loadLibrary()
   return applyProcessors(s, pe, rnd(seedFor(rel)), async orel => {
     const ozp = structures.zipPathOf(orel)
-    return ozp ? readStructure(await lib.readFile(ozp, packs.assets.value)) : null
+    return ozp ? read(await lib.readFile(ozp, packs.assets.value)) : null
   })
 }
 
@@ -515,7 +514,7 @@ async function featureEntry(rel, seed) {
     const zp = structures.zipPathOf(path)
     if (!zp) return null
     const lib = await loadLibrary()
-    return readStructure(await lib.readFile(zp, packs.assets.value))
+    return read(await lib.readFile(zp, packs.assets.value))
   }
   const s = await generateFeature(rel, json, rnd(useSeed), features.resolvePlaced, loadStruct, { grass: features.grassBiome(rel) }, features.loadProcessors)
   return s.blocks.length ? { structure: s, name: rel, rel, feature: true, seed: useSeed } : null
@@ -682,8 +681,7 @@ function loadFile(file, cacheIt = true) {
     state.error = ""
     const snap = snapshot()
     try {
-      const reader = readerFor(file.name)
-      const s = await reader(await file.arrayBuffer())
+      const s = await read(file)
       setStructureParam(null)
       state.field = null
       loaded = [{ structure: s, name: structureName(file.name), file: true }]

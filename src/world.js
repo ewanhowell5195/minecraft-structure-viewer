@@ -1,5 +1,10 @@
-import { readWorldZip, readRegionFile, switchDimension, readChunk, readEntityChunk, chunkYExtent, unzipEntry, parseZipBlob, REAL_AIR } from "minecraft-block-reader"
-export { readWorldZip, readRegionFile, switchDimension, readChunk, chunkYExtent, unzipEntry, parseZipBlob }
+import { read, REAL_AIR } from "minecraft-block-reader"
+export { read }
+
+export function regionCoords(name) {
+  const m = String(name ?? "").match(/r\.(-?\d+)\.(-?\d+)\.mca$/i)
+  return m ? [Number(m[1]), Number(m[2])] : undefined
+}
 
 const PLANTS = new Set(["poppy", "dandelion", "oxeye_daisy", "azure_bluet", "cornflower", "allium",
   "lilac", "peony", "sunflower", "wither_rose", "wheat", "beetroots", "carrots", "potatoes",
@@ -69,7 +74,7 @@ function manmade(name) {
 }
 
 export async function chunkSurface(world, chunk, yMin = -Infinity, yMax = Infinity) {
-  const nbt = await readChunk(world, chunk)
+  const nbt = await world.chunk(chunk)
   const sections = (nbt.sections ?? [])
     .filter(s => s.block_states?.palette && s.Y * 16 <= yMax && s.Y * 16 + 15 >= yMin)
     .sort((a, b) => b.Y - a.Y)
@@ -250,7 +255,7 @@ export async function buildSelection(world, selected, { yMin = -Infinity, yMax =
   const total = chunks.length * 2
   for (const c of chunks) {
     if (onProgress?.(done++, total) === false) throw new Error("cancelled")
-    const nbt = await readChunk(world, c)
+    const nbt = await world.chunk(c)
     if (!nbt.sections) {
       if (nbt.Level) oldSkipped++
       continue
@@ -303,19 +308,15 @@ export async function buildSelection(world, selected, { yMin = -Infinity, yMax =
     if (blocks.length > cap) { capped = true; break }
     if ((loaded & 15) === 15 && over()) { truncated = true; break }
     loaded++
-    const enbt = await readEntityChunk(world, c)
-    if (enbt) {
-      for (const e of enbt?.Entities ?? []) {
-        const p = e.Pos
-        // the user's y range, not the terrain's: flying entities sit above the
-        // highest block and would vanish under the derived top
-        if (!Array.isArray(p) || p[1] < yMin || p[1] > yMax + 1) continue
-        const [esx, esz] = chunkShift.get(c.cx + "," + c.cz) ?? [0, 0]
-        entities.push({ pos: [p[0] - x0 - esx, p[1] - y0, p[2] - z0 - esz], nbt: plain(e) })
-      }
-    }
-    const nbt = await readChunk(world, c)
+    const nbt = await world.chunk(c)
     const [csx, csz] = chunkShift.get(c.cx + "," + c.cz) ?? [0, 0]
+    for (const e of nbt?.Entities ?? []) {
+      const p = e.Pos
+      // the user's y range, not the terrain's: flying entities sit above the
+      // highest block and would vanish under the derived top
+      if (!Array.isArray(p) || p[1] < yMin || p[1] > yMax + 1) continue
+      entities.push({ pos: [p[0] - x0 - csx, p[1] - y0, p[2] - z0 - csz], nbt: plain(e) })
+    }
     const beMap = new Map()
     for (const be of nbt.block_entities ?? []) {
       if (typeof be?.x !== "number") continue
@@ -351,8 +352,8 @@ export async function buildSelection(world, selected, { yMin = -Infinity, yMax =
       // nbt.js hands the longs over as [lo, hi] uint32 pairs
       const data = bs.data ?? []
       const bits = Math.max(4, 32 - Math.clz32(pal.length - 1))
-      const vpl = Math.floor(64 / bits)
       const maskN = (1 << bits) - 1
+      const vpl = Math.floor(64 / bits)
       const longs = data.length >> 1
       let i = 0
       for (let li = 0; li < longs && i < 4096; li++) {
@@ -404,7 +405,7 @@ export async function buildSelection(world, selected, { yMin = -Infinity, yMax =
 // palette index + 1 (0 = air), laid out y-major then (z*16 + x). No per-block
 // objects; entries materialize later, only for cells that survive filtering
 export async function chunkGrid(world, c, { yMin, yMax }) {
-  const nbt = await readChunk(world, c)
+  const nbt = await world.chunk(c)
   const h = yMax - yMin + 1
   const grid = new Uint16Array(256 * h)
   const palette = []
@@ -442,8 +443,8 @@ export async function chunkGrid(world, c, { yMin, yMax }) {
       }
       const data = bs.data ?? []
       const bits = Math.max(4, 32 - Math.clz32(pal.length - 1))
-      const vpl = Math.floor(64 / bits)
       const maskN = (1 << bits) - 1
+      const vpl = Math.floor(64 / bits)
       const longs = data.length >> 1
       let i = 0
       for (let li = 0; li < longs && i < 4096; li++) {

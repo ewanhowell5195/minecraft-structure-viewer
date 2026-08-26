@@ -5,7 +5,7 @@ import { useComparePacks } from "./useComparePacks.js"
 import { useStructures, STRUCT_RE } from "./useStructures.js"
 import { numeric } from "../transforms.js"
 import { yieldTask } from "../yield.js"
-import { readStructure } from "minecraft-block-reader"
+import { read } from "minecraft-block-reader"
 import { sameStructure } from "../structdiff.js"
 
 // which files the comparison version gained, dropped and changed. equal bytes
@@ -52,7 +52,7 @@ async function computeChanged(lib, token, both) {
         comparePacks.readStructureBytes(rel)
       ])
       if (!a || !b || bytesEqual(a, b)) continue
-      const [sa, sb] = await Promise.all([readStructure(a), readStructure(b)])
+      const [sa, sb] = await Promise.all([read(a), read(b)])
       if (!sameStructure(sa, sb)) out.push(rel)
     } catch {
       out.push(rel)

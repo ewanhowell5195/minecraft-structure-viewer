@@ -4,7 +4,7 @@ import { usePacks } from "./usePacks.js"
 import { numeric, strip, rnd, normStatesDeep } from "../transforms.js"
 import { matchIndex } from "../advfilter.js"
 import { generateFeature } from "../features/index.js"
-import { readStructure } from "minecraft-block-reader"
+import { read } from "minecraft-block-reader"
 import { useStructures } from "./useStructures.js"
 import { yieldTask } from "../yield.js"
 
@@ -86,7 +86,7 @@ async function loadStruct(ref) {
   const zp = structures.zipPathOf(path)
   if (!zp) return null
   const lib = await loadLibrary()
-  return readStructure(await lib.readFile(zp, packs.assets.value))
+  return read(await lib.readFile(zp, packs.assets.value))
 }
 
 // scan every feature once, building block -> features; cached until assets

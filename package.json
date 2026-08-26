@@ -9,7 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "minecraft-block-reader": "file:../../Javascript/Modules/minecraft-block-reader",
+    "minecraft-block-reader": "^1.1.0",
     "three": "0.162.0",
     "vue": "^3.5.13"
   },

@@ -8,7 +8,7 @@ import { useCompare } from "./composables/useCompare.js"
 import { useComparePacks } from "./composables/useComparePacks.js"
 import { setHighlights } from "./composables/useHighlight.js"
 import { useSky } from "./composables/useSky.js"
-import { readStructure, readerFor } from "minecraft-block-reader"
+import { read } from "minecraft-block-reader"
 
 const SOURCE = "structure-viewer"
 const AIR = /(^|:)(air|cave_air|void_air)$/
@@ -84,8 +84,7 @@ function jsonSafe(value) {
 async function readFileStructure(data, name = "structure.nbt") {
   const bytes = await toBytes(data)
   if (!bytes) throw new Error("getBlocks needs structure bytes in data")
-  const reader = readerFor(name)
-  return reader(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength))
+  return read(bytes)
 }
 
 function toFile(data, name = "structure.nbt") {

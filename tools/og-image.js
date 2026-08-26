@@ -13,7 +13,7 @@ import * as THREE from "three"
 import sharp from "sharp"
 import { readZip, unzipEntry } from "./builtin/zip.js"
 import { prepareVersion, prepareClient } from "./builtin/common.js"
-import { readStructure } from "minecraft-block-reader"
+import { read } from "minecraft-block-reader"
 import { runJigsaw } from "../src/jigsaw.js"
 import { mix, rnd } from "../src/transforms.js"
 import { generateFeature } from "../src/features/index.js"
@@ -58,7 +58,7 @@ const td = new TextDecoder()
 const nsPath = ref => ref.includes(":") ? ref.replace(":", "/") : "minecraft/" + ref
 const loadStruct = async ref => {
   const e = jarZip.get(`data/${nsPath(ref).replace("/", "/structure/")}.nbt`)
-  return e ? readStructure(Buffer.from(unzipEntry(e))) : null
+  return e ? read(Buffer.from(unzipEntry(e))) : null
 }
 const loadPool = async ref => {
   const e = jarZip.get(`data/${nsPath(ref).replace("/", "/worldgen/template_pool/")}.json`)

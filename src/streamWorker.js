@@ -3,7 +3,7 @@
 // stealing main-thread frames. The worker adopts the main thread's prestitched
 // atlas layout so packed tiles reference fixed atlas coordinates; runtime
 // textures not in the layout get space requested from main as they appear.
-import { readWorldZip, switchDimension, chunkGrid, mergeTilePalettes, assembleTile } from "./world.js"
+import { read, regionCoords, chunkGrid, mergeTilePalettes, assembleTile } from "./world.js"
 import { loadLibrary } from "./lib.js"
 import { OPENABLE, packDoorTemplates } from "./composables/useStreamDoors.js"
 import { softFor, solidFor, templateBoxes, DYNAMIC_BLOCKS } from "./streamShared.js"
@@ -128,8 +128,7 @@ self.onmessage = async e => {
   const m = e.data
   try {
     if (m.type === "init") {
-      world = await readWorldZip(m.file)
-      if (m.dimension && m.dimension !== world.dimension) world = await switchDimension(world, m.dimension)
+      world = await read(m.file, { region: regionCoords(m.file.name), dimension: m.dimension || undefined })
       range = { yMin: m.yMin, yMax: m.yMax }
       chunkMap = new Map(world.chunks.map(c => [c.cx + "," + c.cz, c]))
       self.postMessage({ type: "ready", id: m.id })

@@ -4,7 +4,7 @@ import { usePacks } from "./usePacks.js"
 import { PROC } from "../proc.js"
 import { GENERATED } from "../generators/builtin.js"
 import { numeric, strip, normStatesDeep } from "../transforms.js"
-import { readStructure } from "minecraft-block-reader"
+import { read } from "minecraft-block-reader"
 import { lootTableItems, readTrialSpawnerConfig } from "../loot.js"
 import { matchIndex } from "../advfilter.js"
 import { buildProcessorIndex } from "../processors.js"
@@ -198,7 +198,7 @@ async function computeAdvIndex() {
     for (const [name, zp] of structPath) {
       if (++n % 20 === 0) await yieldTask()
       let s
-      try { s = await readStructure(await lib.readFile(zp, assets)) } catch { continue }
+      try { s = await read(await lib.readFile(zp, assets)) } catch { continue }
       for (const e of s.palette) if (e?.id) add(bIdx, strip(e.id), name)
       for (const e of s.entities) if (typeof e.nbt?.id === "string") add(eIdx, strip(e.nbt.id), name)
       for (const b of s.blocks) {
