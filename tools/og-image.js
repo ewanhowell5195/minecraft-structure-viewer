@@ -1,4 +1,4 @@
-// Renders public/og.png (1200x630): a generated village in rolling grassy
+// Renders public/cover.png (1200x630): a generated village in rolling grassy
 // terrain with trees, isometric, cropped so the scene fills the whole
 // frame. Static output: edge runtimes can't run the native gl renderer, so
 // this runs locally and the image is committed.
@@ -15,7 +15,7 @@ import { readZip, unzipEntry } from "./builtin/zip.js"
 import { prepareVersion, prepareClient } from "./builtin/common.js"
 import { read } from "minecraft-block-reader"
 import { runJigsaw } from "../src/jigsaw.js"
-import { mix, rnd } from "../src/transforms.js"
+import { mix, rnd, normStatesDeep } from "../src/transforms.js"
 import { generateFeature } from "../src/features/index.js"
 
 const SEED = 4
@@ -52,7 +52,7 @@ log("version:", id, "seed:", SEED)
 
 const jar = fs.readFileSync(await prepareClient(verDir, id, log))
 const jarZip = readZip(jar)
-const assets = await lib.prepareAssets([jar], { cache: true })
+const assets = await lib.prepareAssets([jar], { cache: true, defaults: "game" })
 const td = new TextDecoder()
 
 const nsPath = ref => ref.includes(":") ? ref.replace(":", "/") : "minecraft/" + ref
@@ -64,7 +64,7 @@ const loadPool = async ref => {
   const e = jarZip.get(`data/${nsPath(ref).replace("/", "/worldgen/template_pool/")}.json`)
   return e ? JSON.parse(td.decode(unzipEntry(e))) : null
 }
-const featureJson = rel => JSON.parse(fs.readFileSync(path.join(root, "bundled/features/data", rel.replace("/", "/worldgen/feature/") + ".json")))
+const featureJson = rel => normStatesDeep(JSON.parse(fs.readFileSync(path.join(root, "bundled/features/data", rel.replace("/", "/worldgen/feature/") + ".json"))))
 
 log("generating village…")
 const start = await loadStruct(START)
@@ -158,7 +158,7 @@ const grassTop = (x, z) => {
 }
 
 // trees, thicker toward the edges, kept off the buildings and each other
-const trand = rnd(mix(SEED, 777))
+const trand = rnd(mix(SEED, 780))
 const treeSpots = []
 let planted = 0
 for (let attempt = 0; attempt < 9000 && planted < TREE_COUNT; attempt++) {
@@ -331,8 +331,10 @@ scene.add(opt.group)
 log(`${opt.drawCalls} draw calls, ${opt.tris} tris`)
 
 // isometric from the north-west (fronts face north), 30 degree pitch,
-// framed on the village so the terrain runs past every frame edge
-const center = new THREE.Vector3(vcx * 16, (groundY + village.size[1] / 2) * 16, vcz * 16)
+// framed on the village so the terrain runs past every frame edge. the z
+// centre keys off the start fountain rather than the bounding box: pool
+// re-rolls breathe the box, which slides the village along the frame diagonal
+const center = new THREE.Vector3(vcx * 16, (groundY + village.size[1] / 2) * 16, (village.anchor[2] + 1) * 16)
 // nudged up a little so the village band sits lower in the frame
 center.y += v * 0.45
 const dist = EXT * 16 * 3
@@ -367,5 +369,5 @@ const overlay = Buffer.from(`<svg width="1200" height="630" xmlns="http://www.w3
     <text x="1152" y="588" font-size="36" fill="#d6d6de">Minecraft structures &amp; worldgen in 3D</text>
   </g>
 </svg>`)
-await sharp(render).resize(1200, 630).composite([{ input: overlay }]).png().toFile(path.join(root, "public/og.png"))
-log("wrote public/og.png")
+await sharp(render).resize(1200, 630).composite([{ input: overlay }]).png().toFile(path.join(root, "public/cover.png"))
+log("wrote public/cover.png")
