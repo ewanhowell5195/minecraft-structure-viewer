@@ -1,4 +1,5 @@
 import { reactive, readonly, watch } from "vue"
+import { minimal } from "../minimal.js"
 import * as THREE from "three"
 import { isInspectable } from "../loot.js"
 import { useBuild } from "./useBuild.js"
@@ -344,7 +345,7 @@ async function enterFiles() {
     dropOverride()
     await settled()
     const { useStructure } = await import("./useStructure.js")
-    await useStructure().loadFile(leftFile, !!files.main)
+    await useStructure().loadFile(leftFile, !!files.main && !minimal)
     if (!build.getRoot()) return
     const rightStruct = await read(rightFile)
     const both = files.main && files.panel && files.main.name !== files.panel.name
@@ -521,5 +522,5 @@ import("./useWorld.js").then(({ useWorld }) => {
 const versionArmed = () => comparePacks.state.armed
 
 export function useCompare() {
-  return { state: readonly(state), stateMut: state, enter, enterVersion, openVersion, setMainFile, setPanelFile, setFiles, clearFile, fileName, exit, leave, stop, versionArmed, busy: entering, leftRayHit }
+  return { state: readonly(state), stateMut: state, enter, enterVersion, openVersion, setMainFile, setPanelFile, setFiles, clearFile, fileName, exit, leave, stop, versionArmed, busy: entering, leftRayHit, getFiles: () => ({ ...files }) }
 }

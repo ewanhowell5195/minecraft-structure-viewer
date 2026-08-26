@@ -14,7 +14,7 @@ import { useFullscreen } from "./composables/useFullscreen.js"
 import { useWalk } from "./composables/useWalk.js"
 import { useStream } from "./composables/useStream.js"
 import { useWorld } from "./composables/useWorld.js"
-import { restoreFile } from "./userCache.js"
+import { restoreFile, cacheFile, uncache } from "./userCache.js"
 import { useContainer } from "./composables/useContainer.js"
 import { useSlicers } from "./composables/useSlicers.js"
 import { tab } from "./composables/useTab.js"
@@ -92,6 +92,39 @@ function refreshMainSiteUrl() {
   mainSiteUrl.value = u.href
 }
 refreshMainSiteUrl()
+
+// opening the full site hands over whatever the embed is showing: files the
+// url can't express (embed api loads, drag-drops) are written to the user
+// cache first, and the tab is pre-opened so it can navigate once the writes
+// land. cross-site embeds have partitioned storage, where this degrades to
+// the url alone
+async function openFull() {
+  const win = window.open("about:blank", "_blank")
+  refreshMainSiteUrl()
+  const u = manual ? new URL(homeUrl) : new URL(mainSiteUrl.value)
+  if (manual) {
+    const params = new URLSearchParams(location.search)
+    for (const k of ["wy", "wsel", "wloaded", "wdim"]) {
+      const v = params.get(k)
+      if (v !== null) u.searchParams.set(k, v)
+    }
+  }
+  try {
+    const files = useCompare().getFiles()
+    const structFile = files.main ?? useStructure().currentFile()
+    const worldFile = worldState.active ? useWorld().getWorldFile() : null
+    if (files.panel) {
+      const base = useComparePacks().state.baseId
+      if (base && !u.searchParams.get("cversion")) u.searchParams.set("cversion", base)
+    }
+    await Promise.all([
+      structFile ? cacheFile("structure", structFile) : uncache("structure"),
+      worldFile ? cacheFile("world", worldFile) : uncache("world"),
+      files.panel ? cacheFile("compare", files.panel) : uncache("compare")
+    ])
+  } catch {}
+  win.location = u.href
+}
 
 const { supported: fullscreenSupported, active: isFullscreen, toggle: toggleFullscreen } = useFullscreen()
 
@@ -291,8 +324,9 @@ onMounted(async () => {
           notFound.value = ""
           await useCompare().openVersion(requested[0])
         }
-        // a restored file has no path to look up, so it is fed in as the upload
-        if (structureFile) await useCompare().setMainFile(structureFile)
+        // restored files have no path to look up, so they are fed in as uploads
+        const panelFile = await restoreFile("compare")
+        if (structureFile || panelFile) await useCompare().setFiles(structureFile, panelFile)
       } else if (against && rels.length === 1 && structures.has(against)) {
         useSlicers().restoreUrlSlice()
         await useCompare().enter(against)
@@ -374,7 +408,7 @@ onMounted(async () => {
       <button v-if="minimal && minimalReady && fullscreenSupported" class="fs-btn" :title="isFullscreen ? 'Exit fullscreen' : 'Fullscreen'" @click="toggleFullscreen()">
         <span class="material-symbols-outlined">{{ isFullscreen ? "fullscreen_exit" : "fullscreen" }}</span>
       </button>
-      <a v-if="minimal && minimalReady" class="open-full" :href="mainSiteUrl" target="_blank" rel="noopener" title="Open in Structure Viewer" @pointerdown="refreshMainSiteUrl">
+      <a v-if="minimal && minimalReady" class="open-full" title="Open in Structure Viewer" @click.prevent="openFull">
         <span class="material-symbols-outlined">open_in_new</span>
       </a>
       <Modal v-if="notFound && !minimal" :width="380" :z="250" class="nf" @close="notFound = ''">
@@ -560,6 +594,8 @@ onMounted(async () => {
   padding: 6px;
   color: var(--text-dim);
   text-decoration: none;
+  cursor: pointer;
+  user-select: none;
 }
 
 .open-full:hover { color: var(--text); }

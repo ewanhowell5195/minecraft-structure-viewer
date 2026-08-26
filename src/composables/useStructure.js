@@ -675,6 +675,8 @@ function loadDebug(kind) {
   })
 }
 
+let fileObj = null
+
 function loadFile(file, cacheIt = true) {
   if (!file || locked.value) return
   return withLock(async () => {
@@ -686,6 +688,7 @@ function loadFile(file, cacheIt = true) {
       state.field = null
       loaded = [{ structure: s, name: structureName(file.name), file: true }]
       if (await apply() === false) return restore(snap)
+      fileObj = file
       if (cacheIt) {
         uncache("world")
         cacheFile("structure", file)
@@ -741,7 +744,7 @@ async function onAssetsSwapped() {
 packs.setSwapHandler(onAssetsSwapped)
 
 export function useStructure() {
-  return { state: readonly(state), structure, apply, loadVanilla, loadDefault, loadMany, loadFile, closeFile, loadObject, loadDebug, loadFeature, loadFeatures, loadFeatureField, clickFeature, cancelReading, setReading, readCancelled, setQuietLoads, processVanilla }
+  return { state: readonly(state), structure, apply, loadVanilla, loadDefault, loadMany, loadFile, closeFile, loadObject, loadDebug, loadFeature, loadFeatures, loadFeatureField, clickFeature, cancelReading, setReading, readCancelled, setQuietLoads, processVanilla, currentFile: () => loaded.some(e => e.file) ? fileObj : null }
 }
 
 
