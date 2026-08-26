@@ -280,6 +280,9 @@ onMounted(async () => {
   const stop = watch(() => structures.state.names.length, async n => {
     if (!n || manual) return
     stop()
+    if (locked.value) await new Promise(resolve => {
+      const unwatch = watch(locked, v => { if (!v) { unwatch(); resolve() } })
+    })
     beginInit()
     try {
       // the world restores first so its structures resolve for the param filter below
