@@ -1,4 +1,6 @@
 import { reactive, readonly, watch } from "vue"
+import * as THREE from "three"
+import { isInspectable } from "../loot.js"
 import { useBuild } from "./useBuild.js"
 import { useScene } from "./useScene.js"
 import { usePacks } from "./usePacks.js"
@@ -8,9 +10,10 @@ import { useComparePacks } from "./useComparePacks.js"
 import { useSky } from "./useSky.js"
 import { useLock } from "./useLock.js"
 import { setOverlay } from "./useHighlight.js"
+import { useContainer } from "./useContainer.js"
 import { setParams } from "../params.js"
-import { leafName as leaf, pathDimension } from "../transforms.js"
-import { readStructure, readStructureFile, structureName } from "minecraft-block-reader"
+import { leafName as leaf, pathDimension, structureName } from "../transforms.js"
+import { read } from "minecraft-block-reader"
 import { cellContents } from "../structdiff.js"
 
 const build = useBuild()
@@ -52,6 +55,10 @@ let leftGrid = null
 let leftRel = "", rightRel = ""
 const flags = reactive({ entering: false })
 const entering = () => flags.entering
+// builds started anywhere inside a compare transition keep their structure
+// blocks: the toggle to unhide them is unreachable in a split
+let compareHold = 0
+build.setCompareSource(() => state.on || compareHold > 0)
 // the structure on screen came from the comparison version alone
 let onlyRel = ""
 // with one side missing, the same file renders on both, comparing just the assets
@@ -145,6 +152,39 @@ function align() {
   slicers.setSpan(min, min.map((v, i) => Math.max(1, Math.round((max[i] - v) / 16))), [stash.group, root])
 }
 
+// clicking the left half inspects the left structure, so it gets its own cell
+// index and a march to match the main one
+let leftIdx = null
+const _leftBox = new THREE.Box3()
+
+function leftRayHit(ox, oy, oz, dx, dy, dz) {
+  if (!state.on || !stash || !leftIdx) return null
+  const s = stash.structure, p = stash.group.position
+  let last = ""
+  for (let t = 0; t <= 4000; t += 2) {
+    const bx = Math.round((ox + dx * t - p.x) / 16)
+    const by = Math.round((oy + dy * t - p.y) / 16)
+    const bz = Math.round((oz + dz * t - p.z) / 16)
+    const key = bx + "," + by + "," + bz
+    if (key === last) continue
+    last = key
+    const b = leftIdx.get(key)
+    if (!b) continue
+    const e = s.palette[b.state]
+    if (!e?.id || /(^|:)(air|cave_air|void_air)$/.test(e.id)) continue
+    if (!build.state.technical && /(^|:)(barrier|light|structure_void)$/.test(e.id)) continue
+    const cx = bx * 16 + p.x - 8, cy = by * 16 + p.y - 8, cz = bz * 16 + p.z - 8
+    _leftBox.min.set(cx, cy, cz)
+    _leftBox.max.set(cx + 16, cy + 16, cz + 16)
+    const blk = { ...b, entry: e }
+    if (isInspectable(e.id) || b.nbt?.LootTable || /(^|[:_])spawner$/.test(e.id)) return { container: blk, box: _leftBox }
+    return { block: blk, box: _leftBox }
+  }
+  return null
+}
+
+useContainer().setComparePick({ state, leftRayHit })
+
 function wireSplit(mode, leftLabel, rightLabel) {
   state.mode = mode
   state.left = leftLabel
@@ -161,6 +201,8 @@ function wireSplit(mode, leftLabel, rightLabel) {
     split: () => state.split,
     view: () => state.view
   })
+  leftIdx = new Map()
+  for (const b of stash.structure.blocks) leftIdx.set(b.pos[0] + "," + b.pos[1] + "," + b.pos[2], b)
   align()
   computeDiff()
   drawDiff()
@@ -172,8 +214,12 @@ async function enter(rel) {
   const from = structures.state.selected[0]
   if (!from || !build.getRoot() || from === rel) return
   flags.entering = true
+  compareHold++
   try {
     const { useStructure } = await import("./useStructure.js")
+    // the on-screen build becomes the left half as-is, so put its structure
+    // blocks back first
+    if (build.state.hideStructureBlocks && build.state.hasStructureBlocks && !build.state.manual) await build.build(undefined, false)
     const grid = scene.takeGrid()
     dropOverride()
     const cut = snapCut()
@@ -196,6 +242,7 @@ async function enter(rel) {
     wireSplit("structs", leaf(from), leaf(rel))
   } finally {
     flags.entering = false
+    compareHold--
   }
 }
 
@@ -221,6 +268,7 @@ async function buildRightSplit(rightStruct, leftLabel, rightLabel) {
 async function enterVersion(rel) {
   if (entering() || build.state.building || !comparePacks.state.armed) return
   flags.entering = true
+  compareHold++
   try {
     setFile("main", null)
     setFile("panel", null)
@@ -233,7 +281,7 @@ async function enterVersion(rel) {
     if (!build.getRoot() || !comparePacks.has(rel)) return
     const bytes = await comparePacks.readStructureBytes(rel)
     if (!bytes) return
-    const rightStruct = await useStructure().processVanilla(rel, await readStructure(bytes))
+    const rightStruct = await useStructure().processVanilla(rel, await read(bytes))
     rightStruct.dimension ||= pathDimension(rel)
     if (await buildRightSplit(rightStruct, packs.state.baseId || "current", comparePacks.state.baseId)) {
       leftRel = rightRel = rel
@@ -241,6 +289,7 @@ async function enterVersion(rel) {
     }
   } finally {
     flags.entering = false
+    compareHold--
   }
 }
 
@@ -255,7 +304,7 @@ async function enterOnly(rel) {
     await settled()
     const bytes = await comparePacks.readStructureBytes(rel)
     if (!bytes) return
-    const structure = await readStructure(bytes)
+    const structure = await read(bytes)
     structure.dimension ||= pathDimension(rel)
     const { useStructure } = await import("./useStructure.js")
     build.setAssetsOverride(comparePacks.assets.value)
@@ -288,6 +337,7 @@ async function enterFiles() {
   const rightFile = files.panel ?? files.main
   if (!leftFile) return
   flags.entering = true
+  compareHold++
   try {
     const cut = snapCut()
     exit()
@@ -296,7 +346,7 @@ async function enterFiles() {
     const { useStructure } = await import("./useStructure.js")
     await useStructure().loadFile(leftFile, !!files.main)
     if (!build.getRoot()) return
-    const rightStruct = await readStructureFile(rightFile)
+    const rightStruct = await read(rightFile)
     const both = files.main && files.panel && files.main.name !== files.panel.name
     const leftLabel = both ? `${packs.state.baseId} · ${structureName(leftFile.name)}` : packs.state.baseId || "current"
     const rightLabel = both ? `${comparePacks.state.baseId} · ${structureName(rightFile.name)}` : comparePacks.state.baseId
@@ -306,6 +356,7 @@ async function enterFiles() {
     }
   } finally {
     flags.entering = false
+    compareHold--
   }
 }
 
@@ -365,6 +416,7 @@ function exit() {
   scene.setGridOffset(0)
   stash = null
   leftGrid = null
+  leftIdx = null
   state.on = false
   state.mode = ""
   state.left = ""
@@ -387,7 +439,8 @@ function exit() {
 async function leave() {
   setFile("main", null)
   setFile("panel", null)
-  const rebuild = comparePacks.state.armed && (state.mode === "versions" || !!onlyRel)
+  const restrip = state.on && build.state.hideStructureBlocks && build.state.hasStructureBlocks && !build.state.manual
+  const rebuild = (comparePacks.state.armed && (state.mode === "versions" || !!onlyRel)) || restrip
   exit()
   if (rebuild) {
     const { useStructure } = await import("./useStructure.js")
@@ -408,6 +461,7 @@ async function refresh() {
   const at = state.split
   const { useStructure } = await import("./useStructure.js")
   useStructure().setQuietLoads(true)
+  compareHold++
   try {
     if (state.mode === "versions") {
       if (files.main || files.panel) await enterFiles()
@@ -422,6 +476,7 @@ async function refresh() {
     }
   } finally {
     useStructure().setQuietLoads(false)
+    compareHold--
   }
   if (state.on) state.split = at
 }
@@ -466,5 +521,5 @@ import("./useWorld.js").then(({ useWorld }) => {
 const versionArmed = () => comparePacks.state.armed
 
 export function useCompare() {
-  return { state: readonly(state), stateMut: state, enter, enterVersion, openVersion, setMainFile, setPanelFile, setFiles, clearFile, fileName, exit, leave, stop, versionArmed, busy: entering }
+  return { state: readonly(state), stateMut: state, enter, enterVersion, openVersion, setMainFile, setPanelFile, setFiles, clearFile, fileName, exit, leave, stop, versionArmed, busy: entering, leftRayHit }
 }

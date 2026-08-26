@@ -737,9 +737,24 @@ function screenRay(e, canvas) {
   return _ray.ray
 }
 
+// registered by useCompare (which imports this module, never the reverse):
+// in a split, the half under the cursor is the one being asked about
+let comparePick = null
+const setComparePick = p => { comparePick = p }
+
+function compareSideLeft(e, canvas) {
+  const cmp = comparePick?.state
+  if (!cmp?.on) return false
+  if (cmp.view === "before") return true
+  if (cmp.view === "after") return false
+  const r = canvas.getBoundingClientRect()
+  return (e.clientX - r.left) / r.width < cmp.split
+}
+
 function underRay(e, canvas) {
   const { origin: o, direction: d } = screenRay(e, canvas)
   if (streamApi.state.session) return streamApi.provider.pick(o.x, o.y, o.z, d.x, d.y, d.z)
+  if (compareSideLeft(e, canvas)) return comparePick.leftRayHit(o.x, o.y, o.z, d.x, d.y, d.z)
   if (!buildApi.getRoot()) return null
   return buildApi.rayHit(o.x, o.y, o.z, d.x, d.y, d.z, 4000)
 }
@@ -838,5 +853,5 @@ function initPicking(canvas) {
 }
 
 export function useContainer() {
-  return { state: readonly(state), open, openEntity, openEntityMarker, openItem, itemBack, close, reroll, addRoll, setTab, ensureOdds, openFallbackPool, poolBack, initPicking, refreshHover }
+  return { state: readonly(state), open, openEntity, openEntityMarker, openItem, itemBack, close, reroll, addRoll, setTab, ensureOdds, openFallbackPool, poolBack, initPicking, refreshHover, setComparePick }
 }

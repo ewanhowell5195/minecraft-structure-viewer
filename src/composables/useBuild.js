@@ -1460,6 +1460,9 @@ const setAssetsOverride = v => { assetsOverride = v }
 let lightDimSource = null
 const setLightDimSource = fn => { lightDimSource = fn }
 
+let compareSource = null
+const setCompareSource = fn => { compareSource = fn }
+
 // true when a build landed, false when cancelled
 async function build(structure = source, refit = true, slice = false, fresh = false) {
   const assets = assetsOverride ?? packs.assets.value
@@ -1485,9 +1488,9 @@ async function build(structure = source, refit = true, slice = false, fresh = fa
       if (e?.id && (JIGSAW.test(e.id) || SB.test(e.id))) techStates.add(i)
     })
     state.hasStructureBlocks = techStates.size > 0 && structure.blocks.some(b => techStates.has(b.state))
-    // no toggle to reach in minimal or on a manual load, so the structure is
-    // shown as handed over rather than silently stripped
-    if (state.hideStructureBlocks && !minimal && !state.manual) structure = stripStructureBlocks(structure)
+    // no toggle to reach in minimal, on a manual load, or while comparing, so
+    // the structure is shown as handed over rather than silently stripped
+    if (state.hideStructureBlocks && !minimal && !state.manual && !compareSource?.()) structure = stripStructureBlocks(structure)
     // sliced blocks are dropped for real (solid cut faces); size and position stay the full structure's
     const unsliced = structure
     if (slice) structure = useSlicers().sliceStructure(structure)
@@ -2041,7 +2044,7 @@ async function clearMapArt() {
 export function useBuild() {
   return {
     state, current, build, cancel, answerWarn, setRestoreGate, restoreGateCheck, getRoot, getTemplates, getNonSolid, showFull, restoreFull,
-    stashNextBuild, takeStash, disposeStash, setAssetsOverride, setLightDimSource,
+    stashNextBuild, takeStash, disposeStash, setAssetsOverride, setLightDimSource, setCompareSource,
     blockAt, blockEntryAt, boxForBlock, boxForEntity, boxForEntityData, markerUnderRay, rayHit, interact, aimDoor, blockBoxes, ringBell, exportCurrent, clearMapArt
   }
 }
