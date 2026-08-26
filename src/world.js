@@ -75,6 +75,8 @@ function manmade(name) {
 
 export async function chunkSurface(world, chunk, yMin = -Infinity, yMax = Infinity) {
   const nbt = await world.chunk(chunk)
+  // pre-20w17a chunks pack indices across long boundaries
+  const spanning = nbt.DataVersion < 2527
   const sections = (nbt.sections ?? [])
     .filter(s => s.block_states?.palette && s.Y * 16 <= yMax && s.Y * 16 + 15 >= yMin)
     .sort((a, b) => b.Y - a.Y)
@@ -105,11 +107,18 @@ export async function chunkSurface(world, chunk, yMin = -Infinity, yMax = Infini
         let pi = 0
         if (u32) {
           const i = (y << 8) | col
-          const li = (i / vpl) | 0
-          const bit = (i - li * vpl) * bits
-          pi = bit + bits <= 32 ? (u32[li * 2] >>> bit) & mask
-            : bit >= 32 ? (u32[li * 2 + 1] >>> (bit - 32)) & mask
-            : ((u32[li * 2] >>> bit) | (u32[li * 2 + 1] << (32 - bit))) & mask
+          if (spanning) {
+            const bit = i * bits
+            const w = bit >>> 5, off = bit & 31
+            pi = off + bits <= 32 ? (u32[w] >>> off) & mask
+              : ((u32[w] >>> off) | (u32[w + 1] << (32 - off))) & mask
+          } else {
+            const li = (i / vpl) | 0
+            const bit = (i - li * vpl) * bits
+            pi = bit + bits <= 32 ? (u32[li * 2] >>> bit) & mask
+              : bit >= 32 ? (u32[li * 2 + 1] >>> (bit - 32)) & mask
+              : ((u32[li * 2] >>> bit) | (u32[li * 2 + 1] << (32 - bit))) & mask
+          }
         }
         if (airMask[pi]) continue
         cols[col] = codes[pi]
@@ -269,7 +278,7 @@ export async function buildSelection(world, selected, { yMin = -Infinity, yMax =
   }
   if (minSec === Infinity) {
     if (oldSkipped) {
-      const err = new Error("this world's chunks are too old (1.18+ only)")
+      const err = new Error("this world's chunks are too old (1.13+ only)")
       err.oldChunks = true
       throw err
     }
@@ -348,11 +357,23 @@ export async function buildSelection(world, selected, { yMin = -Infinity, yMax =
         for (let i = 0; i < 4096; i++) put(i, map[0])
         continue
       }
-      // indices are bit-packed low-to-high without spanning longs (1.16+);
-      // nbt.js hands the longs over as [lo, hi] uint32 pairs
+      // indices are bit-packed low-to-high, spanning long boundaries before
+      // 20w17a; nbt.js hands the longs over as [lo, hi] uint32 pairs
       const data = bs.data ?? []
       const bits = Math.max(4, 32 - Math.clz32(pal.length - 1))
       const maskN = (1 << bits) - 1
+      if (nbt.DataVersion < 2527) {
+        let w = 0, off = 0
+        for (let i = 0; i < 4096; i++) {
+          let v = data[w] >>> off
+          if (off + bits > 32) v |= data[w + 1] << (32 - off)
+          off += bits
+          if (off >= 32) { w += off >>> 5; off &= 31 }
+          const st = map[v & maskN]
+          if (st !== -1 && st !== undefined) put(i, st)
+        }
+        continue
+      }
       const vpl = Math.floor(64 / bits)
       const longs = data.length >> 1
       let i = 0
@@ -444,6 +465,22 @@ export async function chunkGrid(world, c, { yMin, yMax }) {
       const data = bs.data ?? []
       const bits = Math.max(4, 32 - Math.clz32(pal.length - 1))
       const maskN = (1 << bits) - 1
+      if (nbt.DataVersion < 2527) {
+        let w = 0, off = 0
+        for (let i = 0; i < 4096; i++) {
+          let v = data[w] >>> off
+          if (off + bits > 32) v |= data[w + 1] << (32 - off)
+          off += bits
+          if (off >= 32) { w += off >>> 5; off &= 31 }
+          const gi = map[v & maskN]
+          if (!gi) continue
+          const y = i >> 8
+          if (y < yLo || y > yHi) continue
+          grid[(sy + y - yMin) * 256 + (i & 255)] = gi
+          any = true
+        }
+        continue
+      }
       const vpl = Math.floor(64 / bits)
       const longs = data.length >> 1
       let i = 0
