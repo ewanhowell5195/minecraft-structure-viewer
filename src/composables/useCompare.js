@@ -512,6 +512,8 @@ async function leave() {
 
 async function stop() {
   await leave()
+  for (const kind of Object.keys(HL)) state.show[kind] = false
+  syncHlUrl()
   if (comparePacks.state.armed) await comparePacks.deactivate()
 }
 
