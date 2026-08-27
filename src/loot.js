@@ -1,9 +1,12 @@
 import { loadLibrary } from "./lib.js"
 import { usePacks } from "./composables/usePacks.js"
+import { legacyItemId } from "./legacyItems.js"
 
 const packs = usePacks()
 
 const strip = s => typeof s === "string" ? s.replace(/^minecraft:/, "") : s
+
+const mapId = (id, data) => legacyItemId(id, data, packs.state.baseId)
 
 export const isContainer = name =>
   /(^|_)(chest|barrel|shulker_box|dispenser|dropper|hopper|shelf|furnace|smoker|brewing_stand|crafter|campfire|chiseled_bookshelf|jukebox)$/
@@ -31,8 +34,8 @@ async function readLootTableRaw(id) {
   const lib = await loadLibrary()
   const assets = packs.assets.value
   const [ns, path] = id.includes(":") ? id.split(":") : ["minecraft", id]
-  for (const dir of ["loot_table", "loot_tables"]) {
-    const buf = await lib.readFile(`data/${ns}/${dir}/${path}.json`, assets)
+  for (const dir of [`data/${ns}/loot_table`, `data/${ns}/loot_tables`, `assets/${ns}/loot_tables`]) {
+    const buf = await lib.readFile(`${dir}/${path}.json`, assets)
     if (buf) return JSON.parse(new TextDecoder().decode(buf))
   }
   return null
@@ -78,6 +81,7 @@ function applyFunctions(fns, stack) {
     const t = strip(f.function || "")
     if (!passes(f.conditions)) continue
     if (t === "set_count") stack.count = Math.max(1, Math.round(rollNum(f.count, true)))
+    else if (t === "set_data") stack.id = mapId(stack.raw ?? stack.id, Math.round(rollNum(f.data, true)))
     else if (t === "enchant_randomly" || t === "enchant_with_levels") stack.enchanted = true
     else if (t === "set_potion") stack.components = { "minecraft:potion_contents": { potion: f.id } }
   }
@@ -86,9 +90,10 @@ function applyFunctions(fns, stack) {
 async function applyEntry(entry, pool, out) {
   const type = strip(entry.type || "item")
   if (type === "item") {
-    const stack = { id: entry.name, count: 1 }
+    const stack = { id: mapId(entry.name), raw: entry.name, count: 1 }
     applyFunctions(entry.functions, stack)
     applyFunctions(pool?.functions, stack)
+    delete stack.raw
     out.push(stack)
   } else if (type === "loot_table") {
     const t = typeof entry.value === "object" ? entry.value : await readLootTable(entry.value ?? entry.name)
@@ -144,7 +149,7 @@ export async function lootTableItems(table, out = new Set(), seen = new Set()) {
 async function entryItems(entry, out, seen) {
   const type = strip(entry.type || "item")
   if (type === "item") {
-    if (typeof entry.name === "string") out.add(strip(entry.name))
+    if (typeof entry.name === "string") out.add(strip(mapId(entry.name)))
   } else if (type === "loot_table") {
     const ref = entry.value ?? entry.name
     if (typeof ref === "object") await lootTableItems(ref, out, seen)
@@ -215,6 +220,7 @@ export function describeTable(table) {
         const type = strip(e.type || "item")
         const fns = e.functions ?? []
         const sc = fns.find(f => strip(f.function) === "set_count")
+        const sd = fns.find(f => strip(f.function) === "set_data")
         const notes = []
         for (const f of fns) {
           const fn = strip(f.function || "")
@@ -227,7 +233,7 @@ export function describeTable(table) {
           else if (fn === "set_stew_effect") notes.push("random effect")
         }
         return {
-          name: type === "item" ? strip(e.name)
+          name: type === "item" ? strip(mapId(e.name, typeof sd?.data === "number" ? sd.data : undefined))
             : type === "loot_table" ? "table: " + (typeof e.value === "string" ? strip(e.value) : strip(e.name ?? "inline"))
             : type,
           pct: +((e.weight ?? 1) / total * 100).toFixed(1),

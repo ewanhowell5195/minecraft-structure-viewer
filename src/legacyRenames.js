@@ -2,7 +2,7 @@ const RENAMES = {
   spawner: ["1.13", "mob_spawner"]
 }
 
-function before(version, threshold) {
+export function before(version, threshold) {
   const parse = v => String(v).split("-")[0].split(".").map(Number)
   const a = parse(version), b = parse(threshold)
   for (let i = 0; i < Math.max(a.length, b.length); i++) {

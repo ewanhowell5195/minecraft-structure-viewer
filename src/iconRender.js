@@ -1,4 +1,5 @@
 import { EGG_COLORS } from "./eggColors.js"
+import { legacyAssetAlias } from "./legacyItems.js"
 
 export function renderSpawnEgg(lib, assets, entity, args) {
   const tints = EGG_COLORS[entity.replace(/^minecraft:/, "")]
@@ -40,9 +41,15 @@ export async function renderIcon(lib, assets, spec, extra) {
     }
     return null
   }
+  let id = spec.id
+  const [ns, name] = id.includes(":") ? id.split(":") : ["minecraft", id]
+  if (!await lib.readFile(`assets/${ns}/items/${name}.json`, assets) && !await lib.readFile(`assets/${ns}/models/item/${name}.json`, assets)) {
+    const alias = legacyAssetAlias(name)
+    if (alias && await lib.readFile(`assets/${ns}/models/item/${alias}.json`, assets)) id = `${ns}:${alias}`
+  }
   return lib.renderItem({
     ...args,
-    id: spec.id,
+    id,
     components: spec.components ?? {}
   })
 }

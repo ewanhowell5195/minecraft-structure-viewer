@@ -8,6 +8,7 @@ import { useSlicers } from "./useSlicers.js"
 import { useStructures } from "./useStructures.js"
 import { useFeatures } from "./useFeatures.js"
 import { readLootTable, readTrialSpawnerConfig, rollLoot, sampleTable, stackKey, prettyName, isInspectable } from "../loot.js"
+import { legacyItemId } from "../legacyItems.js"
 import { parseState } from "../transforms.js"
 import { useBooks } from "./useBooks.js"
 import { useStream } from "./useStream.js"
@@ -27,6 +28,13 @@ const KINDS = {
 }
 
 const capOf = kind => kind.cols * kind.rows
+
+function nbtStack(it, slot) {
+  const id = legacyItemId(it.id, it.Damage, packs.state.baseId)
+  let components = it.components
+  if (!components && it.tag?.Potion) components = { "minecraft:potion_contents": { potion: it.tag.Potion } }
+  return { id, count: Number(it.count ?? it.Count ?? 1), components, tag: it.tag, slot }
+}
 
 const CAPACITY = [
   [/(^|_)shulker_box$/, 27],
@@ -365,7 +373,7 @@ function openEntity(e, keepPair = false) {
     state.kind = KINDS.hopper
     state.gui = KINDS.hopper
     state.guiTitle = state.blockName
-    state.stacks = [{ id: it.id, count: Number(it.count ?? it.Count ?? 1), components: it.components, tag: it.tag, slot: 2 }]
+    state.stacks = [nbtStack(it, 2)]
     openSeq++
     state.open = true
     return
@@ -541,7 +549,7 @@ async function open(block, keepPair = false) {
       state.pileTotal = 0
       state.gui = state.kind
       state.guiTitle = state.blockName
-      state.stacks = it?.id ? [{ id: it.id, count: Number(it.count ?? it.Count ?? 1), components: it.components, tag: it.tag, slot: 2 }] : []
+      state.stacks = it?.id ? [nbtStack(it, 2)] : []
       if (!it?.id) state.note = "This pot is empty."
       openSeq++
       state.open = true
@@ -560,7 +568,7 @@ async function open(block, keepPair = false) {
     state.kind = KINDS.hopper
     state.gui = KINDS.hopper
     state.guiTitle = state.blockName
-    state.stacks = it?.id ? [{ id: it.id, count: Number(it.count ?? it.Count ?? 1), components: it.components, tag: it.tag, slot: 2 }] : []
+    state.stacks = it?.id ? [nbtStack(it, 2)] : []
     if (!it?.id) state.note = "This lectern holds no book."
     openSeq++
     state.open = true
@@ -607,13 +615,7 @@ async function open(block, keepPair = false) {
       } else if (Array.isArray(part.nbt?.Items)) {
         for (const it of part.nbt.Items) {
           if (!it?.id) continue
-          fixedStacks.push({
-            id: it.id,
-            count: it.count ?? it.Count ?? 1,
-            components: it.components,
-            tag: it.tag,
-            slot: part.off + pad + Math.min(cap - 1, Math.max(0, it.Slot ?? 0))
-          })
+          fixedStacks.push(nbtStack(it, part.off + pad + Math.min(cap - 1, Math.max(0, it.Slot ?? 0))))
         }
       }
     }
