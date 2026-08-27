@@ -1,3 +1,11 @@
+import { EGG_COLORS } from "./eggColors.js"
+
+export function renderSpawnEgg(lib, assets, entity, args) {
+  const tints = EGG_COLORS[entity.replace(/^minecraft:/, "")]
+  if (!tints) return null
+  return lib.renderModel({ ...args, assets, model: { parent: "minecraft:item/template_spawn_egg", tints } })
+}
+
 export async function renderIcon(lib, assets, spec, extra) {
   const size = spec.size
   const args = { assets, width: size, height: size, ...extra }
@@ -19,8 +27,14 @@ export async function renderIcon(lib, assets, spec, extra) {
       if (!await lib.readFile(`assets/minecraft/items/${item}.json`, assets)) continue
       return lib.renderItem({ ...args, id: item })
     }
-    // pre-1.21.4 assets have no item definitions, so probe the item models
+    // pre-1.21.4 assets have no item definitions: eggs render from the
+    // template with hardcoded tints, anything else from its item model
     for (const item of spec.candidates) {
+      const m = item.match(/^(.+)_spawn_egg$/)
+      if (m) {
+        const egg = renderSpawnEgg(lib, assets, m[1], args)
+        if (egg) return egg
+      }
       if (!await lib.readFile(`assets/minecraft/models/item/${item}.json`, assets)) continue
       return lib.renderItem({ ...args, id: item })
     }

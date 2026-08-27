@@ -17,6 +17,7 @@ import { useBooks } from "./useBooks.js"
 import { minimal } from "../minimal.js"
 import { loadStateCache, saveStateCache } from "../stateCache.js"
 import { SOFT_BLOCKS, HARD_BLOCKS, bellRingDir } from "../streamShared.js"
+import { renderSpawnEgg } from "../iconRender.js"
 
 // stateful singleton (live scene root, handles, watchers): hot updates must
 // full-reload, never re-execute alongside the old instance
@@ -572,6 +573,17 @@ async function entityMarkerCanvas(lib, assets, name, item) {
     try {
       if (!await lib.readFile(`assets/minecraft/items/${item}.json`, assets)) continue
       await lib.renderItem({ id: item, assets, width: 64, height: 64, canvas: c })
+      drawn = true
+      break
+    } catch {}
+  }
+  if (!drawn) for (const item of fallbacks) {
+    const m = item.match(/^(.+)_spawn_egg$/)
+    if (!m) continue
+    try {
+      const egg = renderSpawnEgg(lib, assets, m[1], { width: 64, height: 64, canvas: c })
+      if (!egg) continue
+      await egg
       drawn = true
       break
     } catch {}
