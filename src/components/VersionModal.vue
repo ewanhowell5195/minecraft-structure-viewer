@@ -5,6 +5,7 @@ import { usePacks } from "../composables/usePacks.js"
 import { useComparePacks } from "../composables/useComparePacks.js"
 import { useLock } from "../composables/useLock.js"
 import Modal from "./Modal.vue"
+import Seg from "./Seg.vue"
 
 const emit = defineEmits(["close"])
 const props = defineProps({ target: { type: String, default: "packs" } })
@@ -64,9 +65,7 @@ function pick(id) {
 <template>
   <Modal :width="440" @close="emit('close')">
     <template #title><h3>Exact game version</h3></template>
-    <div class="seg tabs">
-      <button v-for="k in KINDS" :key="k.id" :class="{ active: kind === k.id }" @click="kind = k.id">{{ k.label }}</button>
-    </div>
+    <Seg class="tabs" :tabs="KINDS" v-model="kind" />
     <input v-model="query" placeholder="Filter…" spellcheck="false">
 
     <div v-if="error" class="err">{{ error }}</div>

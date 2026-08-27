@@ -5,6 +5,10 @@ import { usePacks } from "./composables/usePacks.js"
 let _packs = null
 const packs = () => _packs ??= usePacks()
 
+// resolved lazily: a static import would close an esm cycle back into usePacks
+let _cpacks = null
+import("./composables/useComparePacks.js").then(m => { _cpacks = m.useComparePacks() })
+
 const MAX = 1024
 
 let worker = null
@@ -42,6 +46,8 @@ function stop() {
 
 function start() {
   if (dead) return null
+  // armed comparisons render on the main thread: the worker only holds the main stack
+  if (_cpacks?.state.armed) return null
   if (!worker) {
     // a virtual source is a function object and can't cross into a worker, so
     // icons render on the main thread instead
@@ -65,7 +71,8 @@ function start() {
 }
 
 function checkVersion() {
-  const v = packs().state.assetsVersion
+  const c = _cpacks?.state
+  const v = packs().state.assetsVersion + (c?.armed ? "|c" + c.assetsVersion : "")
   if (v === version) return
   version = v
   for (const p of cache.values()) p.then(b => b?.close?.(), () => {})
@@ -86,7 +93,7 @@ function keyOf(spec) {
 
 async function renderMain(spec) {
   const lib = await loadLibrary()
-  const assets = packs().assets.value
+  const assets = _cpacks?.state.armed ? _cpacks.assets.value : packs().assets.value
   if (!assets) return null
   try {
     const out = await renderIcon(lib, assets, spec, { upgradable: true })

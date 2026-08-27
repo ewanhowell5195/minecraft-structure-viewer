@@ -5,6 +5,7 @@ import { useCompare } from "../composables/useCompare.js"
 import { useLock } from "../composables/useLock.js"
 import { num } from "../format.js"
 import PackStack from "./PackStack.vue"
+import Seg from "./Seg.vue"
 
 const { state, activate, addPacks, removePack, movePack } = useComparePacks()
 const compare = useCompare()
@@ -14,7 +15,7 @@ const busy = computed(() => state.busy || locked.value)
 const structInput = ref(null)
 const collapsed = ref(!new URLSearchParams(location.search).get("cversion"))
 
-const VIEWS = [["slide", "Slide"], ["before", "Before"], ["after", "After"]]
+const VIEWS = [{ id: "slide", label: "Slide" }, { id: "before", label: "Before" }, { id: "after", label: "After" }]
 const KINDS = [["added", "New"], ["changed", "Changed"], ["removed", "Removed"]]
 
 function onStructure(e) {
@@ -46,10 +47,7 @@ function onStructure(e) {
       </button>
       <template v-if="cmp.on">
         <label class="lbl">Compare mode</label>
-        <div class="seg">
-          <button v-for="[id, label] in VIEWS" :key="id" :class="{ active: cmp.view === id }"
-            @click="cmp.view = id">{{ label }}</button>
-        </div>
+        <Seg :tabs="VIEWS" v-model="cmp.view" />
         <label class="lbl">Highlights</label>
         <div class="checks">
           <label v-for="[id, label] in KINDS" :key="id" class="check" :class="id">

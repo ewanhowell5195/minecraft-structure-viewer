@@ -12,6 +12,7 @@ import { describeTable, prettyName, stackKey } from "../loot.js"
 import { num } from "../format.js"
 import { iconInfo, acquireIcon, releaseIcon, nextToken } from "../icons.js"
 import Modal from "./Modal.vue"
+import Seg from "./Seg.vue"
 import ItemIcon from "./ItemIcon.vue"
 import UsedIcon from "./UsedIcon.vue"
 import NbtTree from "./NbtTree.vue"
@@ -39,6 +40,8 @@ const TABS = computed(() => state.dataRows || state.item ? [] : state.table
   : state.stacks.length
     ? [{ id: "loot", label: "Chest" }, { id: "list", label: "List" }]
     : [])
+
+const SIDES = [{ id: "before", label: "Before" }, { id: "after", label: "After" }]
 
 const rules = computed(() => state.table ? describeTable(state.table) : [])
 
@@ -375,12 +378,12 @@ watch(() => [state.open, state.stacks, state.gui], () => {
       <h3>{{ state.blockName }}</h3>
       <span class="tid">{{ state.tableId }}</span>
     </template>
+    <template #controls v-if="state.compareSide">
+      <Seg class="side" :tabs="SIDES" :model-value="state.compareSide" @update:model-value="container.setCompareSide" />
+    </template>
       <div v-if="state.error" class="err">{{ state.error }}</div>
       <template v-else>
-        <nav class="seg tabs" v-if="TABS.length">
-          <button v-for="t in TABS" :key="t.id" :class="{ active: state.tab === t.id }"
-            @click="container.setTab(t.id)">{{ t.label }}</button>
-        </nav>
+        <Seg v-if="TABS.length" class="tabs" :tabs="TABS" :model-value="state.tab" @update:model-value="container.setTab" />
         <div class="body" :class="{ compact: state.dataRows || state.pick }">
 
           <div v-if="state.pick" class="pane picker">
@@ -541,6 +544,14 @@ watch(() => [state.open, state.stacks, state.gui], () => {
   font-size: 12px;
   color: var(--text-dim);
   font-family: ui-monospace, monospace;
+}
+
+.controls .seg.side { height: 30px; }
+
+.seg.side button {
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
 }
 
 .pane.data { gap: 8px; }

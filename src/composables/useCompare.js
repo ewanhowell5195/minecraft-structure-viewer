@@ -158,11 +158,55 @@ function align() {
 let leftIdx = null
 const _leftBox = new THREE.Box3()
 
+function rayBoxT(ox, oy, oz, dx, dy, dz, x0, y0, z0, x1, y1, z1) {
+  let tmin = -Infinity, tmax = Infinity
+  for (const [o, d, lo, hi] of [[ox, dx, x0, x1], [oy, dy, y0, y1], [oz, dz, z0, z1]]) {
+    if (d === 0) {
+      if (o < lo || o > hi) return null
+      continue
+    }
+    let t0 = (lo - o) / d, t1 = (hi - o) / d
+    if (t0 > t1) [t0, t1] = [t1, t0]
+    tmin = Math.max(tmin, t0)
+    tmax = Math.min(tmax, t1)
+    if (tmin > tmax) return null
+  }
+  return tmax < 0 ? null : Math.max(tmin, 0)
+}
+
+const EB = 14
+function leftEntityHit(ox, oy, oz, dx, dy, dz) {
+  const ents = stash.structure.entities ?? []
+  if (!ents.length) return null
+  const p = stash.group.position
+  const local = e => [e.pos[0] * 16 - 8, e.pos[1] * 16, e.pos[2] * 16 - 8]
+  let best = null, bestT = Infinity
+  for (const e of ents) {
+    const [wx, wy, wz] = local(e)
+    const t = rayBoxT(ox, oy, oz, dx, dy, dz,
+      wx - EB / 2 + p.x, wy - 8 + p.y, wz - EB / 2 + p.z,
+      wx + EB / 2 + p.x, wy + 6 + p.y, wz + EB / 2 + p.z)
+    if (t !== null && t < bestT) {
+      bestT = t
+      best = e
+    }
+  }
+  if (!best) return null
+  const [bx, by, bz] = local(best)
+  const stack = ents.filter(o => {
+    const [x, y, z] = local(o)
+    return Math.abs(x - bx) < EB && Math.abs(y - by) < EB && Math.abs(z - bz) < EB
+  })
+  return { t: bestT, marker: { stack, x: bx, y: by - 8, z: bz } }
+}
+
 function leftRayHit(ox, oy, oz, dx, dy, dz) {
   if (!state.on || !stash || !leftIdx) return null
   const s = stash.structure, p = stash.group.position
+  const ent = leftEntityHit(ox, oy, oz, dx, dy, dz)
   let last = ""
   for (let t = 0; t <= 4000; t += 2) {
+    if (ent && ent.t <= t) return { entity: ent.marker }
     const bx = Math.round((ox + dx * t - p.x) / 16)
     const by = Math.round((oy + dy * t - p.y) / 16)
     const bz = Math.round((oz + dz * t - p.z) / 16)
@@ -181,7 +225,7 @@ function leftRayHit(ox, oy, oz, dx, dy, dz) {
     if (isInspectable(e.id) || b.nbt?.LootTable || /(^|[:_])spawner$/.test(e.id)) return { container: blk, box: _leftBox }
     return { block: blk, box: _leftBox }
   }
-  return null
+  return ent ? { entity: ent.marker } : null
 }
 
 useContainer().setComparePick({ state, leftRayHit })
@@ -522,5 +566,5 @@ import("./useWorld.js").then(({ useWorld }) => {
 const versionArmed = () => comparePacks.state.armed
 
 export function useCompare() {
-  return { state: readonly(state), stateMut: state, enter, enterVersion, openVersion, setMainFile, setPanelFile, setFiles, clearFile, fileName, exit, leave, stop, versionArmed, busy: entering, leftRayHit, getFiles: () => ({ ...files }) }
+  return { state: readonly(state), stateMut: state, enter, enterVersion, openVersion, setMainFile, setPanelFile, setFiles, clearFile, fileName, exit, leave, stop, versionArmed, busy: entering, leftRayHit, getFiles: () => ({ ...files }), leftStructure: () => stash?.structure ?? null }
 }

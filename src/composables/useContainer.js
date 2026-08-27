@@ -80,7 +80,8 @@ const state = reactive({
   poolId: "",
   poolEntries: null,
   poolFallback: "",
-  poolStack: []
+  poolStack: [],
+  compareSide: ""
 })
 
 let openSeq = 0 // stale async work from a previous open is discarded
@@ -329,7 +330,11 @@ function filterDefaultNbt(nbt) {
   return out
 }
 
-function openEntity(e) {
+function openEntity(e, keepPair = false) {
+  if (!keepPair) {
+    comparePair = null
+    state.compareSide = ""
+  }
   const id = stripNs(e.nbt?.id ?? "entity")
   state.pick = null
   state.error = ""
@@ -463,7 +468,32 @@ function chestPartner(block, entry) {
   return { nbt }
 }
 
-async function open(block) {
+let comparePair = null
+
+async function openCompare(left, right) {
+  comparePair = { left, right }
+  state.compareSide = "after"
+  await open(right, true)
+}
+
+function openCompareEntity(left, right) {
+  comparePair = { left, right, entity: true }
+  state.compareSide = "after"
+  openEntity(right, true)
+}
+
+function setCompareSide(side) {
+  if (!comparePair || side === state.compareSide) return
+  state.compareSide = side
+  const b = side === "before" ? comparePair.left : comparePair.right
+  comparePair.entity ? openEntity(b, true) : open(b, true)
+}
+
+async function open(block, keepPair = false) {
+  if (!keepPair) {
+    comparePair = null
+    state.compareSide = ""
+  }
   const entry = block.entry ?? buildApi.current.value?.palette[block.state]
   const name = entry?.id ?? "minecraft:chest"
   poseLids(block, entry, true)
@@ -707,6 +737,8 @@ function close() {
   state.open = false
   state.pick = null
   state.item = null
+  comparePair = null
+  state.compareSide = ""
   const books = useBooks()
   for (const pos of openLids) {
     books.setLid(pos, false)
@@ -853,5 +885,5 @@ function initPicking(canvas) {
 }
 
 export function useContainer() {
-  return { state: readonly(state), open, openEntity, openEntityMarker, openItem, itemBack, close, reroll, addRoll, setTab, ensureOdds, openFallbackPool, poolBack, initPicking, refreshHover, setComparePick }
+  return { state: readonly(state), open, openCompare, openCompareEntity, setCompareSide, openEntity, openEntityMarker, openItem, itemBack, close, reroll, addRoll, setTab, ensureOdds, openFallbackPool, poolBack, initPicking, refreshHover, setComparePick }
 }

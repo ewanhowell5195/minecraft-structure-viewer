@@ -396,7 +396,7 @@ onMounted(async () => {
           <span class="material-symbols-outlined">directions_walk</span>
           Walk Around
         </button>
-        <button v-if="!compareState.on && buildState.info && (buildState.info.blocks || structure?.entities?.length)" class="used-btn" :disabled="locked" @click="usedModal?.open()">
+        <button v-if="buildState.info && (buildState.info.blocks || structure?.entities?.length || compareState.on)" class="used-btn" :class="{ solo: compareState.on }" :disabled="locked" @click="usedModal?.open()">
           <span class="material-symbols-outlined">list_alt</span>
           {{ usedLabel }}
         </button>
@@ -589,8 +589,9 @@ onMounted(async () => {
   gap: 6px;
 }
 
-/* no walk button to stack above in minimal mode */
-.minimal .used-btn { bottom: 12px; }
+/* no walk button to stack above in minimal or compare mode */
+.minimal .used-btn,
+.used-btn.solo { bottom: 12px; }
 
 .open-full {
   position: absolute;

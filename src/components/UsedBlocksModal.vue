@@ -1,14 +1,17 @@
 <script setup>
 import { computed, reactive, watch, onMounted, onBeforeUnmount } from "vue"
 import { useBuild } from "../composables/useBuild.js"
+import { useCompare } from "../composables/useCompare.js"
 import { useContainer } from "../composables/useContainer.js"
 import { useFind } from "../composables/useFind.js"
 import { isInspectable } from "../loot.js"
 import Modal from "./Modal.vue"
+import Seg from "./Seg.vue"
 import UsedIcon from "./UsedIcon.vue"
 
 const AIR = /(^|:)(air|cave_air|void_air|structure_void)$/
 const build = useBuild()
+const compare = useCompare()
 const container = useContainer()
 const find = useFind()
 
@@ -90,35 +93,133 @@ function compute() {
   return { total, blocks, entities: entityGroups }
 }
 
+function sideCounts(s) {
+  const blocks = new Map()
+  for (const b of s?.blocks ?? []) {
+    const e = s.palette[b.state]
+    if (!e?.id || AIR.test(e.id)) continue
+    blocks.set(e.id, (blocks.get(e.id) ?? 0) + 1)
+  }
+  const entities = new Map()
+  for (const e of s?.entities ?? []) {
+    const id = e.nbt?.id
+    if (typeof id !== "string") continue
+    entities.set(id, (entities.get(id) ?? 0) + 1)
+  }
+  return { blocks, entities }
+}
+
+function mergeCounts(a, b) {
+  const ids = new Set(a.keys())
+  for (const id of b.keys()) ids.add(id)
+  const rows = Array.from(ids, id => {
+    const left = a.get(id) ?? 0, right = b.get(id) ?? 0
+    return { id, left, right, delta: right - left, count: Math.abs(right - left) }
+  })
+  return rows.filter(r => r.delta !== 0)
+}
+
+function diffProps(a, b) {
+  const keys = new Set(Object.keys(a ?? {}))
+  for (const k of Object.keys(b ?? {})) keys.add(k)
+  const out = []
+  for (const k of Array.from(keys).sort()) {
+    if (a?.[k] !== b?.[k]) out.push({ k, l: a?.[k] ?? "unset", r: b?.[k] ?? "unset" })
+  }
+  return out
+}
+
+function pairChanges(leftStruct, rightStruct) {
+  const leftAt = new Map()
+  for (const b of leftStruct?.blocks ?? []) {
+    const e = leftStruct.palette[b.state]
+    if (!e?.id || AIR.test(e.id)) continue
+    leftAt.set(b.pos.join(","), { entry: e, block: b })
+  }
+  const blocks = new Map()
+  for (const b of rightStruct?.blocks ?? []) {
+    const e = rightStruct.palette[b.state]
+    if (!e?.id || AIR.test(e.id)) continue
+    const l = leftAt.get(b.pos.join(","))
+    if (!l || l.entry.id !== e.id) continue
+    const props = diffProps(l.entry.properties, e.properties)
+    const nbt = json(l.block.nbt ?? null) !== json(b.nbt ?? null)
+    if (!props.length && !nbt) continue
+    let g = blocks.get(e.id)
+    if (!blocks.has(e.id)) blocks.set(e.id, g = { id: e.id, pairs: [] })
+    g.pairs.push({ left: { ...l.block, entry: l.entry }, right: { ...b, entry: e }, props, nbt })
+  }
+  const leftEnt = new Map()
+  for (const e of leftStruct?.entities ?? []) {
+    if (typeof e.nbt?.id === "string") leftEnt.set(e.nbt.id + "|" + e.pos.join(","), e)
+  }
+  const entities = new Map()
+  for (const e of rightStruct?.entities ?? []) {
+    if (typeof e.nbt?.id !== "string") continue
+    const l = leftEnt.get(e.nbt.id + "|" + e.pos.join(","))
+    if (!l || json(l.nbt) === json(e.nbt)) continue
+    let g = entities.get(e.nbt.id)
+    if (!entities.has(e.nbt.id)) entities.set(e.nbt.id, g = { id: e.nbt.id, pairs: [] })
+    g.pairs.push({ left: l, right: e, props: [], nbt: true })
+  }
+  const order = m => Array.from(m.values()).sort((a, b) => b.pairs.length - a.pairs.length || stripNs(a.id).localeCompare(stripNs(b.id)))
+  return { blocks: order(blocks), entities: order(entities) }
+}
+
+function computeCompare() {
+  const leftStruct = compare.leftStructure()
+  const rightStruct = build.current.value
+  const left = sideCounts(leftStruct)
+  const right = sideCounts(rightStruct)
+  return {
+    compare: true,
+    blocks: mergeCounts(left.blocks, right.blocks),
+    entities: mergeCounts(left.entities, right.entities),
+    changed: pairChanges(leftStruct, rightStruct)
+  }
+}
+
+const pairOpens = p => p.nbt
+const propsText = p => p.props.map(d => `${d.k} ${d.l}→${d.r}`).join("  ")
+
+function clickChanged(g, kind) {
+  if (g.pairs.length === 1 && pairOpens(g.pairs[0]) && !g.pairs[0].props.length) return openPair(g.pairs[0], kind)
+  state.expanded["c:" + kind + g.id] = !state.expanded["c:" + kind + g.id]
+}
+
+function openPair(p, kind) {
+  if (kind === "entity") return container.openCompareEntity(p.left, p.right)
+  container.openCompare(p.left, p.right)
+}
+
+const computeData = () => compare.state.on ? computeCompare() : compute()
+
+const countSort = compare => compare
+  ? (a, b) => b.delta - a.delta || stripNs(a.id).localeCompare(stripNs(b.id))
+  : (a, b) => b.count - a.count || stripNs(a.id).localeCompare(stripNs(b.id))
+const abcSort = (a, b) => stripNs(a.id).localeCompare(stripNs(b.id))
+
 const blockRows = computed(() => {
   const d = state.data
   if (!d) return []
-  const rows = d.blocks.slice()
-  rows.sort(state.sort === "count"
-    ? (a, b) => b.count - a.count || stripNs(a.id).localeCompare(stripNs(b.id))
-    : (a, b) => stripNs(a.id).localeCompare(stripNs(b.id)))
-  return rows
+  return d.blocks.slice().sort(state.sort === "count" ? countSort(d.compare) : abcSort)
 })
 
 const entityRows = computed(() => {
   const d = state.data
   if (!d) return []
-  const rows = d.entities.slice()
-  rows.sort(state.sort === "count"
-    ? (a, b) => b.count - a.count || stripNs(a.id).localeCompare(stripNs(b.id))
-    : (a, b) => stripNs(a.id).localeCompare(stripNs(b.id)))
-  return rows
+  return d.entities.slice().sort(state.sort === "count" ? countSort(d.compare) : abcSort)
 })
 
-const anyBlockExpandable = computed(() => blockRows.value.some(expandable))
-const anyEntityExpandable = computed(() => entityRows.value.some(g => !g.allSame))
+const anyBlockExpandable = computed(() => !state.data?.compare && blockRows.value.some(expandable))
+const anyEntityExpandable = computed(() => !state.data?.compare && entityRows.value.some(g => !g.allSame))
 
 const sortsDiffer = computed(() => {
   const d = state.data
   if (!d) return false
   const rows = state.tab === "blocks" ? d.blocks : d.entities
-  const abc = rows.slice().sort((a, b) => stripNs(a.id).localeCompare(stripNs(b.id)))
-  const count = rows.slice().sort((a, b) => b.count - a.count || stripNs(a.id).localeCompare(stripNs(b.id)))
+  const abc = rows.slice().sort(abcSort)
+  const count = rows.slice().sort(countSort(d.compare))
   return count.some((r, i) => r.id !== abc[i].id)
 })
 
@@ -188,8 +289,8 @@ function clickEntity(g) {
 function open() {
   state.expanded = {}
   state.expandedState = {}
-  state.data = compute()
-  state.tab = state.data?.blocks.length || !state.data?.entities.length ? "blocks" : "entities"
+  state.data = computeData()
+  state.tab = tabBlocks(state.data) || !tabEnts(state.data) ? "blocks" : "entities"
   state.open = true
 }
 
@@ -199,9 +300,23 @@ function close() {
   container.refreshHover()
 }
 
-watch(build.current, () => {
-  if (state.open) state.data = compute()
+watch([build.current, () => compare.state.on], () => {
+  if (state.open) state.data = computeData()
 })
+
+const deltaText = g => g.delta > 0 ? `+${g.delta}` : g.delta < 0 ? `${g.delta}` : ""
+
+const tabBlocks = d => d ? d.blocks.length + (d.changed?.blocks.length ?? 0) : 0
+const tabEnts = d => d ? d.entities.length + (d.changed?.entities.length ?? 0) : 0
+
+const sortTabs = computed(() => [
+  { id: "count", label: state.data?.compare ? "Biggest change" : "Most common" },
+  { id: "abc", label: "A–Z" }
+])
+const kindTabs = computed(() => [
+  { id: "blocks", label: `Blocks (${tabBlocks(state.data)})` },
+  { id: "entities", label: `Entities (${tabEnts(state.data)})` }
+])
 
 function onKey(e) {
   if (e.key === "Escape" && state.open && !container.state.open) close()
@@ -215,20 +330,68 @@ defineExpose({ open })
 <template>
   <Modal v-if="state.open" :width="584" :z="90" @close="close">
     <template #title>
-      <h3>{{ state.data?.blocks.length || !state.data?.entities.length ? "Used blocks" : "Used entities" }}</h3>
+      <h3 v-if="state.data?.compare">{{ tabBlocks(state.data) || !tabEnts(state.data) ? "Block changes" : "Entity changes" }}</h3>
+      <h3 v-else>{{ tabBlocks(state.data) || !tabEnts(state.data) ? "Used blocks" : "Used entities" }}</h3>
     </template>
     <template #controls>
-      <div class="seg" :class="{ ghost: !sortsDiffer }">
-        <button :class="{ active: state.sort === 'count' }" @click="state.sort = 'count'">Most common</button>
-        <button :class="{ active: state.sort === 'abc' }" @click="state.sort = 'abc'">A–Z</button>
-      </div>
+      <Seg :class="{ ghost: !sortsDiffer }" :tabs="sortTabs" v-model="state.sort" />
     </template>
-    <div class="seg tabs" v-if="state.data?.entities.length && state.data?.blocks.length">
-      <button :class="{ active: state.tab === 'blocks' }" @click="state.tab = 'blocks'">Blocks ({{ state.data.blocks.length }})</button>
-      <button :class="{ active: state.tab === 'entities' }" @click="state.tab = 'entities'">Entities ({{ state.data.entities.length }})</button>
+    <Seg v-if="tabEnts(state.data) && tabBlocks(state.data)" class="tabs" :tabs="kindTabs" v-model="state.tab" />
+
+    <div class="body" v-if="state.data?.compare && state.tab === 'blocks'">
+      <div v-if="!tabBlocks(state.data)" class="line row empty">No block changes</div>
+      <div v-for="g in blockRows" :key="g.id" class="item-row group">
+        <div class="line row">
+          <UsedIcon :id="g.id" :size="32" />
+          <span class="nm">{{ stripNs(g.id) }}</span>
+          <span class="count">×{{ g.left }}<span class="arr">→</span>×{{ g.right }}<small class="delta" :class="{ pos: g.delta > 0, neg: g.delta < 0 }">{{ deltaText(g) }}</small></span>
+        </div>
+      </div>
+      <div v-for="g in state.data.changed.blocks" :key="'c:' + g.id" class="item-row group">
+        <div class="line row click" @click="clickChanged(g, 'block')">
+          <UsedIcon :id="g.id" :size="32" />
+          <span class="nm">{{ stripNs(g.id) }}</span>
+          <span v-if="g.pairs.length === 1 && g.pairs[0].nbt && !g.pairs[0].props.length" class="material-symbols-outlined data">open_in_new</span>
+          <span class="count"><small class="delta chg">{{ g.pairs.length === 1 ? "changed" : g.pairs.length + " changed" }}</small></span>
+          <span class="material-symbols-outlined chev" :class="{ hidden: g.pairs.length === 1 && g.pairs[0].nbt && !g.pairs[0].props.length, open: state.expanded['c:block' + g.id] }">chevron_right</span>
+        </div>
+        <template v-if="state.expanded['c:block' + g.id]">
+          <div v-for="(p, i) in g.pairs" :key="i" class="line row sub" :class="{ click: p.nbt }" @click="p.nbt && openPair(p, 'block')">
+            <span class="nm mono">{{ posText(p.right.pos) }}</span>
+            <span v-if="p.props.length" class="nm mono">{{ propsText(p) }}</span>
+            <span v-if="p.nbt" class="material-symbols-outlined data">open_in_new</span>
+          </div>
+        </template>
+      </div>
     </div>
 
-    <div class="body" v-if="state.tab === 'blocks'">
+    <div class="body" v-else-if="state.data?.compare">
+      <div v-if="!tabEnts(state.data)" class="line row empty">No entity changes</div>
+      <div v-for="g in entityRows" :key="g.id" class="item-row group">
+        <div class="line row">
+          <UsedIcon kind="entity" :id="g.id" :size="32" />
+          <span class="nm">{{ stripNs(g.id) }}</span>
+          <span class="count">×{{ g.left }}<span class="arr">→</span>×{{ g.right }}<small class="delta" :class="{ pos: g.delta > 0, neg: g.delta < 0 }">{{ deltaText(g) }}</small></span>
+        </div>
+      </div>
+      <div v-for="g in state.data.changed.entities" :key="'c:' + g.id" class="item-row group">
+        <div class="line row click" @click="clickChanged(g, 'entity')">
+          <UsedIcon kind="entity" :id="g.id" :size="32" />
+          <span class="nm">{{ stripNs(g.id) }}</span>
+          <span v-if="g.pairs.length === 1" class="material-symbols-outlined data">open_in_new</span>
+          <span class="count"><small class="delta chg">{{ g.pairs.length === 1 ? "changed" : g.pairs.length + " changed" }}</small></span>
+          <span class="material-symbols-outlined chev" :class="{ hidden: g.pairs.length === 1, open: state.expanded['c:entity' + g.id] }">chevron_right</span>
+        </div>
+        <template v-if="g.pairs.length > 1 && state.expanded['c:entity' + g.id]">
+          <div v-for="(p, i) in g.pairs" :key="i" class="line row sub click" @click="openPair(p, 'entity')">
+            <span class="nm mono">{{ posText(p.right.pos) }}</span>
+            <span class="material-symbols-outlined data">open_in_new</span>
+          </div>
+        </template>
+      </div>
+    </div>
+
+    <div class="body" v-else-if="state.tab === 'blocks'">
       <div v-for="g in blockRows" :key="g.id" class="item-row group">
         <div class="line row" :class="{ click: expandable(g) }" @click="clickBlock(g)">
           <UsedIcon :id="g.id" :size="32" />
@@ -388,6 +551,17 @@ defineExpose({ open })
   min-width: 42px;
   text-align: right;
 }
+
+.count .arr {
+  color: var(--text-dim);
+  margin: 0 6px;
+}
+
+.count .delta.pos { color: #6fd487; }
+.count .delta.neg { color: #ff6b82; }
+.count .delta.chg { color: #f0c85a; min-width: 0; }
+
+.row.empty { color: var(--text-dim); }
 
 .data {
   font-size: 15px;
