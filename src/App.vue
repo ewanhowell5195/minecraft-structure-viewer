@@ -22,6 +22,7 @@ import { minimal } from "./minimal.js"
 import { manual } from "./manual.js"
 import { initEmbedApi, emit } from "./embed.js"
 import { isRemote, prefetchRemote } from "./remote.js"
+import { compareChanges } from "./compareChanges.js"
 import { kilo, num } from "./format.js"
 import PacksSection from "./components/PacksSection.vue"
 import CompareSection from "./components/CompareSection.vue"
@@ -253,7 +254,13 @@ const info = computed(() => {
 
 const compareTag = computed(() => compareState.view === "after" ? compareState.right : compareState.left)
 
-const usedLabel = computed(() => buildState.info?.blocks === 0 && structure.value?.entities?.length ? "Entities" : "Blocks")
+const usedLabel = computed(() => {
+  if (compareState.on) {
+    const d = compareChanges(useCompare().leftStructure(), structure.value)
+    return !(d.blocks.length + d.changed.blocks.length) && d.entities.length + d.changed.entities.length ? "Entities" : "Blocks"
+  }
+  return buildState.info?.blocks === 0 && structure.value?.entities?.length ? "Entities" : "Blocks"
+})
 
 // id + blockstates of the block under the pointer, under the info chip
 const aim = computed(() => {

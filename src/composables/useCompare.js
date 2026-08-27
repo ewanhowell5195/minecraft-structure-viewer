@@ -15,7 +15,7 @@ import { useContainer } from "./useContainer.js"
 import { setParams } from "../params.js"
 import { leafName as leaf, pathDimension, structureName } from "../transforms.js"
 import { read } from "minecraft-block-reader"
-import { cellContents } from "../structdiff.js"
+import { cellItems } from "../structdiff.js"
 
 const build = useBuild()
 const scene = useScene()
@@ -103,17 +103,34 @@ const STYLES = {
 
 let diffCells = { added: [], changed: [], removed: [] }
 
+// counts are per block and entity, matching the changes modal; a cell can
+// carry highlights of more than one kind
 function computeDiff() {
   diffCells = { added: [], changed: [], removed: [] }
   const right = build.current.value
   if (!stash?.structure || !right) return
-  const before = cellContents(stash.structure), after = cellContents(right)
-  for (const [k, v] of after) {
-    if (!before.has(k)) diffCells.added.push(k.split(",").map(Number))
-    else if (before.get(k) !== v) diffCells.changed.push(k.split(",").map(Number))
+  const before = cellItems(stash.structure), after = cellItems(right)
+  const cells = { added: new Set(), changed: new Set(), removed: new Set() }
+  const counts = { added: 0, changed: 0, removed: 0 }
+  const keys = new Set(before.keys())
+  for (const k of after.keys()) keys.add(k)
+  for (const k of keys) {
+    const b = before.get(k), a = after.get(k)
+    const mark = kind => { counts[kind]++; cells[kind].add(k) }
+    const bb = b?.block ?? null, ab = a?.block ?? null
+    if (bb !== ab) mark(ab === null ? "removed" : bb === null ? "added" : "changed")
+    const eKeys = new Set(b?.ents.keys())
+    for (const ek of a?.ents.keys() ?? []) eKeys.add(ek)
+    for (const ek of eKeys) {
+      const be = b?.ents.get(ek), ae = a?.ents.get(ek)
+      if (be === ae) continue
+      mark(ae === undefined ? "removed" : be === undefined ? "added" : "changed")
+    }
   }
-  for (const k of before.keys()) if (!after.has(k)) diffCells.removed.push(k.split(",").map(Number))
-  for (const kind of Object.keys(diffCells)) state.counts[kind] = diffCells[kind].length
+  for (const kind of Object.keys(diffCells)) {
+    diffCells[kind] = Array.from(cells[kind], k => k.split(",").map(Number))
+    state.counts[kind] = counts[kind]
+  }
 }
 
 function drawDiff() {
