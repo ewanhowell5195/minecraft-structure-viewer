@@ -330,9 +330,6 @@ aside button.wide .material-symbols-outlined { font-size: 18px; }
 /* a structure's name over the viewport, beside its info chip */
 .name-tag {
   flex: none;
-  max-width: 40%;
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
   background: #000000a0;
   color: var(--text);
