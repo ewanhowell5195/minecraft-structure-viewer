@@ -17,6 +17,7 @@ import { paramUrl, setParams } from "../params.js"
 import { isRemote, prefetchRemote, fetchRemote, remoteName } from "../remote.js"
 import { applyProcessors, seedFor } from "../processors.js"
 import { cacheFile, uncache } from "../userCache.js"
+import { applyLegacyRenames, applyPreFlattening } from "../legacyRenames.js"
 
 const COMBINE_AIR = /(^|:)(air|cave_air|void_air|structure_void)$/
 
@@ -97,8 +98,10 @@ export function parseSeedParam(param) {
 // never gains duplicate or looping entries
 let navigatingHistory = false
 
-// the implicit start-up structure keeps the URL pristine
-const DEFAULT_REL = "minecraft/village/plains/houses/plains_small_house_1"
+const DEFAULT_RELS = [
+  "minecraft/village/plains/houses/plains_small_house_1",
+  "minecraft/igloo/igloo_top"
+]
 let implicitLoad = false
 
 let initializing = false
@@ -110,10 +113,11 @@ let quietLoad = false
 const setQuietLoads = on => { quietLoad = on }
 
 async function loadDefault() {
-  if (!structures.has(DEFAULT_REL)) return
+  const rel = DEFAULT_RELS.find(r => structures.has(r))
+  if (!rel) return
   implicitLoad = true
   try {
-    await loadVanilla(DEFAULT_REL)
+    await loadVanilla(rel)
   } finally {
     implicitLoad = false
   }
@@ -389,7 +393,7 @@ async function readVanilla(rel) {
   if (!zp) {
     const gen = GENERATED[rel]
     if (!gen) return null
-    return (await gen(undefined, { seed: 0 })).structure
+    return applyLegacyRenames((await gen(undefined, { seed: 0 })).structure, packs.state.baseId)
   }
   const lib = await loadLibrary()
   const s = await processVanilla(rel, await read(await lib.readFile(zp, packs.assets.value)))
@@ -399,7 +403,8 @@ async function readVanilla(rel) {
 
 // the placement processors (mossify, rot, aging), rolled deterministically per
 // rel; the version split runs both halves through it so identical files match
-async function processVanilla(rel, s) {
+async function processVanilla(rel, s, version = packs.state.baseId) {
+  applyPreFlattening(s, version)
   await structures.computeProcessors()
   const pe = structures.processorEntry(rel)
   if (!pe) return s
@@ -517,6 +522,7 @@ async function featureEntry(rel, seed) {
     return read(await lib.readFile(zp, packs.assets.value))
   }
   const s = await generateFeature(rel, json, rnd(useSeed), features.resolvePlaced, loadStruct, { grass: features.grassBiome(rel) }, features.loadProcessors)
+  applyLegacyRenames(s, packs.state.baseId)
   return s.blocks.length ? { structure: s, name: rel, rel, feature: true, seed: useSeed } : null
 }
 

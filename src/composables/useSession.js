@@ -16,6 +16,7 @@ import { applyProcessors, seedFor } from "../processors.js"
 import { runJigsaw } from "../jigsaw.js"
 import { mineshaftPieceGens, rerollGen, runDesertPyramid, runDungeon, runEndCity, runEndSpikes, runEndSpikesActive, runFortress, runIgloo, runJungleTemple, runMansion, runMineshaft, runMineshaftMesa, runMonument, runStronghold } from "../generators/index.js"
 import { PROC } from "../proc.js"
+import { applyLegacyRenames } from "../legacyRenames.js"
 
 // level is 0-based (the UI shows level + 1). the base is seedless; a seed rolls
 // on the first ascent off it and stays fixed until you return to the base
@@ -159,6 +160,7 @@ async function regenerate() {
       return
     }
     if (!structure.dimension) structure.dimension = pathDimension(baseName)
+    applyLegacyRenames(structure, packs.state.baseId)
     await buildApi.build(structure, false)
     const root = buildApi.getRoot()
     const a = structure.anchor ?? [0, 0, 0]

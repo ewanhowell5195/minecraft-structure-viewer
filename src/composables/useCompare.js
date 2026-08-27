@@ -343,7 +343,7 @@ async function enterVersion(rel) {
     if (!build.getRoot() || !comparePacks.has(rel)) return
     const bytes = await comparePacks.readStructureBytes(rel)
     if (!bytes) return
-    const rightStruct = await useStructure().processVanilla(rel, await read(bytes))
+    const rightStruct = await useStructure().processVanilla(rel, await read(bytes), comparePacks.state.baseId)
     rightStruct.dimension ||= pathDimension(rel)
     if (await buildRightSplit(rightStruct, packs.state.baseId || "before", comparePacks.state.baseId || "after")) {
       leftRel = rightRel = rel
