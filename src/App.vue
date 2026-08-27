@@ -550,7 +550,7 @@ onMounted(async () => {
 }
 
 /* room for the open-in-viewer link in the corner */
-.minimal .topbar.right { right: 52px; }
+.minimal .topbar.right { right: 44px; }
 
 .topbar .chip {
   position: static;
@@ -598,8 +598,8 @@ onMounted(async () => {
 
 .open-full {
   position: absolute;
-  top: 12px;
-  right: 14px;
+  top: 6px;
+  right: 6px;
   z-index: 50;
   display: flex;
   padding: 6px;
@@ -613,8 +613,8 @@ onMounted(async () => {
 
 .fs-btn {
   position: absolute;
-  right: 14px;
-  bottom: 12px;
+  right: 6px;
+  bottom: 6px;
   z-index: 50;
   display: flex;
   padding: 6px;
