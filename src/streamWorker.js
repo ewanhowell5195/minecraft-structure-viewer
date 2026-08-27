@@ -134,7 +134,7 @@ self.onmessage = async e => {
       self.postMessage({ type: "ready", id: m.id })
     } else if (m.type === "initBuild") {
       lib = await loadLibrary()
-      assets = await lib.prepareAssets(m.sources, { cache: true, defaults: "game" })
+      assets = await lib.prepareAssets(m.sources, { cache: true, defaults: "game", version: m.version })
       if (m.occl) await lib.importOcclusionCache?.(assets, m.occl).catch(() => {})
       // the layout is always stitched before workers start; adopting a missing
       // one must fail loudly (tiles fall back to main-thread builds), never

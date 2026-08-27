@@ -18,7 +18,7 @@ self.onmessage = async e => {
   try {
     if (m.type === "init") {
       lib = await loadLibrary()
-      assets = await lib.prepareAssets(m.sources, { cache: true })
+      assets = await lib.prepareAssets(m.sources, { cache: true, version: m.version })
       for (const key of Array.from(handles.keys())) drop(key)
       self.postMessage({ type: "init", id: m.id })
     } else if (m.type === "icon") {

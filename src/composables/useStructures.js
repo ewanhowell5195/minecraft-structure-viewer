@@ -10,8 +10,9 @@ import { matchIndex } from "../advfilter.js"
 import { buildProcessorIndex } from "../processors.js"
 import { yieldTask } from "../yield.js"
 
-// structures? also matches the legacy/mod plural folder
-export const STRUCT_RE = /^data\/([^/]+)\/structures?\/(.+)\.nbt$/
+// structures? also matches the legacy/mod plural folder; pre-1.13 jars keep
+// theirs under assets
+export const STRUCT_RE = /^(?:data|assets)\/([^/]+)\/structures?\/(.+)\.nbt$/
 
 const packs = usePacks()
 

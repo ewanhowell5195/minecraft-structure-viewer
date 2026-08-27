@@ -62,7 +62,7 @@ function start() {
     }
     worker.onmessage = e => settle(e.data.id, e.data)
     worker.onerror = () => { dead = true; stop() }
-    ready = call({ type: "init", sources }).then(m => {
+    ready = call({ type: "init", sources, version: packs().state.baseId || undefined }).then(m => {
       if (m?.error) { dead = true; stop() }
       return !dead
     })

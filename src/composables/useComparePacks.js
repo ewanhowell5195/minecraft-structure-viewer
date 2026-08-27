@@ -48,7 +48,7 @@ async function rebuild() {
   const lib = await loadLibrary()
   const sources = allSources()
   const prev = assets.value
-  assets.value = sources.length ? await lib.prepareAssets(sources, { cache: true, defaults: "game" }) : null
+  assets.value = sources.length ? await lib.prepareAssets(sources, { cache: true, defaults: "game", version: state.baseId || undefined }) : null
   structPath = new Map()
   for (const src of Array.from(sources).reverse()) {
     if (!(src instanceof Uint8Array)) continue
