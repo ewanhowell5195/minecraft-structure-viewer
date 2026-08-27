@@ -549,6 +549,9 @@ onMounted(async () => {
   right: 14px;
 }
 
+/* room for the open-in-viewer link in the corner */
+.minimal .topbar.right { right: 52px; }
+
 .topbar .chip {
   position: static;
   max-width: none;
