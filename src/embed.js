@@ -184,7 +184,7 @@ const COMMANDS = {
     }
     return { armed: comparePacks.state.armed, version: comparePacks.state.baseId }
   },
-  async compare({ off, path, against, left, right, show, view, split } = {}) {
+  async compare({ off, path, against, left, right, show, view, split, labels } = {}) {
     const compare = useCompare()
     const comparePacks = useComparePacks()
     await compareIdle()
@@ -219,8 +219,14 @@ const COMMANDS = {
       compare.stateMut.view = view
     }
     if (typeof split === "number") compare.stateMut.split = Math.min(Math.max(split, 0), 1)
-    const { on, mode, counts } = compare.state
-    return { on, mode, counts: { ...counts } }
+    if (labels !== undefined) {
+      if (!Array.isArray(labels) || labels.length > 2) throw new Error("labels must be [left, right]")
+      const [l, r] = labels
+      if (typeof l === "string" && l) compare.stateMut.left = l
+      if (typeof r === "string" && r) compare.stateMut.right = r
+    }
+    const { on, mode, counts, left: leftLabel, right: rightLabel } = compare.state
+    return { on, mode, counts: { ...counts }, labels: [leftLabel, rightLabel] }
   }
 }
 

@@ -25,7 +25,7 @@ const structures = useStructures()
 const comparePacks = useComparePacks()
 const { locked } = useLock()
 
-// mode "structs" is the right-click structure-vs-structure split, "versions"
+// mode "structures" is the right-click structure-vs-structure split, "versions"
 // the panel's version-vs-version one; they share all the machinery
 const state = reactive({
   on: false,
@@ -240,7 +240,7 @@ async function enter(rel) {
     rightRel = rel
     structures.stateMut.selected = [from, rel]
     writeUrl(from, rel)
-    wireSplit("structs", leaf(from), leaf(rel))
+    wireSplit("structures", leaf(from), leaf(rel))
   } finally {
     flags.entering = false
     compareHold--
@@ -284,7 +284,7 @@ async function enterVersion(rel) {
     if (!bytes) return
     const rightStruct = await useStructure().processVanilla(rel, await read(bytes))
     rightStruct.dimension ||= pathDimension(rel)
-    if (await buildRightSplit(rightStruct, packs.state.baseId || "current", comparePacks.state.baseId)) {
+    if (await buildRightSplit(rightStruct, packs.state.baseId || "before", comparePacks.state.baseId || "after")) {
       leftRel = rightRel = rel
       applyCut(cut)
     }
@@ -349,8 +349,8 @@ async function enterFiles() {
     if (!build.getRoot()) return
     const rightStruct = await read(rightFile)
     const both = files.main && files.panel && files.main.name !== files.panel.name
-    const leftLabel = both ? `${packs.state.baseId} · ${structureName(leftFile.name)}` : packs.state.baseId || "current"
-    const rightLabel = both ? `${comparePacks.state.baseId} · ${structureName(rightFile.name)}` : comparePacks.state.baseId
+    const leftLabel = [packs.state.baseId, both ? structureName(leftFile.name) : ""].filter(Boolean).join(" · ") || "before"
+    const rightLabel = [comparePacks.state.baseId, both ? structureName(rightFile.name) : ""].filter(Boolean).join(" · ") || "after"
     if (await buildRightSplit(rightStruct, leftLabel, rightLabel)) {
       leftRel = rightRel = ""
       applyCut(cut)
@@ -485,7 +485,7 @@ async function refresh() {
 function tryAutoEnter() {
   if (entering() || !comparePacks.state.armed) return
   if (state.on) {
-    if (state.mode !== "structs") return
+    if (state.mode !== "structures") return
     exit()
   }
   if (files.main || files.panel) return enterFiles()

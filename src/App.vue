@@ -241,13 +241,17 @@ const rightInfo = computed(() => compareState.on && buildState.info ? stats(buil
 const SKY_FOG = { overworld: "#C0D8FF", the_nether: "#330808", the_end: "#181318" }
 const skyBg = computed(() => sky.active.value ? SKY_FOG[sky.skyDim.value] ?? SKY_FOG.overworld : "")
 
+// the before and after views fill the frame with one side, so only that
+// side's tag and stats show, in the left slot
 const info = computed(() => {
-  const i = compareState.on ? compareState.leftInfo : buildState.info
+  const i = compareState.on ? (compareState.view === "after" ? buildState.info : compareState.leftInfo) : buildState.info
   if (!i) return ""
   if (compareState.on) return stats(i)
   const name = current.name ? `${current.name.replace(/\//g, "/\u200B")} · ` : ""
   return name + stats(i)
 })
+
+const compareTag = computed(() => compareState.view === "after" ? compareState.right : compareState.left)
 
 const usedLabel = computed(() => buildState.info?.blocks === 0 && structure.value?.entities?.length ? "Entities" : "Blocks")
 
@@ -371,13 +375,13 @@ onMounted(async () => {
       <!-- walking hides the viewport chrome: only the crosshair + hint show -->
       <template v-if="!walkState.on">
         <div class="topbar">
-          <div v-if="compareState.on" class="name-tag">{{ compareState.left }}</div>
+          <div v-if="compareState.on" class="name-tag">{{ compareTag }}</div>
           <div v-if="current.error" class="chip error">{{ current.error }}</div>
           <div v-else-if="current.reading && !minimal" class="chip">{{ current.reading.label || "reading structures" }}… {{ current.reading.done }}/{{ current.reading.total }}</div>
           <div v-else-if="buildState.status && !minimal" class="chip">{{ buildState.status }}</div>
           <div v-else-if="info" class="chip">{{ info }}</div>
         </div>
-        <div v-if="compareState.on" class="topbar right">
+        <div v-if="compareState.on && compareState.view === 'slide'" class="topbar right">
           <div v-if="rightInfo" class="chip">{{ rightInfo }}</div>
           <div class="name-tag">{{ compareState.right }}</div>
         </div>

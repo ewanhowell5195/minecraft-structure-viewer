@@ -197,8 +197,9 @@ assets once, at the end.
 
 `{ data, name }` or `{ path }`.
 
-- `data` raw structure bytes, with `name` choosing the format by extension:
-  `.nbt`, `.litematic`, `.schem` or `.mcstructure`, defaulting to `.nbt`
+- `data` raw structure bytes in any supported format (`.nbt`, `.litematic`,
+  `.schem` or `.mcstructure`), detected from the bytes; `name` is the display
+  name
 - `path` a resource-relative path from the loaded sources, as listed by
   `listStructures`
 
@@ -264,8 +265,8 @@ they are placed again whenever the structure rebuilds.
 
 `{ data, name }`, both optional. Replies `{ blocks, entities }` for whatever is
 currently built, or for a structure file passed as `data`, which is parsed and
-reported without loading it or disturbing the scene. `name` picks the format by
-extension exactly as [`loadStructure`](#loadstructure) does.
+reported without loading it or disturbing the scene. The format is detected
+from the bytes.
 
 ```js
 blocks: [
@@ -319,8 +320,9 @@ can't be listed out of one, so pair it with `compare`'s file mode.
 
 #### `compare`
 
-Starts, changes or ends a comparison. Replies `{ on, mode, counts }`, where
-`counts` is `{ added, changed, removed }` in blocks. Pick one of:
+Starts, changes or ends a comparison. Replies `{ on, mode, counts, labels }`,
+where `counts` is `{ added, changed, removed }` in blocks and `labels` is the
+`[left, right]` name pair shown over the split. Pick one of:
 
 ```js
 { path: "minecraft/igloo/top" }        // the same structure from both stacks
@@ -333,7 +335,7 @@ Starts, changes or ends a comparison. Replies `{ on, mode, counts }`, where
   comparison stack on the right. When only the comparison stack has it, it
   loads normally from there instead of splitting, and the reply's `on` says so
 - `left` and `right` are structure files, as bytes or `{ data, name }` with
-  `name` picking the format as [`loadStructure`](#loadstructure) does. `right`
+  `name` naming that side, as [`loadStructure`](#loadstructure) does. `right`
   renders with the comparison assets. Give one side alone to render the same
   file under both stacks, comparing just the assets
 - `against` compares the currently loaded structure to another from the same
@@ -349,7 +351,12 @@ Any call can also adjust the view:
 { show: { added: true, changed: true, removed: false } }  // diff highlights
 { view: "before" }                                        // "slide", "before" or "after"
 { split: 0.3 }                                            // slider position, 0 to 1
+{ labels: ["old build", "new build"] }                    // override the side names
 ```
+
+Labels derive from the version ids and file names; a string in `labels`
+replaces that side's, and `null` keeps it. They last until the next comparison
+is set up.
 
 ### Virtual sources
 
