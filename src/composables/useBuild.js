@@ -18,6 +18,7 @@ import { minimal } from "../minimal.js"
 import { loadStateCache, saveStateCache } from "../stateCache.js"
 import { SOFT_BLOCKS, HARD_BLOCKS, bellRingDir } from "../streamShared.js"
 import { renderSpawnEgg } from "../iconRender.js"
+import { ensureRaw, derive, blockAt as blockObject, RawBuilder } from "../blocklist.js"
 
 // stateful singleton (live scene root, handles, watchers): hot updates must
 // full-reload, never re-execute alongside the old instance
@@ -54,11 +55,14 @@ async function resolveLegacyNames(structure, lib, assets) {
 
 const SB = /(^|:)structure_block$/
 function stripStructureBlocks(structure) {
-  function isTech(b) {
-    const n = structure.palette[b.state]?.id || ""
+  const raw = structure.raw
+  function isTech(state) {
+    const n = structure.palette[state]?.id || ""
     return JIGSAW.test(n) || SB.test(n)
   }
-  if (!structure.blocks.some(isTech)) return structure
+  let found = false
+  for (let i = 0; i < raw.length; i += 4) if (isTech(raw[i])) { found = true; break }
+  if (!found) return structure
   const palette = structure.palette.slice()
   const idx = new Map()
   function stateFor(e) {
@@ -71,15 +75,17 @@ function stripStructureBlocks(structure) {
     }
     return i
   }
-  const blocks = []
-  for (const b of structure.blocks) {
-    if (!isTech(b)) { blocks.push(b); continue }
-    if (JIGSAW.test(structure.palette[b.state].id)) {
-      const fs = parseState(typeof b.nbt?.final_state === "string" ? b.nbt.final_state : "")
-      if (!AIR.test(fs.id)) blocks.push({ pos: b.pos, state: stateFor(fs) })
+  const rb = new RawBuilder(raw.length >> 2)
+  for (let i = 0, bi = 0; i < raw.length; i += 4, bi++) {
+    const st = raw[i]
+    const nbt = structure.blockNbt.get(bi)
+    if (!isTech(st)) { rb.push(st, raw[i + 1], raw[i + 2], raw[i + 3], nbt); continue }
+    if (JIGSAW.test(structure.palette[st].id)) {
+      const fs = parseState(typeof nbt?.final_state === "string" ? nbt.final_state : "")
+      if (!AIR.test(fs.id)) rb.push(stateFor(fs), raw[i + 1], raw[i + 2], raw[i + 3])
     }
   }
-  return { ...structure, palette, blocks }
+  return derive(structure, rb.finish(), rb.nbt, { palette })
 }
 
 // walls went from boolean north/south/east/west to none/low/tall in 1.16
@@ -99,8 +105,9 @@ function fixLegacyProps(name, props) {
 async function remapLoaderStates(structure, lib, assets) {
   const loaders = lib.ModelLoader?.list() ?? []
   if (!loaders.length) return
+  const raw = structure.raw
   const byPos = new Map()
-  for (const b of structure.blocks) byPos.set(b.pos.join(","), b)
+  for (let i = 0, bi = 0; i < raw.length; i += 4, bi++) byPos.set(raw[i + 1] + "," + raw[i + 2] + "," + raw[i + 3], bi)
   const matched = new Map() // stateIdx -> resolved models or null
   async function matchedModels(stateIdx) {
     if (matched.has(stateIdx)) return matched.get(stateIdx)
@@ -119,20 +126,22 @@ async function remapLoaderStates(structure, lib, assets) {
   }
   const byKey = new Map()
   structure.palette.forEach((e, i) => { if (e?.__loaderKey) byKey.set(e.__loaderKey, i) })
-  for (const b of structure.blocks) {
-    const datas = await matchedModels(b.state)
+  for (let i = 0, bi = 0; i < raw.length; i += 4, bi++) {
+    const state = raw[i]
+    const datas = await matchedModels(state)
     if (!datas) continue
-    const e = structure.palette[b.state]
-    const [bx, by, bz] = b.pos
+    const e = structure.palette[state]
+    const bx = raw[i + 1], by = raw[i + 2], bz = raw[i + 3]
+    const nbt = structure.blockNbt.get(bi) ?? null
     const neighbors = {}
     for (const [dir, dx, dy, dz] of [["north", 0, 0, -1], ["south", 0, 0, 1], ["west", -1, 0, 0], ["east", 1, 0, 0], ["up", 0, 1, 0], ["down", 0, -1, 0]]) {
       const nb = byPos.get((bx + dx) + "," + (by + dy) + "," + (bz + dz))
-      const ne = nb && structure.palette[nb.state]
+      const ne = nb !== undefined && structure.palette[raw[nb << 2]]
       if (ne?.id) neighbors[dir] = { id: ne.id, ...(ne.properties ?? {}) }
     }
-    const block = { id: e.id, properties: e.properties ?? {}, neighbors, nbt: b.nbt ?? null }
+    const block = { id: e.id, properties: e.properties ?? {}, neighbors, nbt }
     const variant = datas.map(d => lib.ModelLoader.variantKey(d, block) ?? "").join("/")
-    const key = `${b.state}|${variant}|${JSON.stringify(b.nbt ?? null)}`
+    const key = `${state}|${variant}|${JSON.stringify(nbt)}`
     let idx = byKey.get(key)
     if (idx === undefined) {
       idx = structure.palette.length
@@ -143,7 +152,7 @@ async function remapLoaderStates(structure, lib, assets) {
       structure.palette.push(entry)
       byKey.set(key, idx)
     }
-    b.state = idx
+    raw[i] = idx
   }
 }
 
@@ -276,7 +285,8 @@ function cellIndex() {
   const structure = current.value
   if (blockMapFor !== structure) {
     blockMap = new Map()
-    structure.blocks.forEach((b, i) => blockMap.set(b.pos[0] + "," + b.pos[1] + "," + b.pos[2], i))
+    const raw = structure.raw
+    for (let i = 0, bi = 0; i < raw.length; i += 4, bi++) blockMap.set(raw[i + 1] + "," + raw[i + 2] + "," + raw[i + 3], bi)
     blockMapFor = structure
   }
   return blockMap
@@ -290,7 +300,7 @@ function blockAt(wx, wy, wz) {
   if (!structure || !root) return null
   const [bx, by, bz] = cellOf(wx, wy, wz)
   const i = cellIndex().get(bx + "," + by + "," + bz)
-  return i == null ? null : structure.palette[structure.blocks[i].state]
+  return i == null ? null : structure.palette[structure.raw[i << 2]]
 }
 
 // rotation-only state variants share one unrotated template, the rotation folded
@@ -885,11 +895,12 @@ async function attachEntities(structure, lib, assets) {
 
 async function attachSpawnerEggs(structure, lib, assets) {
   const texCache = new Map()
-  for (const b of structure.blocks) {
-    if (!/(^|[:_])spawner$/.test(structure.palette[b.state]?.id ?? "")) continue
-    let id = b.nbt?.SpawnData?.entity?.id ?? b.nbt?.SpawnPotentials?.[0]?.data?.entity?.id
+  const raw = structure.raw
+  for (const [bi, nbt] of structure.blockNbt) {
+    if (!/(^|[:_])spawner$/.test(structure.palette[raw[bi << 2]]?.id ?? "")) continue
+    let id = nbt?.SpawnData?.entity?.id ?? nbt?.SpawnPotentials?.[0]?.data?.entity?.id
     if (!id) {
-      const cfg = await readTrialSpawnerConfig(b.nbt?.normal_config)
+      const cfg = await readTrialSpawnerConfig(nbt?.normal_config)
       id = cfg?.spawn_potentials?.[0]?.data?.entity?.id
     }
     if (typeof id !== "string") continue
@@ -897,7 +908,8 @@ async function attachSpawnerEggs(structure, lib, assets) {
     if (!texCache.has(name)) texCache.set(name, await entityMarkerCanvas(lib, assets, name))
     const canvas = texCache.get(name)
     if (!canvas) continue
-    pendingMarkers.push({ canvas, x: b.pos[0] * 16, y: b.pos[1] * 16, z: b.pos[2] * 16, w: 9, h: 9, blend: false })
+    const j = bi << 2
+    pendingMarkers.push({ canvas, x: raw[j + 1] * 16, y: raw[j + 2] * 16, z: raw[j + 3] * 16, w: 9, h: 9, blend: false })
   }
 }
 
@@ -972,12 +984,13 @@ const SHELF_YAW = { south: 0, west: -Math.PI / 2, north: Math.PI, east: Math.PI 
 
 async function attachShelves(structure, lib, assets) {
   const cache = new Map()
-  for (const b of structure.blocks) {
-    const entry = structure.palette[b.state]
+  const raw = structure.raw
+  for (const [bi, nbt] of structure.blockNbt) {
+    const entry = structure.palette[raw[bi << 2]]
     if (!/(^|_)shelf$/.test((entry?.id ?? "").replace(/^minecraft:/, ""))) continue
-    const items = b.nbt?.Items
+    const items = nbt?.Items
     if (!Array.isArray(items) || !items.length) continue
-    const alignBottom = Number(b.nbt.align_items_to_bottom ?? 0) === 1
+    const alignBottom = Number(nbt.align_items_to_bottom ?? 0) === 1
     const facing = entry.properties?.facing ?? "north"
     const g = new THREE.Group()
     for (const it of items) {
@@ -1016,7 +1029,8 @@ async function attachShelves(structure, lib, assets) {
     if (!g.children.length) continue
     g.userData.daytime = daytimeUniform
     g.rotation.y = SHELF_YAW[entry.properties?.facing] ?? Math.PI
-    g.position.set(b.pos[0] * 16, b.pos[1] * 16, b.pos[2] * 16)
+    const j = bi << 2
+    g.position.set(raw[j + 1] * 16, raw[j + 2] * 16, raw[j + 3] * 16)
     root.add(g)
   }
 }
@@ -1059,6 +1073,7 @@ function toggleDoor(reg) {
   const regs = reg.pair ? [reg, reg.pair] : [reg]
   for (const r of regs) {
     r.b.state = open ? r.openIdx : r.closedIdx
+    structure.raw[r.bi << 2] = r.b.state
     setDoorInstance(r.openIdx, r.openSlot, r.b.pos, open)
     setDoorInstance(r.closedIdx, r.closedSlot, r.b.pos, !open)
   }
@@ -1197,7 +1212,7 @@ function rayHit(ox, oy, oz, dx, dy, dz, REACH = 80) {
     }
     const i = idx.get(key)
     if (i == null) continue
-    const b = structure.blocks[i]
+    const b = blockObject(structure, i)
     const bName = structure.palette[b.state]?.id ?? ""
     if (!state.technical && /(^|:)(barrier|light|structure_void)$/.test(bName)) continue
     const e = structure.palette[b.state]
@@ -1304,7 +1319,7 @@ function blockEntryAt(wx, wy, wz) {
   if (!structure || !root) return null
   const [bx, by, bz] = cellOf(wx, wy, wz)
   const i = cellIndex().get(bx + "," + by + "," + bz)
-  if (i != null) return structure.blocks[i]
+  if (i != null) return blockObject(structure, i)
   const bits = structure.__buried
   if (bits) {
     const [sx, sy, sz] = structure.size
@@ -1479,6 +1494,7 @@ const setCompareSource = fn => { compareSource = fn }
 async function build(structure = source, refit = true, slice = false, fresh = false) {
   const assets = assetsOverride ?? packs.assets.value
   if (!assets || !structure || state.building) return
+  ensureRaw(structure)
   state.building = true
   cancelBuild = false
   lock(true)
@@ -1499,7 +1515,12 @@ async function build(structure = source, refit = true, slice = false, fresh = fa
     structure.palette.forEach((e, i) => {
       if (e?.id && (JIGSAW.test(e.id) || SB.test(e.id))) techStates.add(i)
     })
-    state.hasStructureBlocks = techStates.size > 0 && structure.blocks.some(b => techStates.has(b.state))
+    let anyTech = false
+    if (techStates.size) {
+      const r = structure.raw
+      for (let i = 0; i < r.length; i += 4) if (techStates.has(r[i])) { anyTech = true; break }
+    }
+    state.hasStructureBlocks = anyTech
     // no toggle to reach in minimal, on a manual load, or while comparing, so
     // the structure is shown as handed over rather than silently stripped
     if (state.hideStructureBlocks && !minimal && !state.manual && !compareSource?.()) structure = stripStructureBlocks(structure)
@@ -1551,19 +1572,21 @@ async function build(structure = source, refit = true, slice = false, fresh = fa
       const lightBlocks = []
       // per-state shared descriptors keep the lib's identity memo effective
       const lightSC = new Map()
-      for (const b of structure.blocks) {
-        let sc = lightSC.get(b.state)
+      const lraw = structure.raw
+      for (let i = 0; i < lraw.length; i += 4) {
+        const state = lraw[i]
+        let sc = lightSC.get(state)
         if (sc === undefined) {
-          const e = structure.palette[b.state]
+          const e = structure.palette[state]
           if (!e?.id || AIR.test(e.id)) sc = null
           else {
             const name = legacyNames.get(e.id) ?? e.id
             sc = { id: name, properties: fixLegacyProps(name.replace("minecraft:", ""), e.properties) ?? {} }
           }
-          lightSC.set(b.state, sc)
+          lightSC.set(state, sc)
         }
         if (!sc) continue
-        lightBlocks.push({ id: sc.id, properties: sc.properties, pos: b.pos })
+        lightBlocks.push({ id: sc.id, properties: sc.properties, pos: [lraw[i + 1], lraw[i + 2], lraw[i + 3]] })
       }
       if (lightBlocks.length) {
         state.status = "lighting…"
@@ -1614,8 +1637,10 @@ async function build(structure = source, refit = true, slice = false, fresh = fa
     if (lib.ModelLoader) await remapLoaderStates(structure, lib, assets)
     if (cancelBuild) return abort()
 
+    const braw = structure.raw
+    const bcount = braw.length >> 2
     let inputBlocks = []
-    const inputIdx = new Int32Array(structure.blocks.length).fill(-1)
+    const inputIdx = new Int32Array(bcount).fill(-1)
     const stateCache = new Map()
     const scFor = state => {
       let sc = stateCache.get(state)
@@ -1640,12 +1665,11 @@ async function build(structure = source, refit = true, slice = false, fresh = fa
     }
     let placeable = 0
     let inBounds = true
-    for (let i = 0; i < structure.blocks.length; i++) {
-      const b = structure.blocks[i]
-      if (!scFor(b.state)) continue
+    for (let i = 0; i < braw.length; i += 4) {
+      if (!scFor(braw[i])) continue
       placeable++
-      const p = b.pos
-      if (p[0] < 0 || p[1] < 0 || p[2] < 0 || p[0] >= sx || p[1] >= sy || p[2] >= sz) inBounds = false
+      const x = braw[i + 1], y = braw[i + 2], z = braw[i + 3]
+      if (x < 0 || y < 0 || z < 0 || x >= sx || y >= sy || z >= sz) inBounds = false
     }
     // enclosure drop on a dense solid mask: blocks buried under fully-occluding
     // neighbors on every side never materialize as entries; buried cells read
@@ -1662,12 +1686,10 @@ async function build(structure = source, refit = true, slice = false, fresh = fa
       if (cancelBuild) return abort()
       const w = sx, h = sy, d = sz
       const solid = new Uint8Array(w * h * d)
-      for (let i = 0; i < structure.blocks.length; i++) {
-        const b = structure.blocks[i]
-        const sc = stateCache.get(b.state)
+      for (let i = 0; i < braw.length; i += 4) {
+        const sc = stateCache.get(braw[i])
         if (!sc || !sc.solid) continue
-        const p = b.pos
-        solid[(p[2] * h + p[1]) * w + p[0]] = 1
+        solid[(braw[i + 3] * h + braw[i + 2]) * w + braw[i + 1]] = 1
       }
       enc = (x, y, z) => {
         if (x <= 0 || y <= 0 || z <= 0 || x >= w - 1 || y >= h - 1 || z >= d - 1) return false
@@ -1680,25 +1702,28 @@ async function build(structure = source, refit = true, slice = false, fresh = fa
     // or a bad spawn inside sealed terrain bumps out instead of floating in it
     const buriedBits = enc ? new Uint8Array((sx * sy * sz + 7) >> 3) : null
     structure.__buried = buriedBits
-    for (let i = 0; i < structure.blocks.length; i++) {
-      const b = structure.blocks[i]
-      const sc = stateCache.get(b.state)
+    const blockNbt = structure.blockNbt
+    for (let i = 0, j = 0; i < bcount; i++, j += 4) {
+      const sc = stateCache.get(braw[j])
       if (!sc) continue
-      const p = b.pos
-      if (enc && enc(p[0], p[1], p[2])) {
-        const bi = (p[2] * sy + p[1]) * sx + p[0]
+      const x = braw[j + 1], y = braw[j + 2], z = braw[j + 3]
+      if (enc && enc(x, y, z)) {
+        const bi = (z * sy + y) * sx + x
         buriedBits[bi >> 3] |= 1 << (bi & 7)
         continue
       }
-      const entry = { id: sc.name, pos: p }
+      const entry = { id: sc.name, pos: [x, y, z] }
       if (sc.props) entry.properties = sc.props
       if (sc.biome) entry.biome = sc.biome
-      if (b.nbt?.Items && sc.isShelf) {
-        const items = b.nbt.Items.filter(it => typeof it?.id === "string" && !LIVE_ITEM.test(it.id))
-        if (items.length) entry.nbt = { Items: items, align_items_to_bottom: b.nbt.align_items_to_bottom }
-      }
-      if ((b.nbt?.patterns || b.nbt?.Patterns) && sc.isBanner) {
-        entry.nbt = { patterns: b.nbt.patterns ?? b.nbt.Patterns }
+      if (sc.isShelf || sc.isBanner) {
+        const nbt = blockNbt.get(i)
+        if (nbt?.Items && sc.isShelf) {
+          const items = nbt.Items.filter(it => typeof it?.id === "string" && !LIVE_ITEM.test(it.id))
+          if (items.length) entry.nbt = { Items: items, align_items_to_bottom: nbt.align_items_to_bottom }
+        }
+        if ((nbt?.patterns || nbt?.Patterns) && sc.isBanner) {
+          entry.nbt = { patterns: nbt.patterns ?? nbt.Patterns }
+        }
       }
       inputIdx[i] = inputBlocks.length
       inputBlocks.push(entry)
@@ -1815,13 +1840,14 @@ async function build(structure = source, refit = true, slice = false, fresh = fa
     newLight?.setOffset(position)
 
     const doorEntries = []
-    for (const b of structure.blocks) {
-      if (!isOpenable(structure.palette[b.state])) continue
+    for (let i = 0, j = 0; i < bcount; i++, j += 4) {
+      if (!isOpenable(structure.palette[braw[j]])) continue
+      const b = blockObject(structure, i)
       const openIdx = stateWithOpen(structure, b.state, "true")
       const closedIdx = stateWithOpen(structure, b.state, "false")
       await buildStateTemplate(openIdx)
       await buildStateTemplate(closedIdx)
-      doorEntries.push({ b, openIdx, closedIdx })
+      doorEntries.push({ b, bi: i, openIdx, closedIdx })
       if (cancelBuild) {
         handle.dispose()
         return abort()
@@ -1869,16 +1895,16 @@ async function build(structure = source, refit = true, slice = false, fresh = fa
     }
 
     let loaderCount = 0
-    for (const b of structure.blocks) {
-      if (!structure.palette[b.state]?.__loaderKey) continue
-      const tmpl = await buildStateTemplate(b.state)
+    for (let j = 0; j < braw.length; j += 4) {
+      if (!structure.palette[braw[j]]?.__loaderKey) continue
+      const tmpl = await buildStateTemplate(braw[j])
       if (cancelBuild) {
         handle.dispose()
         return abort()
       }
       if (!tmpl) continue
       const inst = tmpl.clone()
-      inst.position.set(b.pos[0] * 16, b.pos[1] * 16, b.pos[2] * 16)
+      inst.position.set(braw[j + 1] * 16, braw[j + 2] * 16, braw[j + 3] * 16)
       handle.group.add(inst)
       loaderCount++
     }

@@ -18,6 +18,7 @@ import { isRemote, prefetchRemote, fetchRemote, remoteName } from "../remote.js"
 import { applyProcessors, seedFor } from "../processors.js"
 import { cacheFile, uncache } from "../userCache.js"
 import { applyLegacyRenames, applyPreFlattening } from "../legacyRenames.js"
+import { blockCount } from "../blocklist.js"
 
 const COMBINE_AIR = /(^|:)(air|cave_air|void_air|structure_void)$/
 
@@ -53,7 +54,7 @@ async function readMany(rels, reuse, mk, label) {
       const e = reuse?.get(rel) ?? await mk(rel)
       if (e) {
         entries.push(e)
-        blocks += e.structure?.blocks?.length ?? 0
+        blocks += e.structure ? blockCount(e.structure) : 0
         if (!await buildApi.restoreGateCheck(blocks)) return null
       }
       if (++state.reading.done % 25 === 0) {

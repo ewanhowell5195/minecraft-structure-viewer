@@ -202,15 +202,15 @@ async function computeAdvIndex() {
       try { s = await read(await lib.readFile(zp, assets)) } catch { continue }
       for (const e of s.palette) if (e?.id) add(bIdx, strip(e.id), name)
       for (const e of s.entities) if (typeof e.nbt?.id === "string") add(eIdx, strip(e.nbt.id), name)
-      for (const b of s.blocks) {
-        if (!b.nbt) continue
+      // items and spawn data only ever live on a block with nbt
+      for (const [bi, nbt] of s.blockNbt) {
         const items = new Set()
-        collectContainerItems(b.nbt, items)
-        if (typeof b.nbt.LootTable === "string") await lootTableItems(b.nbt.LootTable, items)
+        collectContainerItems(nbt, items)
+        if (typeof nbt.LootTable === "string") await lootTableItems(nbt.LootTable, items)
         for (const id of items) add(iIdx, id, name)
-        if (SPAWNER_RE.test(s.palette[b.state]?.id ?? "")) {
+        if (SPAWNER_RE.test(s.palette[s.raw[bi << 2]]?.id ?? "")) {
           const ents = new Set()
-          await collectSpawnerEntities(b.nbt, ents, trialCache)
+          await collectSpawnerEntities(nbt, ents, trialCache)
           for (const id of ents) add(eIdx, id, name)
         }
       }

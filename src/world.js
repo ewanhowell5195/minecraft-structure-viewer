@@ -1,4 +1,5 @@
 import { read, REAL_AIR } from "minecraft-block-reader"
+import { attachBlocks, RawBuilder } from "./blocklist.js"
 export { read }
 
 export function regionCoords(name) {
@@ -262,19 +263,22 @@ export async function buildSelection(world, selected, { yMin = -Infinity, yMax =
   let oldSkipped = 0
   let done = 0
   const total = chunks.length * 2
+  const noExtent = []
   for (const c of chunks) {
     if (onProgress?.(done++, total) === false) throw new Error("cancelled")
-    const nbt = await world.chunk(c)
-    if (!nbt.sections) {
-      if (nbt.Level) oldSkipped++
+    const e = await world.chunkExtent(c, { yMin, yMax })
+    if (!e) {
+      noExtent.push(c)
       continue
     }
-    for (const s of nbt.sections) {
-      const pal = s.block_states?.palette
-      if (!inRange(s) || !pal || pal.every(e => REAL_AIR.test(e.id))) continue
-      minSec = Math.min(minSec, s.Y)
-      maxSec = Math.max(maxSec, s.Y)
-    }
+    minSec = Math.min(minSec, Math.floor(e.bottom / 16))
+    maxSec = Math.max(maxSec, Math.floor(e.top / 16))
+  }
+  // no extent is either an empty range or a pre-1.13 chunk, and only these have
+  // to be parsed to tell which
+  for (const c of noExtent) {
+    const nbt = await world.chunk(c)
+    if (nbt && !nbt.sections && nbt.Level) oldSkipped++
   }
   if (minSec === Infinity) {
     if (oldSkipped) {
@@ -300,21 +304,22 @@ export async function buildSelection(world, selected, { yMin = -Infinity, yMax =
     return i
   }
 
-  const blocks = []
+  const rb = new RawBuilder(1 << 16)
   const entities = []
   const relTop = yTop - y0
   // stop pulling chunks once the block list approaches the memory budget:
   // partial worlds beat dead tabs. Chrome measures the heap live, elsewhere the
-  // block count stands in at ~120 bytes each
+  // block count stands in at ~120 bytes each, covering the whole pipeline rather
+  // than this array, since the build still makes an entry per placed block
   const over = () => {
     const mem = performance.memory
     if (mem) return mem.usedJSHeapSize > mem.jsHeapSizeLimit * 0.85
-    return blocks.length * 120 > budget
+    return rb.count * 120 > budget
   }
   let loaded = 0, truncated = false, capped = false
   for (const c of chunks) {
     if (onProgress?.(done++, total) === false) throw new Error("cancelled")
-    if (blocks.length > cap) { capped = true; break }
+    if (rb.count > cap) { capped = true; break }
     if ((loaded & 15) === 15 && over()) { truncated = true; break }
     loaded++
     const nbt = await world.chunk(c)
@@ -344,13 +349,8 @@ export async function buildSelection(world, selected, { yMin = -Infinity, yMax =
       const put = (i, st) => {
         const y = sy + (i >> 8)
         if (y < 0 || y > relTop) return
-        const pos = [bx + (i & 15), y, bz + ((i >> 4) & 15)]
-        const b = { state: st, pos }
-        if (hasBE) {
-          const nb = beMap.get(pos.join(","))
-          if (nb) b.nbt = nb
-        }
-        blocks.push(b)
+        const px = bx + (i & 15), pz = bz + ((i >> 4) & 15)
+        rb.push(st, px, y, pz, hasBE ? beMap.get(px + "," + y + "," + pz) : undefined)
       }
       if (pal.length === 1) {
         if (map[0] === -1) continue
@@ -406,18 +406,18 @@ export async function buildSelection(world, selected, { yMin = -Infinity, yMax =
     size = [mx, relTop + 1, mz]
   }
 
-  const out = {
+  const out = attachBlocks({
     worldOrigin: [x0, y0, z0],
     size,
     palette,
-    blocks,
+    blocks: null,
     entities,
     truncated,
     capped,
     oldSkipped,
     chunksLoaded: loaded,
     chunksTotal: chunks.length
-  }
+  }, rb.finish(), rb.nbt)
   if (partsOut) out.__parts = partsOut
   return out
 }
@@ -426,83 +426,17 @@ export async function buildSelection(world, selected, { yMin = -Infinity, yMax =
 // palette index + 1 (0 = air), laid out y-major then (z*16 + x). No per-block
 // objects; entries materialize later, only for cells that survive filtering
 export async function chunkGrid(world, c, { yMin, yMax }) {
-  const nbt = await world.chunk(c)
-  const h = yMax - yMin + 1
-  const grid = new Uint16Array(256 * h)
-  const palette = []
-  const palKey = new Map()
-  const beList = []
-  let any = false
-  if (nbt.sections) {
-    for (const be of nbt.block_entities ?? []) {
-      if (typeof be?.x !== "number" || be.y < yMin || be.y > yMax) continue
-      const { x, y, z, keepPacked, ...rest } = be
-      beList.push({ x, y, z, nbt: plain(rest) })
-    }
-    for (const s of nbt.sections) {
-      const bs = s.block_states
-      const pal = bs?.palette
-      if (!pal || s.Y * 16 + 15 < yMin || s.Y * 16 > yMax) continue
-      const sy = s.Y * 16
-      const map = pal.map(e => {
-        if (REAL_AIR.test(e.id)) return 0
-        const k = e.id + "|" + (e.properties ? JSON.stringify(e.properties) : "")
-        let gi = palKey.get(k)
-        if (gi === undefined) {
-          gi = palette.length + 1
-          palKey.set(k, gi)
-          palette.push({ id: e.id, properties: e.properties ?? null })
-        }
-        return gi
-      })
-      const yLo = Math.max(0, yMin - sy), yHi = Math.min(15, yMax - sy)
-      if (pal.length === 1) {
-        if (!map[0]) continue
-        for (let y = yLo; y <= yHi; y++) grid.fill(map[0], (sy + y - yMin) * 256, (sy + y - yMin) * 256 + 256)
-        any = true
-        continue
-      }
-      const data = bs.data ?? []
-      const bits = Math.max(4, 32 - Math.clz32(pal.length - 1))
-      const maskN = (1 << bits) - 1
-      if (nbt.DataVersion < 2527) {
-        let w = 0, off = 0
-        for (let i = 0; i < 4096; i++) {
-          let v = data[w] >>> off
-          if (off + bits > 32) v |= data[w + 1] << (32 - off)
-          off += bits
-          if (off >= 32) { w += off >>> 5; off &= 31 }
-          const gi = map[v & maskN]
-          if (!gi) continue
-          const y = i >> 8
-          if (y < yLo || y > yHi) continue
-          grid[(sy + y - yMin) * 256 + (i & 255)] = gi
-          any = true
-        }
-        continue
-      }
-      const vpl = Math.floor(64 / bits)
-      const longs = data.length >> 1
-      let i = 0
-      for (let li = 0; li < longs && i < 4096; li++) {
-        const lo = data[li * 2], hi = data[li * 2 + 1]
-        for (let j = 0; j < vpl && i < 4096; j++, i++) {
-          const off = j * bits
-          let v
-          if (off + bits <= 32) v = (lo >>> off) & maskN
-          else if (off >= 32) v = (hi >>> (off - 32)) & maskN
-          else v = ((lo >>> off) | (hi << (32 - off))) & maskN
-          const gi = map[v]
-          if (!gi) continue
-          const y = i >> 8
-          if (y < yLo || y > yHi) continue
-          grid[(sy + y - yMin) * 256 + (i & 255)] = gi
-          any = true
-        }
-      }
-    }
+  const { palette, grid, blockEntities, empty } = await world.chunkGrid(c, { yMin, yMax })
+  return {
+    cx: c.cx,
+    cz: c.cz,
+    palette: palette.map(e => ({ id: e.id, properties: e.properties ?? null })),
+    grid,
+    h: yMax - yMin + 1,
+    yMin,
+    beList: blockEntities.map(b => ({ x: b.x, y: b.y, z: b.z, nbt: plain(b.nbt) })),
+    empty
   }
-  return { cx: c.cx, cz: c.cz, palette, grid, h, yMin, beList, empty: !any }
 }
 
 // merge chunk palettes into one tile palette; returns per-chunk local->global maps

@@ -6,6 +6,7 @@ import { useStructure } from "./useStructure.js"
 import { useLock } from "./useLock.js"
 import { setParams } from "../params.js"
 import { debounce } from "../yield.js"
+import { derive, RawBuilder } from "../blocklist.js"
 
 const AXES = ["x", "y", "z"]
 const DIRS = { x: new THREE.Vector3(1, 0, 0), y: new THREE.Vector3(0, 1, 0), z: new THREE.Vector3(0, 0, 1) }
@@ -182,11 +183,16 @@ function sliceStructure(structure) {
   pendingKey = sliceKey()
   if (!act.length) return structure
   const keep = p => act.every(([k, i, flip]) => flip ? p[k] >= i : p[k] < i)
-  return {
-    ...structure,
-    blocks: structure.blocks.filter(b => keep(b.pos)),
-    entities: (structure.entities ?? []).filter(e => keep(e.pos.map(Math.floor)))
+  const raw = structure.raw
+  const rb = new RawBuilder(raw.length >> 2)
+  const p = [0, 0, 0]
+  for (let i = 0, bi = 0; i < raw.length; i += 4, bi++) {
+    p[0] = raw[i + 1]; p[1] = raw[i + 2]; p[2] = raw[i + 3]
+    if (keep(p)) rb.push(raw[i], p[0], p[1], p[2], structure.blockNbt.get(bi))
   }
+  return derive(structure, rb.finish(), rb.nbt, {
+    entities: (structure.entities ?? []).filter(e => keep(e.pos.map(Math.floor)))
+  })
 }
 
 // comparing owns what each half shows, so a cut there stays a clipping-plane

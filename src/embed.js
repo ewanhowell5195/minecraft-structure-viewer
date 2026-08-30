@@ -9,6 +9,7 @@ import { useComparePacks } from "./composables/useComparePacks.js"
 import { setHighlights } from "./composables/useHighlight.js"
 import { useSky } from "./composables/useSky.js"
 import { read } from "minecraft-block-reader"
+import { ensureRaw } from "./blocklist.js"
 
 const SOURCE = "structure-viewer"
 const AIR = /(^|:)(air|cave_air|void_air)$/
@@ -154,12 +155,14 @@ const COMMANDS = {
       : useBuild().current.value
     if (!structure) throw new Error("nothing is loaded")
     const blocks = []
-    for (const b of structure.blocks) {
-      const entry = structure.palette[b.state]
+    const raw = ensureRaw(structure).raw
+    for (let i = 0, bi = 0; i < raw.length; i += 4, bi++) {
+      const entry = structure.palette[raw[i]]
       if (!entry?.id || AIR.test(entry.id)) continue
-      const out = { pos: b.pos.slice(), id: entry.id }
+      const out = { pos: [raw[i + 1], raw[i + 2], raw[i + 3]], id: entry.id }
       if (entry.properties) out.properties = { ...entry.properties }
-      if (b.nbt) out.nbt = jsonSafe(b.nbt)
+      const nbt = structure.blockNbt.get(bi)
+      if (nbt) out.nbt = jsonSafe(nbt)
       blocks.push(out)
     }
     const entities = (structure.entities ?? []).map(e => ({

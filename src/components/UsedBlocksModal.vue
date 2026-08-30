@@ -5,6 +5,7 @@ import { useCompare } from "../composables/useCompare.js"
 import { useContainer } from "../composables/useContainer.js"
 import { useFind } from "../composables/useFind.js"
 import { isInspectable } from "../loot.js"
+import { blockAt } from "../blocklist.js"
 import { compareChanges, json } from "../compareChanges.js"
 import Modal from "./Modal.vue"
 import Seg from "./Seg.vue"
@@ -40,8 +41,9 @@ function compute() {
   if (!s) return null
   const groups = new Map()
   let total = 0
-  for (const b of s.blocks) {
-    const e = s.palette[b.state]
+  const raw = s.raw
+  for (let i = 0, bi = 0; i < raw.length; i += 4, bi++) {
+    const e = s.palette[raw[i]]
     if (!e?.id || AIR.test(e.id)) continue
     total++
     let g = groups.get(e.id)
@@ -52,7 +54,7 @@ function compute() {
     let st = g.states.get(key)
     if (!st) g.states.set(key, st = { props, count: 0, blocks: null })
     st.count++
-    if (isDataName(e.id) || b.nbt?.LootTable) (st.blocks ??= []).push(b)
+    if (isDataName(e.id) || s.blockNbt.get(bi)?.LootTable) (st.blocks ??= []).push(blockAt(s, bi))
   }
   const blocks = Array.from(groups.values(), g => ({
     id: g.id,
@@ -172,11 +174,12 @@ function findBlocks(id, props, entries) {
   if (!s) return
   const key = props === undefined ? null : JSON.stringify(props)
   const hits = []
-  for (const b of s.blocks) {
-    const e = s.palette[b.state]
+  const raw = s.raw
+  for (let i = 0, bi = 0; i < raw.length; i += 4, bi++) {
+    const e = s.palette[raw[i]]
     if (e?.id !== id) continue
     if (key !== null && JSON.stringify(shownProps(e.properties)) !== key) continue
-    hits.push(b)
+    hits.push(blockAt(s, bi))
   }
   if (!hits.length) return
   const text = props ? (entries ?? Object.entries(props)).map(([k, v]) => `${k}=${v}`).join(" ") : ""

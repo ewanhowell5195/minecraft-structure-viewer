@@ -66,18 +66,20 @@ const _m = new THREE.Matrix4()
 export async function makeSignTexts(structure) {
   const quads = []
   let font = null
-  for (const b of structure.blocks) {
-    const e = structure.palette[b.state]
+  const raw = structure.raw
+  for (const [bi, nbt] of structure.blockNbt) {
+    const j = bi << 2
+    const e = structure.palette[raw[j]]
     const name = (e?.id || "").replace(/^minecraft:/, "")
     const kind = name.match(/(?:^|_)(wall_hanging_sign|hanging_sign|wall_sign|sign)$/)?.[1]
-    if (!kind || !b.nbt) continue
+    if (!kind) continue
     const faces = []
-    const front = faceData(b.nbt.front_text), back = faceData(b.nbt.back_text)
+    const front = faceData(nbt.front_text), back = faceData(nbt.back_text)
     if (front) faces.push({ back: false, ...front })
     if (back) faces.push({ back: true, ...back })
-    if (!front && !back && typeof b.nbt.Text1 === "string") {
-      const lines = [1, 2, 3, 4].map(i => plainText(b.nbt["Text" + i]))
-      if (lines.some(l => l)) faces.push({ back: false, lines, color: typeof b.nbt.Color === "string" ? b.nbt.Color : "black", glow: !!b.nbt.GlowingText })
+    if (!front && !back && typeof nbt.Text1 === "string") {
+      const lines = [1, 2, 3, 4].map(i => plainText(nbt["Text" + i]))
+      if (lines.some(l => l)) faces.push({ back: false, lines, color: typeof nbt.Color === "string" ? nbt.Color : "black", glow: !!nbt.GlowingText })
     }
     if (!faces.length) continue
     try { font ??= await getFont() } catch { return null }
@@ -90,7 +92,7 @@ export async function makeSignTexts(structure) {
       : YROT[p.facing] ?? 0
     const angle = THREE.MathUtils.degToRad(-yrot)
     for (const f of faces) {
-      const M = new THREE.Matrix4().makeTranslation(b.pos[0] * 16 - 8, b.pos[1] * 16 - 8, b.pos[2] * 16 - 8)
+      const M = new THREE.Matrix4().makeTranslation(raw[j + 1] * 16 - 8, raw[j + 2] * 16 - 8, raw[j + 3] * 16 - 8)
       M.multiply(_m.makeScale(16, 16, 16))
       if (hanging) {
         M.multiply(_m.makeTranslation(0.5, 0.9375, 0.5))

@@ -1,5 +1,6 @@
 import { reactive, readonly } from "vue"
 import { read, regionCoords, buildSelection, chunkSurface } from "../world.js"
+import { blockCount } from "../blocklist.js"
 import { readNBT } from "minecraft-block-reader"
 import { useStructure } from "./useStructure.js"
 import { useBuild } from "./useBuild.js"
@@ -355,9 +356,10 @@ async function restoreLoad(wy, wsel, wdim) {
     if (err?.oldChunks) state.oldWorld = true
     return
   }
+  const n = blockCount(probe)
   const est = probe.capped
-    ? Math.round(probe.blocks.length * probe.chunksTotal / probe.chunksLoaded / 1000) * 1000
-    : probe.blocks.length
+    ? Math.round(n * probe.chunksTotal / probe.chunksLoaded / 1000) * 1000
+    : n
   if (!await useBuild().restoreGateCheck(est, true, probe.capped)) return
   await loadSelected()
 }
