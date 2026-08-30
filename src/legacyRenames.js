@@ -1,5 +1,32 @@
 const RENAMES = {
-  spawner: ["1.13", "mob_spawner"]
+  spawner: ["1.13", "mob_spawner"],
+  cobweb: ["1.13", "web"],
+  oak_trapdoor: ["1.13", "trapdoor"],
+  wall_torch: ["1.13", "torch"],
+  snow_block: ["1.13", "snow"],
+  snow: ["1.13", p => "layers" in p ? "snow_layer" : null],
+  potted_cactus: ["1.13", p => {
+    p.contents = "cactus"
+    return "flower_pot"
+  }],
+  stone_bricks: ["1.13", "stonebrick"],
+  end_stone_bricks: ["1.13", "end_bricks"],
+  chiseled_stone_bricks: ["1.13", "chiseled_stonebrick"],
+  cracked_stone_bricks: ["1.13", "cracked_stonebrick"],
+  mossy_stone_bricks: ["1.13", "mossy_stonebrick"],
+  polished_granite: ["1.13", "smooth_granite"],
+  polished_diorite: ["1.13", "smooth_diorite"],
+  polished_andesite: ["1.13", "smooth_andesite"],
+  infested_stone: ["1.13", "stone_monster_egg"],
+  infested_cobblestone: ["1.13", "cobblestone_monster_egg"],
+  infested_stone_bricks: ["1.13", "stone_brick_monster_egg"],
+  infested_mossy_stone_bricks: ["1.13", "mossy_brick_monster_egg"],
+  infested_cracked_stone_bricks: ["1.13", "cracked_brick_monster_egg"],
+  infested_chiseled_stone_bricks: ["1.13", "chiseled_brick_monster_egg"]
+}
+
+for (const suffix of ["carpet", "wool", "stained_glass", "stained_glass_pane", "shulker_box", "glazed_terracotta"]) {
+  RENAMES[`light_gray_${suffix}`] = ["1.13", `silver_${suffix}`]
 }
 
 export function before(version, threshold) {
@@ -15,8 +42,23 @@ export function before(version, threshold) {
 export function applyLegacyRenames(structure, version) {
   if (!version || !structure?.palette) return structure
   for (const e of structure.palette) {
-    const r = RENAMES[e?.id?.replace(/^minecraft:/, "")]
-    if (r && before(version, r[0])) e.id = "minecraft:" + r[1]
+    if (!e?.id) continue
+    const r = RENAMES[e.id.replace(/^minecraft:/, "")]
+    if (r && before(version, r[0])) {
+      const props = { ...e.properties }
+      const target = typeof r[1] === "function" ? r[1](props) : r[1]
+      if (target) {
+        e.id = "minecraft:" + target
+        if (Object.keys(props).length) e.properties = props
+        else delete e.properties
+      }
+    }
+    if (before(version, "1.13") && /_slab$/.test(e.id) && e.properties?.type) {
+      const type = take(e.properties, "type")
+      if (type === "double") e.id = e.id.replace(/_slab$/, "_double_slab")
+      else e.properties.half = type
+      if (!Object.keys(e.properties).length) delete e.properties
+    }
   }
   return structure
 }
@@ -35,7 +77,7 @@ const FLATTEN = {
   planks: p => take(p, "variant") + "_planks",
   wooden_slab: p => take(p, "variant") + "_slab",
   double_wooden_slab: p => take(p, "variant") + "_double_slab",
-  stone_slab: p => take(p, "variant") + "_slab",
+  stone_slab: p => p.variant ? take(p, "variant") + "_slab" : null,
   purpur_slab: p => {
     delete p.variant
     return "purpur_slab"
@@ -53,9 +95,9 @@ const FLATTEN = {
   log2: p => take(p, "variant") + "_log",
   sapling: p => take(p, "type") + "_sapling",
   monster_egg: p => take(p, "variant") + "_monster_egg",
-  stone: p => take(p, "variant"),
+  stone: p => p.variant ? take(p, "variant") : null,
   stonebrick: p => take(p, "variant"),
-  dirt: p => take(p, "variant"),
+  dirt: p => p.variant ? take(p, "variant") : null,
   skull: p => {
     delete p.nodrop
     if (p.facing === "up" || p.facing === "down") {
@@ -74,7 +116,9 @@ export function applyPreFlattening(structure, version) {
     const entry = FLATTEN[e?.id?.replace(/^minecraft:/, "")]
     if (!entry) continue
     const props = { ...e.properties }
-    e.id = "minecraft:" + (typeof entry === "string" ? entry : entry(props))
+    const target = typeof entry === "string" ? entry : entry(props)
+    if (!target) continue
+    e.id = "minecraft:" + target
     if (Object.keys(props).length) e.properties = props
     else delete e.properties
   }

@@ -405,6 +405,7 @@ async function readVanilla(rel) {
 // rel; the version split runs both halves through it so identical files match
 async function processVanilla(rel, s, version = packs.state.baseId) {
   applyPreFlattening(s, version)
+  applyLegacyRenames(s, version)
   await structures.computeProcessors()
   const pe = structures.processorEntry(rel)
   if (!pe) return s
