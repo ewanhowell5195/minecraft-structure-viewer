@@ -75,73 +75,62 @@ function manmade(name) {
 }
 
 export async function chunkSurface(world, chunk, yMin = -Infinity, yMax = Infinity) {
-  const nbt = await world.chunk(chunk)
-  // pre-20w17a chunks pack indices across long boundaries
-  const spanning = nbt.DataVersion < 2527
-  const sections = (nbt.sections ?? [])
-    .filter(s => s.block_states?.palette && s.Y * 16 <= yMax && s.Y * 16 + 15 >= yMin)
-    .sort((a, b) => b.Y - a.Y)
-  const cols = new Uint8Array(256)
-  const colW = new Uint8Array(256)
+  const lo = Number.isFinite(yMin) ? yMin : -64, hi = Number.isFinite(yMax) ? yMax : 320
+  // the surface sits near the top of the chunk, so grid a band down from there
+  // and only widen when some columns are still unresolved
+  const ext = await world.chunkExtent(chunk, { yMin: lo, yMax: hi }).catch(() => null)
+  if (!ext) return null
+  let bandLo = Math.max(lo, ext.top - 31)
+  let cg = await world.chunkGrid(chunk, { yMin: bandLo, yMax: Math.min(hi, ext.top) })
+  if (!cg || cg.empty) return null
+  const codes = cg.palette.map(e => surfaceCode(e.id))
+  const wts = cg.palette.map(e => manmade(e.id) ? 3 : 1)
+  const cols = new Uint8Array(256), colW = new Uint8Array(256)
+  const H = cg.grid.length / 256
   let remaining = 256
-  for (const s of sections) {
-    if (!remaining) break
-    const yTop = Math.min(15, Math.floor(yMax) - s.Y * 16)
-    const yBot = Math.max(0, Math.ceil(yMin) - s.Y * 16)
-    const pal = s.block_states.palette
-    const airMask = pal.map(e => REAL_AIR.test(e.id))
-    if (!airMask.includes(false)) continue
-    const codes = pal.map(e => surfaceCode(e.id))
-    const wts = pal.map(e => manmade(e.id) ? 3 : 1)
-    // readNBT already hands longs over as [lo, hi] uint32 pairs; only
-    // unresolved columns get probed
-    let bits = 0, vpl = 0, mask = 0, u32 = null
-    if (pal.length > 1) {
-      bits = Math.max(4, 32 - Math.clz32(pal.length - 1))
-      vpl = Math.floor(64 / bits)
-      mask = (1 << bits) - 1
-      u32 = s.block_states.data ?? []
-    }
+  for (let y = H - 1; y >= 0 && remaining; y--) {
+    const base = y * 256
     for (let col = 0; col < 256; col++) {
       if (cols[col]) continue
-      for (let y = yTop; y >= yBot; y--) {
-        let pi = 0
-        if (u32) {
-          const i = (y << 8) | col
-          if (spanning) {
-            const bit = i * bits
-            const w = bit >>> 5, off = bit & 31
-            pi = off + bits <= 32 ? (u32[w] >>> off) & mask
-              : ((u32[w] >>> off) | (u32[w + 1] << (32 - off))) & mask
-          } else {
-            const li = (i / vpl) | 0
-            const bit = (i - li * vpl) * bits
-            pi = bit + bits <= 32 ? (u32[li * 2] >>> bit) & mask
-              : bit >= 32 ? (u32[li * 2 + 1] >>> (bit - 32)) & mask
-              : ((u32[li * 2] >>> bit) | (u32[li * 2 + 1] << (32 - bit))) & mask
-          }
+      const gi = cg.grid[base + col]
+      if (!gi) continue
+      cols[col] = codes[gi - 1]
+      colW[col] = wts[gi - 1]
+      remaining--
+    }
+  }
+  if (remaining && bandLo > lo) {
+    // some columns are open sky or deep holes, so take the rest of the chunk
+    const rest = await world.chunkGrid(chunk, { yMin: lo, yMax: bandLo - 1 })
+    if (rest && !rest.empty) {
+      const rc = rest.palette.map(e => surfaceCode(e.id))
+      const rw = rest.palette.map(e => manmade(e.id) ? 3 : 1)
+      const RH = rest.grid.length / 256
+      for (let y = RH - 1; y >= 0 && remaining; y--) {
+        const base = y * 256
+        for (let col = 0; col < 256; col++) {
+          if (cols[col]) continue
+          const gi = rest.grid[base + col]
+          if (!gi) continue
+          cols[col] = rc[gi - 1]
+          colW[col] = rw[gi - 1]
+          remaining--
         }
-        if (airMask[pi]) continue
-        cols[col] = codes[pi]
-        colW[col] = wts[pi]
-        remaining--
-        break
       }
     }
   }
   if (remaining === 256) return null
   const counts = new Uint16Array(64)
-  const mode = (arr, wts) => {
+  const mode = (arr, w) => {
     counts.fill(0)
     let best = 0, bn = 0
     for (let i = 0; i < arr.length; i++) {
       const c = arr[i]
       if (!c) continue
-      if ((counts[c] += wts[i]) > bn) { bn = counts[c]; best = c }
+      if ((counts[c] += w[i]) > bn) { bn = counts[c]; best = c }
     }
     return best
   }
-  // [0..63] 8x8 sub-cells, [64] whole-chunk mode for the far-out zoom levels
   const sub = new Uint8Array(65)
   const quad = new Uint8Array(4), quadW = new Uint8Array(4)
   for (let sz = 0; sz < 8; sz++) for (let sx = 0; sx < 8; sx++) {
