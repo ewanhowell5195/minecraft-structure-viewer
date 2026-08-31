@@ -3,6 +3,9 @@ import { computed, nextTick, provide, ref, watch } from "vue"
 import { useStructures } from "../composables/useStructures.js"
 import { useStructure } from "../composables/useStructure.js"
 import { useWorld } from "../composables/useWorld.js"
+import { usePacks } from "../composables/usePacks.js"
+import { loadLibrary } from "../lib.js"
+import { isLooseZip } from "../loosezip.js"
 import { useContextMenu } from "../composables/useContextMenu.js"
 import { useLock } from "../composables/useLock.js"
 import { useCompare } from "../composables/useCompare.js"
@@ -147,12 +150,18 @@ async function onMode(e) {
   else if (ADV_MODES.has(mode)) await computeAdvIndex()
 }
 
-function onFile(e) {
+async function onFile(e) {
   const file = e.target.files[0]
   e.target.value = ""
   if (!file) return
-  if (/\.(zip|mca)$/i.test(file.name)) useWorld().openWorld(file)
-  else if (compare.versionArmed()) compare.setMainFile(file)
+  if (/\.mca$/i.test(file.name)) return useWorld().openWorld(file)
+  if (/\.zip$/i.test(file.name)) {
+    const lib = await loadLibrary()
+    const bytes = new Uint8Array(await file.arrayBuffer())
+    if (isLooseZip(Array.from(lib.parseZip(bytes).keys()))) return usePacks().addPacks([file])
+    return useWorld().openWorld(file)
+  }
+  if (compare.versionArmed()) compare.setMainFile(file)
   else loadFile(file)
 }
 

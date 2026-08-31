@@ -9,6 +9,7 @@ import { lootTableItems, readTrialSpawnerConfig } from "../loot.js"
 import { matchIndex } from "../advfilter.js"
 import { buildProcessorIndex } from "../processors.js"
 import { yieldTask } from "../yield.js"
+import { isLooseZip, normZipKey, LOOSE_RE, entryBytes } from "../loosezip.js"
 
 // structures? also matches the legacy/mod plural folder; pre-1.13 jars keep
 // theirs under assets
@@ -28,6 +29,7 @@ const state = reactive({
 })
 
 let structPath = new Map()
+let looseSrc = new Map()
 let starterSet = null, standaloneSet = null, structDepth = null, structRadius = null
 let worldgenPromise = null
 let blockIndex = null, itemIndex = null, entityIndex = null
@@ -65,9 +67,22 @@ function setWorldStructures(names) {
 async function populate() {
   const lib = await loadLibrary()
   structPath = new Map()
+  looseSrc = new Map()
   // lowest priority first so a higher pack's zip path wins the map slot
   for (const src of Array.from(packs.zipSources()).reverse()) {
-    for (const k of lib.parseZip(src).keys()) {
+    const zip = lib.parseZip(src)
+    const keys = Array.from(zip.keys())
+    if (isLooseZip(keys)) {
+      for (const k of keys) {
+        const m = normZipKey(k).match(LOOSE_RE)
+        if (!m) continue
+        const rel = "zip/" + m[1]
+        structPath.set(rel, k)
+        looseSrc.set(rel, zip.get(k))
+      }
+      continue
+    }
+    for (const k of keys) {
       const m = k.match(STRUCT_RE)
       if (m) structPath.set(m[1] + "/" + m[2], k)
     }
@@ -268,6 +283,7 @@ function visibleNames() {
 }
 
 const zipPathOf = name => structPath.get(name)
+const looseBytesOf = name => entryBytes(looseSrc.get(name))
 const has = name => structPath.has(name) || name in GENERATED || worldNames.includes(name)
 const getStructDepth = name => structDepth?.get(name)
 const getStructRadius = name => structRadius?.get(name)
@@ -275,5 +291,5 @@ const getStructRadius = name => structRadius?.get(name)
 const advVocab = () => state.filterMode === "item" ? itemVocab : state.filterMode === "entity" ? entityVocab : blockVocab
 
 export function useStructures() {
-  return { state: readonly(state), stateMut: state, refresh, computeWorldgen, computeAdvIndex, computeProcessors, processorEntry, advVocab, filteredNames, visibleNames, zipPathOf, has, getStructDepth, getStructRadius, setWorldStructures }
+  return { state: readonly(state), stateMut: state, refresh, computeWorldgen, computeAdvIndex, computeProcessors, processorEntry, advVocab, filteredNames, visibleNames, zipPathOf, looseBytesOf, has, getStructDepth, getStructRadius, setWorldStructures }
 }

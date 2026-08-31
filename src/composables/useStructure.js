@@ -390,6 +390,8 @@ async function remoteEntry(url) {
 async function readVanilla(rel) {
   const w = useWorld()
   if (w.hasStructure(rel)) return w.readWorldStructure(rel)
+  const loose = await structures.looseBytesOf(rel)
+  if (loose) return processVanilla(rel, await read(loose))
   const zp = structures.zipPathOf(rel)
   if (!zp) {
     const gen = GENERATED[rel]
