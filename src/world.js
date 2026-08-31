@@ -76,8 +76,6 @@ function manmade(name) {
 
 export async function chunkSurface(world, chunk, yMin = -Infinity, yMax = Infinity) {
   const lo = Number.isFinite(yMin) ? yMin : -64, hi = Number.isFinite(yMax) ? yMax : 320
-  // the surface sits near the top of the chunk, so grid a band down from there
-  // and only widen when some columns are still unresolved
   const ext = await world.chunkExtent(chunk, { yMin: lo, yMax: hi }).catch(() => null)
   if (!ext) return null
   let bandLo = Math.max(lo, ext.top - 31)
@@ -100,7 +98,6 @@ export async function chunkSurface(world, chunk, yMin = -Infinity, yMax = Infini
     }
   }
   if (remaining && bandLo > lo) {
-    // some columns are open sky or deep holes, so take the rest of the chunk
     const rest = await world.chunkGrid(chunk, { yMin: lo, yMax: bandLo - 1 })
     if (rest && !rest.empty) {
       const rc = rest.palette.map(e => surfaceCode(e.id))
