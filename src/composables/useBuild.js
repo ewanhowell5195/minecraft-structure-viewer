@@ -8,7 +8,7 @@ import { useLock } from "./useLock.js"
 import { debounce, yieldTask } from "../yield.js"
 import { exportScene } from "../export.js"
 import { makeSignTexts, plainText } from "../signs.js"
-import { JIGSAW, parseState } from "../transforms.js"
+import { JIGSAW, STRUCT_VOID, parseState } from "../transforms.js"
 import { isInspectable, readTrialSpawnerConfig } from "../loot.js"
 import { getFont, measure, drawText } from "../mcfont.js"
 import { drawFakeMap, prepareFakeMapArea, randomiseFakeMapWorld } from "../mapgen.js"
@@ -84,6 +84,32 @@ function stripStructureBlocks(structure) {
       const fs = parseState(typeof nbt?.final_state === "string" ? nbt.final_state : "")
       if (!AIR.test(fs.id)) rb.push(stateFor(fs), raw[i + 1], raw[i + 2], raw[i + 3])
     }
+  }
+  return derive(structure, rb.finish(), rb.nbt, { palette })
+}
+
+function fillStructureVoids(structure) {
+  if (!state.structureVoids || structure.worldOrigin || structure.anchor) return structure
+  const [sx, sy, sz] = structure.size ?? []
+  if (!(sx > 0 && sy > 0 && sz > 0)) return structure
+  const vol = sx * sy * sz
+  const raw = structure.raw
+  if (raw.length >> 2 >= vol) return structure
+  const filled = new Uint8Array(vol)
+  for (let i = 0; i < raw.length; i += 4) {
+    const x = raw[i + 1], y = raw[i + 2], z = raw[i + 3]
+    if (x < 0 || y < 0 || z < 0 || x >= sx || y >= sy || z >= sz) return structure
+    filled[(z * sy + y) * sx + x] = 1
+  }
+  const palette = structure.palette.slice()
+  let voidState = palette.findIndex(e => STRUCT_VOID.test(e?.id ?? ""))
+  if (voidState < 0) voidState = palette.push({ id: "minecraft:structure_void" }) - 1
+  const rb = new RawBuilder(vol)
+  for (let i = 0, bi = 0; i < raw.length; i += 4, bi++) {
+    rb.push(raw[i], raw[i + 1], raw[i + 2], raw[i + 3], structure.blockNbt.get(bi))
+  }
+  for (let z = 0; z < sz; z++) for (let y = 0; y < sy; y++) for (let x = 0; x < sx; x++) {
+    if (!filled[(z * sy + y) * sx + x]) rb.push(voidState, x, y, z)
   }
   return derive(structure, rb.finish(), rb.nbt, { palette })
 }
@@ -164,6 +190,7 @@ const state = reactive({
   daytime: NOON,
   dimension: "overworld",
   hideStructureBlocks: localStorage.getItem("hideStructureBlocks") !== "false",
+  structureVoids: localStorage.getItem("structureVoids") === "true",
   technical: minimal ? true : localStorage.getItem("technicalBlocks") !== "false",
   hasStructureBlocks: false,
   manual: false,
@@ -1376,6 +1403,7 @@ function sceneStats(group) {
 function disposeGroup(g) {
   if (!g) return
   g.traverse(o => {
+    if (o.isLineSegments && !o.userData.shared) { o.geometry?.dispose(); o.material?.dispose?.(); return }
     if (!o.isMesh || o.userData.shared) return
     if (o.isInstancedMesh || o.isBatchedMesh) o.dispose()
     o.geometry?.dispose()
@@ -1511,6 +1539,7 @@ async function build(structure = source, refit = true, slice = false, fresh = fa
   }
   try {
     source = structure
+    structure = fillStructureVoids(structure)
     const techStates = new Set()
     structure.palette.forEach((e, i) => {
       if (e?.id && (JIGSAW.test(e.id) || SB.test(e.id))) techStates.add(i)
@@ -2024,10 +2053,16 @@ watch(() => state.hideStructureBlocks, v => {
   localStorage.setItem("hideStructureBlocks", String(v))
   build(undefined, false)
 })
+watch(() => state.structureVoids, v => {
+  localStorage.setItem("structureVoids", String(v))
+  applyTechnicalVisibility()
+  build(undefined, false)
+})
 // scenes always build the icons; the toggle only flips their visibility, so
 // no rebuild. icons are the billboard meshes, kept unmerged by the optimizer
 function applyTechnicalVisibility() {
   root?.traverse(o => {
+    if (o.userData.outline) { o.visible = state.structureVoids; return }
     if (o.isMesh && o.userData.billboard) o.visible = state.technical
   })
 }

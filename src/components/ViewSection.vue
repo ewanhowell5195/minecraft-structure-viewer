@@ -24,9 +24,13 @@ const collapsed = ref(false)
       </select>
     </div>
     <div class="checks">
-      <label class="check" title="Show barrier, light, and structure void blocks as their icons">
+      <label class="check" title="Show barrier and light blocks as their icons">
         <input type="checkbox" v-model="buildState.technical">
         Technical blocks
+      </label>
+      <label class="check" title="Fill the gaps in a saved structure's bounding box, which are its structure voids">
+        <input type="checkbox" v-model="buildState.structureVoids">
+        Structure voids
       </label>
       <label class="check">
         <input type="checkbox" :checked="view.ortho" @change="sceneApi.setOrthoManual($event.target.checked)">

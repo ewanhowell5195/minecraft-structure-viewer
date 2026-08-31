@@ -1,4 +1,4 @@
-import { AIR, JIGSAW, REAL_AIR, STRUCT_VOID, mirrorPos, mirrorState, parseState, rotPos, rotateState } from "./transforms.js"
+import { JIGSAW, REAL_AIR, STRUCT_VOID, mirrorPos, mirrorState, parseState, rotPos, rotateState } from "./transforms.js"
 
 // later pieces win a cell. ow maps MC's per-piece BlockIgnoreProcessor: template
 // air CARVES earlier blocks (jigsaw never; igloo/mansion always; end city per-piece)
@@ -44,9 +44,13 @@ export function combine(pieces) {
     for (const b of struct.blocks) {
       const e = struct.palette[b.state]
       if (!e?.id) continue
-      if (STRUCT_VOID.test(e.id)) continue
       const p = rotPos(mirrorPos(b.pos, mir), rot)
       const key = (p[0] + off[0]) + "," + (p[1] + off[1]) + "," + (p[2] + off[2])
+      // a void leaves whatever is already there, so it only fills an empty cell
+      if (STRUCT_VOID.test(e.id)) {
+        if (!cells.has(key)) cells.set(key, { id: e.id, properties: e.properties })
+        continue
+      }
       if (REAL_AIR.test(e.id)) {
         if (ow) cells.delete(key)
         continue
@@ -62,7 +66,7 @@ export function combine(pieces) {
         // vanilla swaps in final_state only once a jigsaw has been processed
         if (!keepJigsaws) {
           const fs = parseState(typeof b.nbt?.final_state === "string" ? b.nbt.final_state : "")
-          if (AIR.test(fs.id)) continue
+          if (REAL_AIR.test(fs.id)) continue
           cells.set(key, { id: fs.id, properties: rotateState(mirrorState(fs.properties, mir), rot) })
           continue
         }
