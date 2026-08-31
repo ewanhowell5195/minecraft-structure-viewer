@@ -78,10 +78,8 @@ const minimalReady = ref(!minimal)
 const notFound = ref("")
 const debugPicker = ref(false)
 
-// narrow screens turn both panels into drawers
 const drawer = ref("")
 const toggleDrawer = side => { drawer.value = drawer.value === side ? "" : side }
-// picking something is the end of what the left drawer is for, so it gets out of the way
 const closeOnPick = e => { if (e.target.closest(".tree-file")) drawer.value = "" }
 // refreshed on pointerdown so the link always carries the current url state
 const mainSiteUrl = ref("")
@@ -133,7 +131,6 @@ watch(() => !!buildState.info || !!current.error, ready => {
   if (ready) minimalReady.value = true
 })
 
-// the cancel buttons only appear once a load has been running for a while
 const cancelReady = ref(false)
 let cancelTimer = null
 watch(() => buildState.building || !!current.reading, active => {
@@ -174,8 +171,6 @@ const idle = ref(true)
 const heldStatus = ref("")
 let idleTimer = null
 
-// one splash screen, many states: minimal-mode landing/progress/error and the
-// stream world-prepare screen all reduce to a SplashScreen config here
 const splash = computed(() => {
   if (!minimalReady.value) {
     if (notFound.value) return { error: notFound.value, link: { label: "Open the full site", href: homeUrl } }
@@ -238,12 +233,9 @@ function stats(i) {
 
 const rightInfo = computed(() => compareState.on && buildState.info ? stats(buildState.info) : "")
 
-// the sky's fog colour behind the canvas, so nothing flickers before it draws
 const SKY_FOG = { overworld: "#C0D8FF", the_nether: "#330808", the_end: "#181318" }
 const skyBg = computed(() => sky.active.value ? SKY_FOG[sky.skyDim.value] ?? SKY_FOG.overworld : "")
 
-// the before and after views fill the frame with one side, so only that
-// side's tag and stats show, in the left slot
 const info = computed(() => {
   const i = compareState.on ? (compareState.view === "after" ? buildState.info : compareState.leftInfo) : buildState.info
   if (!i) return ""
@@ -262,7 +254,6 @@ const usedLabel = computed(() => {
   return buildState.info?.blocks === 0 && structure.value?.entities?.length ? "Entities" : "Blocks"
 })
 
-// id + blockstates of the block under the pointer, under the info chip
 const aim = computed(() => {
   const a = containerState.aim
   if (!a) return ""
@@ -280,8 +271,6 @@ onMounted(async () => {
   sceneApi.init(canvasEl.value)
   useSlicers().init()
   useContainer().initPicking(canvasEl.value)
-  // load the requested structure (?debug = the generated mesher test scene),
-  // or a default so the page never starts empty
   const params = new URLSearchParams(location.search)
   const structureParam = params.get("structure")
   const debug = params.get("debug")
@@ -379,7 +368,6 @@ onMounted(async () => {
     </aside>
     <main class="viewport" :style="skyBg ? { background: skyBg } : null">
       <canvas id="view" ref="canvasEl"></canvas>
-      <!-- walking hides the viewport chrome: only the crosshair + hint show -->
       <template v-if="!walkState.on">
         <div class="topbar">
           <div v-if="compareState.on" class="name-tag">{{ compareTag }}</div>
