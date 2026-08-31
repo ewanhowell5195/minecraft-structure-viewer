@@ -86,6 +86,7 @@ function keyOf(spec) {
     spec.kind,
     spec.size,
     spec.id ?? spec.candidates?.join(",") ?? "",
+    spec.compare ? "c" : "",
     spec.components ? JSON.stringify(spec.components) : "",
     spec.blockstates ? JSON.stringify(spec.blockstates) : ""
   ].join("|")
@@ -93,7 +94,7 @@ function keyOf(spec) {
 
 async function renderMain(spec) {
   const lib = await loadLibrary()
-  const assets = _cpacks?.state.armed ? _cpacks.assets.value : packs().assets.value
+  const assets = spec.compare && _cpacks?.state.armed ? _cpacks.assets.value : packs().assets.value
   if (!assets) return null
   try {
     const out = await renderIcon(lib, assets, spec, { upgradable: true })

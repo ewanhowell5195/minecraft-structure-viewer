@@ -2,6 +2,7 @@
 import { computed, nextTick, ref, watch } from "vue"
 import { loadLibrary } from "../lib.js"
 import { usePacks } from "../composables/usePacks.js"
+import { useComparePacks } from "../composables/useComparePacks.js"
 import { useContainer } from "../composables/useContainer.js"
 import { useStructure } from "../composables/useStructure.js"
 import { useWalk } from "../composables/useWalk.js"
@@ -18,6 +19,7 @@ import UsedIcon from "./UsedIcon.vue"
 import NbtTree from "./NbtTree.vue"
 
 const packs = usePacks()
+const cpacks = useComparePacks()
 const container = useContainer()
 const state = container.state
 const walk = useWalk()
@@ -142,9 +144,11 @@ const isRealMap = computed(() => {
   return worldApi.state.active && Number.isFinite(n) && worldApi.hasMap(n)
 })
 
+const sideAssets = () => state.compareSide === "after" && cpacks.state.armed ? cpacks.assets.value : packs.assets.value
+
 let hlImgs = null, hlAssets = null
 async function loadHl() {
-  const assets = packs.assets.value
+  const assets = sideAssets()
   if (hlImgs && hlAssets === assets) return hlImgs
   const lib = await loadLibrary()
   const old = hlImgs
@@ -247,7 +251,7 @@ async function drawBg() {
   c.width = 176 * S
   c.height = bodyH(K) * S
   const lib = await loadLibrary()
-  const assets = packs.assets.value
+  const assets = sideAssets()
   const [bgBuf, font] = await Promise.all([
     lib.readFile(`assets/minecraft/textures/gui/container/${K.tex}.png`, assets),
     getFont()
@@ -311,7 +315,8 @@ async function drawItemsInner(c, K, seq) {
       kind: "item",
       id: stacks[0].id,
       components: stacks[0].components ?? {},
-      size: 16 * S
+      size: 16 * S,
+      compare: state.compareSide === "after"
     }
     const info = await iconInfo(spec)
     if (seq !== itemSeq || !info) return
@@ -444,7 +449,7 @@ watch(() => [state.open, state.stacks, state.gui], () => {
               Back
             </button>
             <div class="item-row">
-              <ItemIcon :id="state.item.id" :components="state.item.components" :size="32" />
+              <ItemIcon :id="state.item.id" :components="state.item.components" :size="32" :compare="state.compareSide === 'after'" />
               <div class="ittl">
                 <span class="nm" :title="stackName(state.item)">{{ stackName(state.item) }}</span>
                 <span class="iid">{{ state.item.id.replace(/^minecraft:/, "") }}</span>
@@ -480,7 +485,7 @@ watch(() => [state.open, state.stacks, state.gui], () => {
           <div v-if="state.tab === 'list' && !state.item" class="pane">
             <div v-if="!listStacks.length" class="empty">Empty.</div>
             <div v-for="(s, i) in listStacks" :key="i" class="item-row clickable" @click="container.openItem(s)">
-              <ItemIcon :id="s.id" :components="s.components" :size="32" />
+              <ItemIcon :id="s.id" :components="s.components" :size="32" :compare="state.compareSide === 'after'" />
               <span class="nm" :title="stackName(s)">{{ stackName(s) }}</span>
               <span class="cntv big">×{{ s.count }}</span>
             </div>
@@ -492,7 +497,7 @@ watch(() => [state.open, state.stacks, state.gui], () => {
             <template v-else-if="state.odds">
               <div class="cols"><span class="nm">Item · most common first</span><span class="chance-h">Chance</span><span class="cnt-h">Amount</span></div>
               <div v-for="o in state.odds" :key="o.id + JSON.stringify(o.components ?? null)" class="item-row clickable" @click="container.openItem(o)">
-                <ItemIcon :id="o.id" :components="o.components" :size="32" />
+                <ItemIcon :id="o.id" :components="o.components" :size="32" :compare="state.compareSide === 'after'" />
                 <span class="nm" :title="stackName(o)">{{ stackName(o) }}</span>
                 <span class="meter"><i :style="{ width: Math.max(o.chance * 100, 1.5) + '%' }"></i></span>
                 <span class="pctv">{{ fmtPct(o.chance) }}</span>

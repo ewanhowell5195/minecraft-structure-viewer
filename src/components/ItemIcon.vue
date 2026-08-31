@@ -6,7 +6,8 @@ import { acquireIcon, releaseIcon, nextToken, onVisible, offVisible } from "../i
 const props = defineProps({
   id: String,
   components: Object,
-  size: { type: Number, default: 32 }
+  size: { type: Number, default: 32 },
+  compare: Boolean
 })
 
 const packs = usePacks()
@@ -30,7 +31,7 @@ watchEffect(async () => {
   const version = packs.state.assetsVersion
   if (!host || !id || !shown.value) return
   clear()
-  const spec = { kind: "item", id, components, size }
+  const spec = { kind: "item", id, components, size, compare: props.compare }
   const got = await acquireIcon(spec, token, size)
   if (el.value !== host || props.id !== id || packs.state.assetsVersion !== version) {
     if (got?.animated) releaseIcon(spec, token)
