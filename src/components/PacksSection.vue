@@ -2,8 +2,9 @@
 import { ref } from "vue"
 import { usePacks } from "../composables/usePacks.js"
 import PackStack from "./PackStack.vue"
+import { routeFiles, FILE_ACCEPT } from "../fileroute.js"
 
-const { state, setChannel, addPacks, removePack, movePack } = usePacks()
+const { state, setChannel, removePack, movePack } = usePacks()
 const collapsed = ref(false)
 </script>
 
@@ -13,6 +14,6 @@ const collapsed = ref(false)
       <span class="material-symbols-outlined chev">{{ collapsed ? "chevron_right" : "expand_more" }}</span>
       Packs
     </h2>
-    <PackStack :state="state" @channel="setChannel" @add="addPacks" @move="movePack" @remove="removePack" />
+    <PackStack :state="state" :accept="FILE_ACCEPT" @channel="setChannel" @add="routeFiles" @move="movePack" @remove="removePack" />
   </section>
 </template>

@@ -7,7 +7,8 @@ import VersionModal from "./VersionModal.vue"
 const props = defineProps({
   target: { type: String, default: "packs" },
   state: { type: Object, required: true },
-  live: { type: Boolean, default: true }
+  live: { type: Boolean, default: true },
+  accept: { type: String, default: ".zip,.jar" }
 })
 const emit = defineEmits(["channel", "add", "move", "remove"])
 
@@ -69,6 +70,6 @@ function onFiles(e) {
       <span class="material-symbols-outlined">add</span>
       Add Resource Pack or Mod
     </button>
-    <input ref="fileInput" type="file" accept=".zip,.jar" multiple hidden @change="onFiles">
+    <input ref="fileInput" type="file" :accept="accept" multiple hidden @change="onFiles">
   </template>
 </template>
