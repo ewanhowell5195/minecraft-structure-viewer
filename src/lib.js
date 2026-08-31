@@ -1,6 +1,6 @@
 import * as THREE from "three"
 
-const LIB_URL = "https://cdn.jsdelivr.net/npm/block-model-renderer/dist/block-model-renderer.min.js"
+const LIB_URL = "https://cdn.jsdelivr.net/gh/ewanhowell5195/block-model-renderer@master/src/web.js" // TEMP: git, not the npm release
 
 let promise = null
 
