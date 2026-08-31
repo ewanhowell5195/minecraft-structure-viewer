@@ -39,8 +39,22 @@ export function combine(pieces) {
   }
 
   const cells = new Map()
+  const boxes = []
   for (const piece of pieces) {
     const { struct, rot = 0, off = [0, 0, 0], mir = null, ow = false, keepJigsaws = false } = piece
+    const [px, py, pz] = struct.size ?? []
+    if (px > 0 && py > 0 && pz > 0) {
+      const blo = [Infinity, Infinity, Infinity], bhi = [-Infinity, -Infinity, -Infinity]
+      for (let cx = 0; cx < 2; cx++) for (let cy = 0; cy < 2; cy++) for (let cz = 0; cz < 2; cz++) {
+        const c = rotPos(mirrorPos([cx * (px - 1), cy * (py - 1), cz * (pz - 1)], mir), rot)
+        for (let a = 0; a < 3; a++) {
+          const v = c[a] + off[a]
+          if (v < blo[a]) blo[a] = v
+          if (v > bhi[a]) bhi[a] = v
+        }
+      }
+      boxes.push({ lo: blo, hi: bhi })
+    }
     for (const b of struct.blocks) {
       const e = struct.palette[b.state]
       if (!e?.id) continue
@@ -75,7 +89,7 @@ export function combine(pieces) {
     }
   }
 
-  if (!cells.size) return { size: [1, 1, 1], palette: [{ id: "minecraft:air" }], blocks: [{ state: 0, pos: [0, 0, 0] }], entities, anchor: [0, 0, 0] }
+  if (!cells.size) return { size: [1, 1, 1], palette: [{ id: "minecraft:air" }], blocks: [{ state: 0, pos: [0, 0, 0] }], entities, anchor: [0, 0, 0], __parts: [] }
 
   // anchor = where the start piece's local origin lands (kept visually fixed across levels)
   const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity]
@@ -107,6 +121,10 @@ export function combine(pieces) {
   return {
     size: [hi[0] - lo[0] + 1, hi[1] - lo[1] + 1, hi[2] - lo[2] + 1],
     palette, blocks, entities,
-    anchor: [-lo[0], -lo[1], -lo[2]]
+    anchor: [-lo[0], -lo[1], -lo[2]],
+    __parts: boxes.map(b => ({
+      off: [b.lo[0] - lo[0], b.lo[1] - lo[1], b.lo[2] - lo[2]],
+      size: [b.hi[0] - b.lo[0] + 1, b.hi[1] - b.lo[1] + 1, b.hi[2] - b.lo[2] + 1]
+    }))
   }
 }

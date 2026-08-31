@@ -89,12 +89,17 @@ function stripStructureBlocks(structure) {
 }
 
 function fillStructureVoids(structure) {
-  if (!state.structureVoids || structure.worldOrigin || structure.anchor) return structure
+  if (!state.structureVoids || structure.worldOrigin) return structure
   const [sx, sy, sz] = structure.size ?? []
   if (!(sx > 0 && sy > 0 && sz > 0)) return structure
+  const boxes = structure.__parts?.length
+    ? structure.__parts.map(p => ({ off: p.off, size: p.size }))
+    : [{ off: [0, 0, 0], size: [sx, sy, sz] }]
+  let inBoxes = 0
+  for (const b of boxes) inBoxes += b.size[0] * b.size[1] * b.size[2]
   const vol = sx * sy * sz
   const raw = structure.raw
-  if (raw.length >> 2 >= vol) return structure
+  if (raw.length >> 2 >= inBoxes) return structure
   const filled = new Uint8Array(vol)
   for (let i = 0; i < raw.length; i += 4) {
     const x = raw[i + 1], y = raw[i + 2], z = raw[i + 3]
@@ -104,12 +109,19 @@ function fillStructureVoids(structure) {
   const palette = structure.palette.slice()
   let voidState = palette.findIndex(e => STRUCT_VOID.test(e?.id ?? ""))
   if (voidState < 0) voidState = palette.push({ id: "minecraft:structure_void" }) - 1
-  const rb = new RawBuilder(vol)
+  const rb = new RawBuilder((raw.length >> 2) + inBoxes)
   for (let i = 0, bi = 0; i < raw.length; i += 4, bi++) {
     rb.push(raw[i], raw[i + 1], raw[i + 2], raw[i + 3], structure.blockNbt.get(bi))
   }
-  for (let z = 0; z < sz; z++) for (let y = 0; y < sy; y++) for (let x = 0; x < sx; x++) {
-    if (!filled[(z * sy + y) * sx + x]) rb.push(voidState, x, y, z)
+  for (const b of boxes) {
+    const x0 = Math.max(0, b.off[0]), y0 = Math.max(0, b.off[1]), z0 = Math.max(0, b.off[2])
+    const x1 = Math.min(sx, b.off[0] + b.size[0]), y1 = Math.min(sy, b.off[1] + b.size[1]), z1 = Math.min(sz, b.off[2] + b.size[2])
+    for (let z = z0; z < z1; z++) for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
+      const k = (z * sy + y) * sx + x
+      if (filled[k]) continue
+      filled[k] = 1
+      rb.push(voidState, x, y, z)
+    }
   }
   return derive(structure, rb.finish(), rb.nbt, { palette })
 }
