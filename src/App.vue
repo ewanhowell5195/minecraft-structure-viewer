@@ -296,9 +296,11 @@ onMounted(async () => {
     })
     beginInit()
     try {
+      const cversion = minimal || manual ? null : params.get("cversion")
+      if (cversion) uncache("world")
       // the world restores first so its structures resolve for the param filter below
       // (minimal embeds ignore all cached user files and load fresh from the URL)
-      const worldFile = minimal ? null : await restoreFile("world")
+      const worldFile = minimal || cversion ? null : await restoreFile("world")
       if (worldFile) await useWorld().openWorld(worldFile, false)
       const wsel = params.get("wsel")
       if (worldFile && params.get("wloaded") === "1" && wsel) {
@@ -317,8 +319,6 @@ onMounted(async () => {
           : "None of the linked structures were found"
       }
       const structureFile = minimal || rels.length || debug != null || feature != null ? null : await restoreFile("structure")
-      // a restored file under an armed panel loads once, through the comparison
-      const cversion = minimal || manual || worldState.active ? null : params.get("cversion")
       if (debug === "") debugPicker.value = true
       else if (debug != null) await loadDebug(debug)
       else if (feature != null && feature.includes(",")) await loadFeatures(feature.split(","))
