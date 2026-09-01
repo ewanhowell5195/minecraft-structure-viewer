@@ -9,7 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "minecraft-block-reader": "github:ewanhowell5195/minecraft-block-reader",
+    "minecraft-block-reader": "^2.0.0",
     "three": "0.162.0",
     "vue": "^3.5.13"
   },
