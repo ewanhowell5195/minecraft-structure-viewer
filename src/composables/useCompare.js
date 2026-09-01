@@ -245,7 +245,7 @@ function leftRayHit(ox, oy, oz, dx, dy, dz) {
   return ent ? { entity: ent.marker } : null
 }
 
-useContainer().setComparePick({ state, leftRayHit })
+useContainer().setComparePick({ state, leftRayHit, leftStructure: () => stash?.structure ?? null })
 
 function wireSplit(mode, leftLabel, rightLabel) {
   state.mode = mode

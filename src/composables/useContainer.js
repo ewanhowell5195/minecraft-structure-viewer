@@ -479,13 +479,13 @@ function chestPartner(block, entry) {
 let comparePair = null
 
 async function openCompare(left, right) {
-  comparePair = { left, right }
+  comparePair = { left: { block: left }, right: { block: right } }
   state.compareSide = "after"
   await open(right, true)
 }
 
 function openCompareEntity(left, right) {
-  comparePair = { left, right, entity: true }
+  comparePair = { left: { entity: left }, right: { entity: right } }
   state.compareSide = "after"
   openEntity(right, true)
 }
@@ -493,8 +493,46 @@ function openCompareEntity(left, right) {
 function setCompareSide(side) {
   if (!comparePair || side === state.compareSide) return
   state.compareSide = side
-  const b = side === "before" ? comparePair.left : comparePair.right
-  comparePair.entity ? openEntity(b, true) : open(b, true)
+  const s = side === "before" ? comparePair.left : comparePair.right
+  s.entity ? openEntity(s.entity, true) : open(s.block, true)
+}
+
+// a direct click in compare mode pairs with whatever inspectable thing holds
+// the same cell on the other side, block or entity, so the tabs can flip
+// between modal kinds
+function counterpartFor(clicked, leftSide) {
+  const struct = leftSide ? buildApi.current.value : comparePick?.leftStructure?.()
+  if (!struct) return null
+  const pos = clicked.block ? clicked.block.pos : clicked.entity.pos
+  const cell = [Math.floor(pos[0]), Math.floor(pos[1] + (clicked.entity ? 0.5 : 0)), Math.floor(pos[2])]
+  let block = null
+  for (const b of struct.blocks ?? []) {
+    if (b.pos[0] !== cell[0] || b.pos[1] !== cell[1] || b.pos[2] !== cell[2]) continue
+    const entry = struct.palette?.[b.state]
+    if (entry?.id && isInspectable(entry.id)) block = { ...b, entry }
+    break
+  }
+  let entity = null
+  for (const en of struct.entities ?? []) {
+    const p = en.pos ?? []
+    if (Math.floor(p[0]) === cell[0] && Math.floor(p[1] + 0.5) === cell[1] && Math.floor(p[2]) === cell[2]) {
+      entity = en
+      break
+    }
+  }
+  if (clicked.block) return block ? { block } : entity ? { entity } : null
+  return entity ? { entity } : block ? { block } : null
+}
+
+function openPicked(u, leftSide) {
+  const stack = u.marker?.stack ?? []
+  if (u.marker && stack.length > 1) return openEntityMarker(u.marker)
+  const clicked = u.marker ? { entity: stack[0] ?? u.marker.e } : { block: u.block }
+  const other = counterpartFor(clicked, leftSide)
+  if (!other) return clicked.entity ? openEntity(clicked.entity) : open(clicked.block)
+  comparePair = leftSide ? { left: clicked, right: other } : { left: other, right: clicked }
+  state.compareSide = leftSide ? "before" : "after"
+  clicked.entity ? openEntity(clicked.entity, true) : open(clicked.block, true)
 }
 
 async function open(block, keepPair = false) {
@@ -870,7 +908,8 @@ function initPicking(canvas) {
     const u = inspectableUnder(e, canvas)
     if (u) {
       clearHover(canvas)
-      u.marker ? openEntityMarker(u.marker) : open(u.block)
+      if (comparePick?.state?.on) openPicked(u, compareSideLeft(e, canvas))
+      else u.marker ? openEntityMarker(u.marker) : open(u.block)
     } else ringBellUnder(e, canvas)
   })
   let pending = null
