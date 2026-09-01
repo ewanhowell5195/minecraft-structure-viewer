@@ -4,8 +4,6 @@ import { useContextMenu } from "../composables/useContextMenu.js"
 import { useLock } from "../composables/useLock.js"
 import TreeFolder from "./TreeFolder.vue"
 
-// the root of a structure tree: the main list and the world's own list differ
-// only in what they feed it. the owning section still provides `treeApi`
 const props = defineProps({
   rels: { type: Array, required: true },
   label: { type: Function, required: true },

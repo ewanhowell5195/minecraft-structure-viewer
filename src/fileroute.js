@@ -1,5 +1,3 @@
-// both file inputs accept the same things and send each file where it belongs,
-// so it does not matter which one it was dropped on
 import { loadLibrary } from "./lib.js"
 import { zipKind } from "./loosezip.js"
 import { usePacks } from "./composables/usePacks.js"

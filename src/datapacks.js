@@ -1,5 +1,3 @@
-// a datapack in a save is either a folder or a zip of its own, and both hold
-// their structures at data/<namespace>/structure/<path>.nbt
 import { normZipKey } from "./loosezip.js"
 
 const DP_STRUCT = /^data\/([^/]+)\/structures?\/(.+)\.nbt$/

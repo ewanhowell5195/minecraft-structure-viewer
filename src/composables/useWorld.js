@@ -442,7 +442,6 @@ function loadForecast() {
   return est > headroom * 0.8
 }
 
-// the save's own structures sit under `generated`, each datapack under its own
 function addWorldRel(group, sns, path, source) {
   const inner = (sns === "minecraft" ? "" : sns + "/") + path
   worldRels.set("world/" + group + "/" + inner, { ns: group, path: inner, ...source })

@@ -1,6 +1,3 @@
-// a zip that is not a world, resource pack or data pack is read as a plain
-// folder, and every structure in it is listed under the `zip` namespace
-
 const WORLD = /(^|\/)(level\.dat|session\.lock)$|(^|\/)(region|entities|poi|db)\/|(^|\/)DIM-?\d+\//i
 const PACK = /(^|\/)(pack\.mcmeta|manifest\.json)$|(^|\/)(data|assets)\/[^/]+\//i
 
@@ -9,7 +6,6 @@ export const LOOSE_RE = /^(.+)\.(nbt|mcstructure|litematic|schem|schematic)$/i
 // zips written on windows store backslashes
 export const normZipKey = k => k.replace(/\\/g, "/")
 
-// a world carrying datapacks is still a world, so that wins
 export function zipKind(keys) {
   let pack = false
   for (const k of keys) {
