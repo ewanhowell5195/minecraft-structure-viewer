@@ -1,7 +1,10 @@
 import { reactive, readonly } from "vue"
 import { read, regionCoords, buildSelection, chunkSurface } from "../world.js"
 import { blockCount } from "../blocklist.js"
-import { readNBT } from "minecraft-block-reader"
+import { readNBT, read as readStructure } from "minecraft-block-reader"
+import { loadLibrary } from "../lib.js"
+import { entryBytes } from "../loosezip.js"
+import { datapackStructures } from "../datapacks.js"
 import { useStructure } from "./useStructure.js"
 import { useBuild } from "./useBuild.js"
 import { useStructures } from "./useStructures.js"
@@ -198,9 +201,10 @@ async function openWorld(file, cacheIt = true) {
     worldRels.clear()
     for (const libRel of world.structures) {
       const slash = libRel.indexOf("/")
-      const ns = libRel.slice(0, slash), path = libRel.slice(slash + 1)
-      worldRels.set("world/" + (ns === "minecraft" ? "" : ns + "/") + path, { libRel, ns, path })
+      const sns = libRel.slice(0, slash), path = libRel.slice(slash + 1)
+      addWorldRel("generated", sns, path, { libRel })
     }
+    await addDatapackStructures()
     useStructures().setWorldStructures(Array.from(worldRels.keys()))
     state.structs = Array.from(worldRels, ([rel, v]) => ({ rel, ns: v.ns, path: v.path }))
     if (cacheIt) cacheFile("world", file)
@@ -438,8 +442,31 @@ function loadForecast() {
   return est > headroom * 0.8
 }
 
+// the save's own structures sit under `generated`, each datapack under its own
+function addWorldRel(group, sns, path, source) {
+  const inner = (sns === "minecraft" ? "" : sns + "/") + path
+  worldRels.set("world/" + group + "/" + inner, { ns: group, path: inner, ...source })
+}
+
+async function addDatapackStructures() {
+  const files = world?.files
+  if (!files) return
+  const base = (world.root ?? "") + "datapacks/"
+  const subs = []
+  for (const p of files.keys()) if (p.startsWith(base)) subs.push(p.slice(base.length))
+  if (!subs.length) return
+  const lib = await loadLibrary()
+  const found = await datapackStructures(subs, { readFile: p => world.file(p), parseZip: lib.parseZip })
+  for (const f of found) addWorldRel(f.group, f.ns, f.path, f.entry ? { entry: f.entry } : { file: f.file })
+}
+
 const hasStructure = rel => worldRels.has(rel) && !!world
-const readWorldStructure = rel => world.structure(worldRels.get(rel).libRel)
+async function readWorldStructure(rel) {
+  const e = worldRels.get(rel)
+  if (e.libRel != null) return world.structure(e.libRel)
+  const bytes = e.entry ? await entryBytes(e.entry) : await world.file(e.file)
+  return readStructure(bytes)
+}
 
 function mapEntry(id) {
   const root = world?.root ?? ""
