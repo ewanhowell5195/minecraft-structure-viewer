@@ -9,7 +9,7 @@ import { useCompare } from "../composables/useCompare.js"
 import { useCompareDiff } from "../composables/useCompareDiff.js"
 import { leafName } from "../transforms.js"
 import { tab, isDiffTab } from "../composables/useTab.js"
-import TreeFolder from "./TreeFolder.vue"
+import StructureTree from "./StructureTree.vue"
 import ListTabs from "./ListTabs.vue"
 
 const structures = useStructures()
@@ -103,42 +103,7 @@ const flat = computed(() => {
   return names.value.filter(n => n.toLowerCase().includes(q))
 })
 
-const tree = computed(() => {
-  const root = { dirs: new Map(), files: [] }
-  for (const rel of names.value) {
-    const parts = disp(rel).split("/")
-    let node = root
-    for (let i = 0; i < parts.length - 1; i++) {
-      if (!node.dirs.has(parts[i])) node.dirs.set(parts[i], { dirs: new Map(), files: [] })
-      node = node.dirs.get(parts[i])
-    }
-    node.files.push(rel)
-  }
-  return root
-})
-
 const autoOpenName = computed(() => soleNs.value ? "" : "minecraft")
-
-const rootExpand = ref(0), rootCollapse = ref(0)
-// zero the tokens while searching: the tree's token watcher runs on mount, so
-// a remounted tree would replay a stale "expand all"
-watch(() => !!flat.value, isFlat => {
-  if (isFlat) {
-    rootExpand.value = 0
-    rootCollapse.value = 0
-  }
-})
-function onRootMenu(e) {
-  const rels = loadable(flat.value ?? names.value)
-  const items = [
-    { label: `Load all (${rels.length})`, icon: "stacks", disabled: locked.value || !rels.length, action: () => loadMany(rels) }
-  ]
-  if (!flat.value) items.push(
-    { label: "Expand all", icon: "unfold_more", action: () => rootExpand.value++ },
-    { label: "Collapse all", icon: "unfold_less", action: () => rootCollapse.value++ }
-  )
-  ctx.open(e, items)
-}
 
 async function onMode(e) {
   const mode = e.target.value
@@ -191,22 +156,8 @@ const closeOpenFile = () => compare.versionArmed() && compare.fileName("main") ?
         <div class="loadbar"><div class="fill" :style="{ width: sweepPct + '%' }"></div></div>
       </div>
       <div v-else-if="noDiff" class="empty">No structures differ between the two versions</div>
-      <template v-else>
-        <div class="tree-root" title="Right-click for options" @contextmenu.prevent="onRootMenu($event)">{{ rootLabel }}</div>
-        <template v-if="flat">
-          <div v-if="!flat.length" class="empty">No match</div>
-          <div v-for="rel in flat.slice(0, FLAT_CAP)" :key="rel" class="tree-file"
-            :class="{ sel: state.selected.includes(rel) }"
-            @click="openRel(rel, $event)"
-            @contextmenu.prevent="onFileMenu(rel, $event)">{{ disp(rel) }}</div>
-          <div v-if="flat.length > FLAT_CAP" class="empty">…and {{ flat.length - FLAT_CAP }} more</div>
-        </template>
-        <div v-else-if="!names.length" class="empty">None</div>
-        <div v-else class="root-children">
-          <TreeFolder :node="tree" :auto-open-name="autoOpenName"
-            :expand-token="rootExpand" :collapse-token="rootCollapse" />
-        </div>
-      </template>
+      <StructureTree v-else :rels="names" :label="disp" :root-label="rootLabel"
+        :auto-open-name="autoOpenName" :flat="flat" :flat-cap="FLAT_CAP" :loadable="loadable" />
     </div>
     <button v-if="openFile" :disabled="locked" :title="openFile" @click="closeOpenFile">
       <span class="material-symbols-outlined">close</span>
@@ -272,18 +223,6 @@ const closeOpenFile = () => compare.versionArmed() && compare.fileName("main") ?
   opacity: 0.5;
   pointer-events: none;
 }
-
-.tree-root {
-  color: var(--text);
-  font-weight: 600;
-  padding: 1px 0;
-  cursor: context-menu;
-  user-select: none;
-}
-
-.tree-root:hover, .tree-root.ctx-target { color: #fff; }
-
-.root-children { margin-left: 14px; }
 
 
 button {
