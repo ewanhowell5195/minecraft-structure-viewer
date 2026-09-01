@@ -3,14 +3,30 @@ import { REAL_AIR } from "./transforms.js"
 // a structure's contents per cell, canonically ordered, so two serialisations
 // of the same data always read equal
 
-function canon(v) {
+// unfilled loot containers saved before 26.3-pre-1 carry an empty Items list
+// beside the LootTable that newer saves omit; an empty components map is
+// likewise a serialisation default
+export function canon(v) {
   if (typeof v === "bigint") return '"' + v + '"'
   if (Array.isArray(v)) return "[" + v.map(canon).join(",") + "]"
   if (v && typeof v === "object" && !ArrayBuffer.isView(v)) {
-    return "{" + Object.keys(v).sort().map(k => JSON.stringify(k) + ":" + canon(v[k])).join(",") + "}"
+    const parts = []
+    for (const k of Object.keys(v).sort()) {
+      if (k === "Items" && Array.isArray(v.Items) && !v.Items.length && "LootTable" in v) continue
+      if (k === "components" && v.components && typeof v.components === "object" && !Array.isArray(v.components) && !Object.keys(v.components).length) continue
+      parts.push(JSON.stringify(k) + ":" + canon(v[k]))
+    }
+    return "{" + parts.join(",") + "}"
   }
   if (ArrayBuffer.isView(v)) return "[" + Array.from(v).join(",") + "]"
   return JSON.stringify(v) ?? "null"
+}
+
+// entity UUIDs regenerate whenever a template is re-saved
+export function entityNbt(nbt) {
+  if (!nbt || typeof nbt !== "object") return nbt ?? null
+  const { UUID, ...rest } = nbt
+  return rest
 }
 
 const key3 = p => p[0] + "," + p[1] + "," + p[2]
@@ -31,7 +47,7 @@ export function cellContents(structure) {
   for (const ent of structure.entities ?? []) {
     const k = entCell(ent.pos)
     if (!ents.has(k)) ents.set(k, [])
-    ents.get(k).push(canon({ nbt: ent.nbt ?? null, pos: ent.pos }))
+    ents.get(k).push(canon({ nbt: entityNbt(ent.nbt), pos: ent.pos }))
   }
   for (const [k, list] of ents) {
     map.set(k, (map.get(k) ?? "") + "+" + list.sort().join("+"))
@@ -56,7 +72,7 @@ export function cellItems(structure) {
   }
   for (const ent of structure.entities ?? []) {
     const id = ent.nbt?.id ?? ""
-    cell(entCell(ent.pos)).ents.set(id + "|" + ent.pos.join(","), canon({ nbt: ent.nbt ?? null, pos: ent.pos }))
+    cell(entCell(ent.pos)).ents.set(id + "|" + ent.pos.join(","), canon({ nbt: entityNbt(ent.nbt), pos: ent.pos }))
   }
   return map
 }

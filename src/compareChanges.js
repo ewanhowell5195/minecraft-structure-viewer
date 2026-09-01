@@ -1,3 +1,5 @@
+import { canon, entityNbt } from "./structdiff.js"
+
 const AIR = /(^|:)(air|cave_air|void_air|structure_void)$/
 
 export const json = v => JSON.stringify(v, (k, x) => typeof x === "bigint" ? x.toString() + "n" : x)
@@ -54,7 +56,7 @@ function pairChanges(leftStruct, rightStruct) {
     const l = leftAt.get(b.pos.join(","))
     if (!l || l.entry.id !== e.id) continue
     const props = diffProps(l.entry.properties, e.properties)
-    const nbt = json(l.block.nbt ?? null) !== json(b.nbt ?? null)
+    const nbt = canon(l.block.nbt ?? null) !== canon(b.nbt ?? null)
     if (!props.length && !nbt) continue
     let g = blocks.get(e.id)
     if (!blocks.has(e.id)) blocks.set(e.id, g = { id: e.id, pairs: [] })
@@ -68,7 +70,7 @@ function pairChanges(leftStruct, rightStruct) {
   for (const e of rightStruct?.entities ?? []) {
     if (typeof e.nbt?.id !== "string") continue
     const l = leftEnt.get(e.nbt.id + "|" + e.pos.join(","))
-    if (!l || json(l.nbt) === json(e.nbt)) continue
+    if (!l || canon(entityNbt(l.nbt)) === canon(entityNbt(e.nbt))) continue
     let g = entities.get(e.nbt.id)
     if (!entities.has(e.nbt.id)) entities.set(e.nbt.id, g = { id: e.nbt.id, pairs: [] })
     g.pairs.push({ left: l, right: e, props: [], nbt: true })
