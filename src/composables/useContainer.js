@@ -393,9 +393,13 @@ function openEntity(e, keepPair = false) {
   state.open = true
 }
 
-function openEntityMarker(m) {
+function openEntityMarker(m, keepPair = false) {
   const stack = m.stack ?? []
-  if (stack.length <= 1) return openEntity(stack[0] ?? m.e)
+  if (stack.length <= 1) return openEntity(stack[0] ?? m.e, keepPair)
+  if (!keepPair) {
+    comparePair = null
+    state.compareSide = ""
+  }
   state.error = ""
   state.note = ""
   state.blockName = "Overlapping entities"
@@ -490,11 +494,20 @@ function openCompareEntity(left, right) {
   openEntity(right, true)
 }
 
-function setCompareSide(side) {
+async function setCompareSide(side) {
   if (!comparePair || side === state.compareSide) return
   state.compareSide = side
-  const s = side === "before" ? comparePair.left : comparePair.right
-  s.entity ? openEntity(s.entity, true) : open(s.block, true)
+  const tab = state.tab
+  await openSide(side === "before" ? comparePair.left : comparePair.right, true)
+  // mirrors ContainerModal's TABS computed
+  const tabs = state.dataRows || state.item ? [] : state.table ? ["loot", "list", "odds", "rules"] : state.stacks.length ? ["loot", "list"] : []
+  if (tab && tab !== state.tab && tabs.includes(tab)) setTab(tab)
+}
+
+function openSide(s, keepPair) {
+  if (s.marker) openEntityMarker(s.marker, keepPair)
+  else if (s.entity) openEntity(s.entity, keepPair)
+  else open(s.block, keepPair)
 }
 
 // a direct click in compare mode pairs with whatever inspectable thing holds
@@ -503,8 +516,8 @@ function setCompareSide(side) {
 function counterpartFor(clicked, leftSide) {
   const struct = leftSide ? buildApi.current.value : comparePick?.leftStructure?.()
   if (!struct) return null
-  const pos = clicked.block ? clicked.block.pos : clicked.entity.pos
-  const cell = [Math.floor(pos[0]), Math.floor(pos[1] + (clicked.entity ? 0.5 : 0)), Math.floor(pos[2])]
+  const pos = clicked.block ? clicked.block.pos : (clicked.entity ?? clicked.marker.stack?.[0] ?? clicked.marker.e).pos
+  const cell = [Math.floor(pos[0]), Math.floor(pos[1] + (clicked.block ? 0 : 0.5)), Math.floor(pos[2])]
   let block = null
   for (const b of struct.blocks ?? []) {
     if (b.pos[0] !== cell[0] || b.pos[1] !== cell[1] || b.pos[2] !== cell[2]) continue
@@ -512,27 +525,26 @@ function counterpartFor(clicked, leftSide) {
     if (entry?.id && isInspectable(entry.id)) block = { ...b, entry }
     break
   }
-  let entity = null
+  const ents = []
   for (const en of struct.entities ?? []) {
     const p = en.pos ?? []
-    if (Math.floor(p[0]) === cell[0] && Math.floor(p[1] + 0.5) === cell[1] && Math.floor(p[2]) === cell[2]) {
-      entity = en
-      break
-    }
+    if (Math.floor(p[0]) === cell[0] && Math.floor(p[1] + 0.5) === cell[1] && Math.floor(p[2]) === cell[2]) ents.push(en)
   }
-  if (clicked.block) return block ? { block } : entity ? { entity } : null
-  return entity ? { entity } : block ? { block } : null
+  const entSide = ents.length > 1 ? { marker: { stack: ents } } : ents.length ? { entity: ents[0] } : null
+  if (clicked.block) return block ? { block } : entSide
+  return entSide ?? (block ? { block } : null)
 }
 
 function openPicked(u, leftSide) {
   const stack = u.marker?.stack ?? []
-  if (u.marker && stack.length > 1) return openEntityMarker(u.marker)
-  const clicked = u.marker ? { entity: stack[0] ?? u.marker.e } : { block: u.block }
+  const clicked = u.marker
+    ? (stack.length > 1 ? { marker: u.marker } : { entity: stack[0] ?? u.marker.e })
+    : { block: u.block }
   const other = counterpartFor(clicked, leftSide)
-  if (!other) return clicked.entity ? openEntity(clicked.entity) : open(clicked.block)
+  if (!other) return openSide(clicked, false)
   comparePair = leftSide ? { left: clicked, right: other } : { left: other, right: clicked }
   state.compareSide = leftSide ? "before" : "after"
-  clicked.entity ? openEntity(clicked.entity, true) : open(clicked.block, true)
+  openSide(clicked, true)
 }
 
 async function open(block, keepPair = false) {

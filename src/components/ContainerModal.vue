@@ -392,7 +392,7 @@ watch(() => [state.open, state.stacks, state.gui], () => {
         <div class="body" :class="{ compact: state.dataRows || state.pick }">
 
           <div v-if="state.pick" class="pane picker">
-            <button v-for="(p, i) in state.pick" :key="i" class="pick-row" @click="container.openEntity(p.e)">
+            <button v-for="(p, i) in state.pick" :key="i" class="pick-row" @click="container.openEntity(p.e, true)">
               <span class="nm">{{ p.label }}</span>
               <span class="material-symbols-outlined">chevron_right</span>
             </button>
