@@ -23,6 +23,7 @@ import { manual } from "./manual.js"
 import { initEmbedApi, emit } from "./embed.js"
 import { isRemote, prefetchRemote } from "./remote.js"
 import { compareChanges } from "./compareChanges.js"
+import { routeFiles } from "./fileroute.js"
 import { kilo, num } from "./format.js"
 import PacksSection from "./components/PacksSection.vue"
 import CompareSection from "./components/CompareSection.vue"
@@ -70,6 +71,34 @@ async function walkClick() {
 const walkState = walk.state
 const compareState = useCompare().state
 const { locked } = useLock()
+
+const dropping = ref(false)
+let dragDepth = 0
+const dragHasFiles = e => Array.from(e.dataTransfer?.types ?? []).includes("Files")
+
+if (!minimal) onMounted(() => {
+  addEventListener("dragenter", e => {
+    if (!dragHasFiles(e)) return
+    e.preventDefault()
+    if (++dragDepth === 1) dropping.value = !locked.value
+  })
+  addEventListener("dragover", e => {
+    if (dragHasFiles(e)) e.preventDefault()
+  })
+  addEventListener("dragleave", e => {
+    if (!dragHasFiles(e) || --dragDepth > 0) return
+    dragDepth = 0
+    dropping.value = false
+  })
+  addEventListener("drop", e => {
+    if (!dragHasFiles(e)) return
+    e.preventDefault()
+    dragDepth = 0
+    dropping.value = false
+    const files = Array.from(e.dataTransfer.files)
+    if (files.length && !locked.value) routeFiles(files)
+  })
+})
 const { state: containerState } = useContainer()
 
 const worldState = useWorld().state
@@ -352,6 +381,12 @@ onMounted(async () => {
 
 <template>
   <div class="layout" :class="{ minimal, 'drawer-left': drawer === 'left', 'drawer-right': drawer === 'right' }">
+    <div v-if="dropping" class="drop-veil">
+      <div class="drop-card">
+        <span class="material-symbols-outlined">upload_file</span>
+        Drop to open
+      </div>
+    </div>
     <aside v-if="!minimal" class="sidebar" @click="closeOnPick">
       <header class="app-head">
         <span class="material-symbols-outlined">deployed_code</span>
@@ -441,6 +476,33 @@ onMounted(async () => {
   display: flex;
   height: 100%;
 }
+
+.drop-veil {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #0009;
+  backdrop-filter: blur(2px);
+  pointer-events: none;
+}
+
+.drop-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 18px 26px;
+  border-radius: 10px;
+  border: 2px dashed var(--accent);
+  background: var(--panel);
+  color: var(--text);
+  font-weight: 600;
+  user-select: none;
+}
+
+.drop-card .material-symbols-outlined { font-size: 26px; }
 
 .sidebar {
   width: 300px;

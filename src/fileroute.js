@@ -28,17 +28,22 @@ export async function classifyFile(file) {
 
 function openStructure(file) {
   const compare = useCompare()
-  if (compare.versionArmed()) compare.setMainFile(file)
-  else useStructure().loadFile(file)
+  if (compare.versionArmed()) return compare.setMainFile(file)
+  return useStructure().loadFile(file)
 }
 
 export async function routeFiles(files) {
-  const sources = []
+  const sources = [], rest = []
   for (const file of files) {
     const kind = await classifyFile(file)
-    if (kind === "world") useWorld().openWorld(file)
-    else if (kind === "structure") openStructure(file)
+    if (kind === "world" || kind === "structure") rest.push({ kind, file })
     else sources.push(file)
   }
+  // packs go in first: they decide what the rest is read against, and adding
+  // them is refused while a build holds the lock
   if (sources.length) await usePacks().addPacks(sources)
+  for (const { kind, file } of rest) {
+    if (kind === "world") await useWorld().openWorld(file)
+    else await openStructure(file)
+  }
 }
