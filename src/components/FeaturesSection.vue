@@ -10,7 +10,7 @@ import ListTabs from "./ListTabs.vue"
 
 const features = useFeatures()
 const { state, stateMut, computeAdvIndex } = features
-const { clickFeature, loadFeatures, loadFeatureField } = useStructure()
+const { clickFeature, loadFeatures, loadFeatureField, featureLink } = useStructure()
 const ctx = useContextMenu()
 const { locked } = useLock()
 const collapsed = ref(false)
@@ -54,6 +54,7 @@ const tree = computed(() => {
 
 function onRowMenu(rel, e) {
   ctx.open(e, [
+    { label: "Copy Link", icon: "link", action: () => navigator.clipboard.writeText(featureLink(rel)) },
     { label: "Generate field", icon: "grid_view", disabled: locked.value || features.isStatic(rel), action: () => loadFeatureField(rel) }
   ])
 }
@@ -61,6 +62,7 @@ function onRowMenu(rel, e) {
 provide("treeApi", {
   selected: () => state.selected,
   open: (rel, ev) => clickFeature(rel, ev),
+  openLink: rel => open(featureLink(rel), "_blank"),
   loadAll: rels => loadFeatures(rels),
   fileMenu: onRowMenu
 })
