@@ -12,7 +12,8 @@ import { makeDebug } from "../debug.js"
 import { yieldTask } from "../yield.js"
 import { useFeatures } from "./useFeatures.js"
 import { generateFeature } from "../features/index.js"
-import { mix, pathDimension, rand32, rnd, structureName } from "../transforms.js"
+import { fileBase, mix, pathDimension, rand32, rnd, structureName } from "../transforms.js"
+import { saveBlob } from "../download.js"
 import { paramUrl, setParams } from "../params.js"
 import { isRemote, prefetchRemote, fetchRemote, remoteName } from "../remote.js"
 import { applyProcessors, seedFor } from "../processors.js"
@@ -387,6 +388,24 @@ async function remoteEntry(url) {
   return { structure: s, name: structureName(name), rel: url }
 }
 
+// generated builtins have no file behind them, so they can't be saved
+const canDownload = rel => !!rel && (structures.hasBytes(rel) || useWorld().hasStructure(rel) || isRemote(rel))
+
+// where the file sits inside its pack, eg data/minecraft/structure/igloo
+const structureFolder = rel => {
+  const path = structures.zipPathOf(rel) ?? useWorld().structurePath(rel)
+  return path ? path.slice(0, path.lastIndexOf("/")) : ""
+}
+
+async function downloadStructure(rel) {
+  const w = useWorld()
+  const bytes = w.hasStructure(rel) ? await w.structureBytes(rel)
+    : isRemote(rel) ? await fetchRemote(rel)
+    : await structures.structureBytes(rel)
+  if (!bytes) return
+  saveBlob(new Blob([bytes]), fileBase(rel).replace(/\.nbt$/i, "") + ".nbt")
+}
+
 async function readVanilla(rel) {
   const w = useWorld()
   if (w.hasStructure(rel)) return w.readWorldStructure(rel)
@@ -754,7 +773,7 @@ async function onAssetsSwapped() {
 packs.setSwapHandler(onAssetsSwapped)
 
 export function useStructure() {
-  return { state: readonly(state), structure, apply, loadVanilla, loadDefault, loadMany, loadFile, closeFile, loadObject, loadDebug, loadFeature, loadFeatures, loadFeatureField, clickFeature, cancelReading, setReading, readCancelled, setQuietLoads, processVanilla, currentFile: () => loaded.some(e => e.file) ? fileObj : null }
+  return { state: readonly(state), structure, apply, loadVanilla, loadDefault, loadMany, loadFile, closeFile, loadObject, loadDebug, loadFeature, loadFeatures, loadFeatureField, clickFeature, cancelReading, setReading, readCancelled, setQuietLoads, processVanilla, canDownload, downloadStructure, structureFolder, currentFile: () => loaded.some(e => e.file) ? fileObj : null }
 }
 
 

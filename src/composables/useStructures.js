@@ -285,11 +285,22 @@ function visibleNames() {
 const zipPathOf = name => structPath.get(name)
 const looseBytesOf = name => entryBytes(looseSrc.get(name))
 const has = name => structPath.has(name) || name in GENERATED || worldNames.includes(name)
+const hasBytes = name => structPath.has(name)
+
+async function structureBytes(name) {
+  const loose = await looseBytesOf(name)
+  if (loose) return loose
+  const zp = structPath.get(name)
+  if (!zp) return null
+  const lib = await loadLibrary()
+  return lib.readFile(zp, packs.assets.value)
+}
+
 const getStructDepth = name => structDepth?.get(name)
 const getStructRadius = name => structRadius?.get(name)
 
 const advVocab = () => state.filterMode === "item" ? itemVocab : state.filterMode === "entity" ? entityVocab : blockVocab
 
 export function useStructures() {
-  return { state: readonly(state), stateMut: state, refresh, computeWorldgen, computeAdvIndex, computeProcessors, processorEntry, advVocab, filteredNames, visibleNames, zipPathOf, looseBytesOf, has, getStructDepth, getStructRadius, setWorldStructures }
+  return { state: readonly(state), stateMut: state, refresh, computeWorldgen, computeAdvIndex, computeProcessors, processorEntry, advVocab, filteredNames, visibleNames, zipPathOf, looseBytesOf, hasBytes, structureBytes, has, getStructDepth, getStructRadius, setWorldStructures }
 }

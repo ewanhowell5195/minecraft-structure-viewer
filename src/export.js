@@ -3,6 +3,7 @@ import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js"
 import { OBJExporter } from "three/addons/exporters/OBJExporter.js"
 import { makeZip } from "./zip.js"
 import { fileBase } from "./transforms.js"
+import { saveBlob } from "./download.js"
 
 // shader materials and OffscreenCanvas atlas textures aren't portable, so
 // everything is rebaked onto MeshStandardMaterial + real-canvas textures
@@ -229,9 +230,5 @@ export async function exportScene({ format, name, root }) {
     ext = "zip"
   }
 
-  const a = document.createElement("a")
-  a.href = URL.createObjectURL(blob)
-  a.download = `${base}.${ext}`
-  a.click()
-  setTimeout(() => URL.revokeObjectURL(a.href), 2000)
+  saveBlob(blob, `${base}.${ext}`)
 }

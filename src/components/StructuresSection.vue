@@ -14,7 +14,7 @@ import ListTabs from "./ListTabs.vue"
 
 const structures = useStructures()
 const { state, stateMut, computeWorldgen, computeAdvIndex, advVocab, filteredNames } = structures
-const { state: structState, loadVanilla, loadMany, closeFile } = useStructure()
+const { state: structState, loadVanilla, loadMany, closeFile, canDownload, downloadStructure, structureFolder } = useStructure()
 const ctx = useContextMenu()
 const { locked } = useLock()
 const compare = useCompare()
@@ -42,15 +42,18 @@ provide("treeApi", {
   fileMenu: onFileMenu
 })
 
-// comparing needs exactly one loaded structure, and the panel owns comparison
 function onFileMenu(rel, e) {
   const sel = state.selected
-  if (locked.value || compare.versionArmed() || sel.length !== 1 || sel[0] === rel) return
-  ctx.open(e, [{
-    label: `Compare with ${leafName(sel[0])}`,
-    icon: "compare",
-    action: () => compare.enter(rel)
-  }])
+  const folder = structureFolder(rel)
+  const items = [
+    { label: "Copy Path", icon: "content_copy", disabled: !folder, action: () => navigator.clipboard.writeText(folder) },
+    { label: "Download Structure", icon: "download", disabled: !canDownload(rel), action: () => downloadStructure(rel) }
+  ]
+  // comparing needs exactly one loaded structure, and the panel owns comparison
+  if (!locked.value && !compare.versionArmed() && sel.length === 1 && sel[0] !== rel) {
+    items.push({ label: `Compare with ${leafName(sel[0])}`, icon: "compare", action: () => compare.enter(rel) })
+  }
+  ctx.open(e, items)
 }
 
 const stopReveal = watch(() => state.selected.length, async n => {

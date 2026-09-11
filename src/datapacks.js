@@ -9,7 +9,7 @@ export async function datapackStructures(paths, { readFile, parseZip }) {
     const folder = sub.match(/^([^/]+)\/(data\/[^/]+\/structures?\/.+\.nbt)$/)
     if (folder) {
       const m = folder[2].match(DP_STRUCT)
-      if (m) out.push({ group: folder[1], ns: m[1], path: m[2], file: "datapacks/" + sub })
+      if (m) out.push({ group: folder[1], ns: m[1], path: m[2], key: folder[2], file: "datapacks/" + sub })
       continue
     }
     if (/^[^/]+\.zip$/i.test(sub)) zips.push(sub)
@@ -21,8 +21,9 @@ export async function datapackStructures(paths, { readFile, parseZip }) {
       const zip = parseZip(bytes)
       const group = sub.replace(/\.zip$/i, "")
       for (const k of zip.keys()) {
-        const m = normZipKey(k).match(DP_STRUCT)
-        if (m) out.push({ group, ns: m[1], path: m[2], entry: zip.get(k) })
+        const key = normZipKey(k)
+        const m = key.match(DP_STRUCT)
+        if (m) out.push({ group, ns: m[1], path: m[2], key, entry: zip.get(k) })
       }
     } catch {}
   }

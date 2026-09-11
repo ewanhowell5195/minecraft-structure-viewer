@@ -202,7 +202,11 @@ async function openWorld(file, cacheIt = true) {
     for (const libRel of world.structures) {
       const slash = libRel.indexOf("/")
       const sns = libRel.slice(0, slash), path = libRel.slice(slash + 1)
-      addWorldRel("generated", sns, path, { libRel })
+      // either folder spelling is legal, so the save's own is the one kept
+      const key = ["structures", "structure"]
+        .map(d => `generated/${sns}/${d}/${path}.nbt`)
+        .find(p => world.files?.has((world.root ?? "") + p))
+      addWorldRel("generated", sns, path, { libRel, key })
     }
     await addDatapackStructures()
     useStructures().setWorldStructures(Array.from(worldRels.keys()))
@@ -456,7 +460,7 @@ async function addDatapackStructures() {
   if (!subs.length) return
   const lib = await loadLibrary()
   const found = await datapackStructures(subs, { readFile: p => world.file(p), parseZip: lib.parseZip })
-  for (const f of found) addWorldRel(f.group, f.ns, f.path, f.entry ? { entry: f.entry } : { file: f.file })
+  for (const f of found) addWorldRel(f.group, f.ns, f.path, { key: f.key, ...f.entry ? { entry: f.entry } : { file: f.file } })
 }
 
 const hasStructure = rel => worldRels.has(rel) && !!world
@@ -466,6 +470,18 @@ async function readWorldStructure(rel) {
   const bytes = e.entry ? await entryBytes(e.entry) : await world.file(e.file)
   return readStructure(bytes)
 }
+
+// the lib hands back generated structures parsed, so their file is re-read raw
+async function structureBytes(rel) {
+  const e = worldRels.get(rel)
+  if (!e || !world) return null
+  if (e.entry) return entryBytes(e.entry)
+  const path = e.file ?? e.key
+  return path ? world.file(path) : null
+}
+
+// datapack structures report their path within the pack, not within the save
+const structurePath = rel => worldRels.get(rel)?.key ?? ""
 
 function mapEntry(id) {
   const root = world?.root ?? ""
@@ -513,7 +529,7 @@ function setYRange(lo, hi) {
 export function useWorld() {
   return {
     state: readonly(state), openWorld, toggleChunk, isSelected, clearSelection, selectRect, rectHasSelected, selectionBounds, loadSelected, closeWorld,
-    hasStructure, readWorldStructure, readMap, hasMap, setYRange, applySuggestedRange,
+    hasStructure, readWorldStructure, structureBytes, structurePath, readMap, hasMap, setYRange, applySuggestedRange,
     getChunks: () => world?.chunks ?? [],
     getWorld: () => world,
     getWorldFile: () => worldFile,
