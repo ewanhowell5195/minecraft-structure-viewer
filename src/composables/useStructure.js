@@ -397,6 +397,22 @@ const structureFolder = rel => {
   return path ? path.slice(0, path.lastIndexOf("/")) : ""
 }
 
+// opens this structure alone, keeping the pack and comparison context
+const structureLink = rel => paramUrl({
+  structure: rel,
+  compare: null,
+  feature: null,
+  fseed: null,
+  field: null,
+  seed: null,
+  level: null,
+  debug: null,
+  wy: null,
+  wsel: null,
+  wloaded: null,
+  wdim: null
+}).href
+
 async function downloadStructure(rel) {
   const w = useWorld()
   const bytes = w.hasStructure(rel) ? await w.structureBytes(rel)
@@ -773,7 +789,7 @@ async function onAssetsSwapped() {
 packs.setSwapHandler(onAssetsSwapped)
 
 export function useStructure() {
-  return { state: readonly(state), structure, apply, loadVanilla, loadDefault, loadMany, loadFile, closeFile, loadObject, loadDebug, loadFeature, loadFeatures, loadFeatureField, clickFeature, cancelReading, setReading, readCancelled, setQuietLoads, processVanilla, canDownload, downloadStructure, structureFolder, currentFile: () => loaded.some(e => e.file) ? fileObj : null }
+  return { state: readonly(state), structure, apply, loadVanilla, loadDefault, loadMany, loadFile, closeFile, loadObject, loadDebug, loadFeature, loadFeatures, loadFeatureField, clickFeature, cancelReading, setReading, readCancelled, setQuietLoads, processVanilla, canDownload, downloadStructure, structureFolder, structureLink, currentFile: () => loaded.some(e => e.file) ? fileObj : null }
 }
 
 

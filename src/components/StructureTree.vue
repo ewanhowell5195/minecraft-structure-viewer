@@ -62,6 +62,8 @@ function onRootMenu(e) {
     <div v-for="rel in flat.slice(0, flatCap)" :key="rel" class="tree-file"
       :class="{ sel: api.selected().includes(rel) }"
       @click="api.open(rel, $event)"
+      @mousedown.middle.prevent
+      @auxclick.middle="api.openLink?.(rel)"
       @contextmenu="api.fileMenu && ($event.preventDefault(), api.fileMenu(rel, $event))">{{ label(rel) }}</div>
     <div v-if="flat.length > flatCap" class="empty">…and {{ flat.length - flatCap }} more</div>
   </template>
