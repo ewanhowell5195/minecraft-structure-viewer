@@ -97,7 +97,7 @@ function boxOf(group, structure) {
 
 const STYLES = {
   added: { colour: "rgba(63, 195, 95, 0.28)", line: { colour: "#6fd487", alpha: 0.95 } },
-  changed: { colour: "rgba(232, 184, 64, 0.28)", line: { colour: "#f0c85a", alpha: 0.95 } },
+  changed: { colour: "rgba(76, 141, 255, 0.28)", line: { colour: "#79baff", alpha: 0.95 } },
   removed: { colour: "rgba(255, 64, 89, 0.28)", line: { colour: "#ff6b82", alpha: 0.95 } }
 }
 

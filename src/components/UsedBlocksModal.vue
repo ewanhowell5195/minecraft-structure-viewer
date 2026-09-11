@@ -478,7 +478,7 @@ defineExpose({ open })
 
 .count .delta.pos { color: #6fd487; }
 .count .delta.neg { color: #ff6b82; }
-.count .delta.chg { color: #f0c85a; min-width: 0; }
+.count .delta.chg { color: #79baff; min-width: 0; }
 
 .row.empty { color: var(--text-dim); }
 

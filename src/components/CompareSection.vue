@@ -105,7 +105,7 @@ function onStructure(e) {
 }
 
 .check.added::before { background: #6fd487; }
-.check.changed::before { background: #f0c85a; }
+.check.changed::before { background: #79baff; }
 .check.removed::before { background: #ff6b82; }
 
 .check .count {
