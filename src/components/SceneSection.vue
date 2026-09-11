@@ -81,9 +81,9 @@ async function render() {
       <label for="export">Export</label>
       <select id="export" :disabled="locked || !buildState.info" @change="onExport">
         <option value="" selected>Save as…</option>
+        <option v-if="nbtRel" value="nbt">.nbt</option>
         <option value="glb">.glb</option>
         <option value="obj">.obj (zip)</option>
-        <option v-if="nbtRel" value="nbt">.nbt</option>
       </select>
       <label for="rangle">Angle</label>
       <select id="rangle" v-model="angle">
