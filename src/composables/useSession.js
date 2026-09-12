@@ -12,7 +12,8 @@ import { read } from "minecraft-block-reader"
 import { setParams } from "../params.js"
 import { AIR, EMPTY, JIGSAW, mix, parseState, pathDimension, poolTemplates, rand32, rnd } from "../transforms.js"
 import { hasDataMarkers, processDataMarkers } from "../markers.js"
-import { applyProcessors, seedFor } from "../processors.js"
+import { applyProcessors } from "../processors.js"
+import { useProcessors } from "./useProcessors.js"
 import { runJigsaw } from "../jigsaw.js"
 import { mineshaftPieceGens, rerollGen, runDesertPyramid, runDungeon, runEndCity, runEndSpikes, runEndSpikesActive, runFortress, runIgloo, runJungleTemple, runMansion, runMineshaft, runMineshaftMesa, runMonument, runStronghold } from "../generators/index.js"
 import { PROC } from "../proc.js"
@@ -25,6 +26,7 @@ const structures = useStructures()
 const features = useFeatures()
 const buildApi = useBuild()
 const sceneApi = useScene()
+const procs = useProcessors()
 const { lock, locked } = useLock()
 
 const state = reactive({
@@ -79,7 +81,7 @@ async function loadStruct(ref) {
   if (!s) return null
   await structures.computeProcessors()
   const pe = structures.processorEntry(rel)
-  if (pe) s = await applyProcessors(s, pe, rnd(mix(state.seed ?? 0, seedFor(rel))), loadRaw)
+  if (pe && procs.state.on) s = await applyProcessors(s, pe, rnd(mix(state.seed ?? 0, procs.seedOf(rel))), loadRaw)
   return s
 }
 

@@ -16,7 +16,8 @@ import { fileBase, mix, pathDimension, rand32, rnd, structureName } from "../tra
 import { saveBlob } from "../download.js"
 import { paramUrl, setParams } from "../params.js"
 import { isRemote, prefetchRemote, fetchRemote, remoteName } from "../remote.js"
-import { applyProcessors, seedFor } from "../processors.js"
+import { applyProcessors } from "../processors.js"
+import { useProcessors } from "./useProcessors.js"
 import { cacheFile, uncache } from "../userCache.js"
 import { applyLegacyRenames, applyPreFlattening } from "../legacyRenames.js"
 import { blockCount } from "../blocklist.js"
@@ -27,6 +28,7 @@ const packs = usePacks()
 const structures = useStructures()
 const buildApi = useBuild()
 const session = useSession()
+const procs = useProcessors()
 const { locked, withLock } = useLock()
 
 const structure = buildApi.current
@@ -450,9 +452,9 @@ async function processVanilla(rel, s, version = packs.state.baseId) {
   applyLegacyRenames(s, version)
   await structures.computeProcessors()
   const pe = structures.processorEntry(rel)
-  if (!pe) return s
+  if (!pe || !procs.state.on) return s
   const lib = await loadLibrary()
-  return applyProcessors(s, pe, rnd(seedFor(rel)), async orel => {
+  return applyProcessors(s, pe, rnd(procs.seedOf(rel)), async orel => {
     const ozp = structures.zipPathOf(orel)
     return ozp ? read(await lib.readFile(ozp, packs.assets.value)) : null
   })
@@ -791,6 +793,7 @@ async function onAssetsSwapped() {
   if (structure.value) await buildApi.build(undefined, false)
 }
 packs.setSwapHandler(onAssetsSwapped)
+procs.setReloadHandler(onAssetsSwapped)
 
 export function useStructure() {
   return { state: readonly(state), structure, apply, loadVanilla, loadDefault, loadMany, loadFile, closeFile, loadObject, loadDebug, loadFeature, loadFeatures, loadFeatureField, clickFeature, cancelReading, setReading, readCancelled, setQuietLoads, processVanilla, canDownload, downloadStructure, structureFolder, structureLink, featureLink, currentFile: () => loaded.some(e => e.file) ? fileObj : null }

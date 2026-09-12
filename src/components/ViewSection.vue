@@ -2,10 +2,14 @@
 import { ref } from "vue"
 import { useScene } from "../composables/useScene.js"
 import { useBuild } from "../composables/useBuild.js"
+import { useProcessors } from "../composables/useProcessors.js"
+import { useLock } from "../composables/useLock.js"
 
 const sceneApi = useScene()
 const { view } = sceneApi
 const { state: buildState } = useBuild()
+const procs = useProcessors()
+const { locked } = useLock()
 const collapsed = ref(false)
 </script>
 
@@ -40,6 +44,17 @@ const collapsed = ref(false)
         <input type="checkbox" v-model="view.grid">
         Grid
       </label>
+      <div class="row">
+        <label class="check" title="The block rewrites the game applies when it places a structure: mossify, rot, and the cobwebs in abandoned villages">
+          <input type="checkbox" :checked="procs.state.on" :disabled="locked"
+            @change="procs.setOn($event.target.checked)">
+          Processors
+        </label>
+        <button class="icon" :disabled="!procs.state.on || locked"
+          title="Shuffle the processor roll" @click="procs.shuffle()">
+          <span class="material-symbols-outlined">shuffle</span>
+        </button>
+      </div>
     </div>
     <button @click="sceneApi.fit()">
       <span class="material-symbols-outlined">recenter</span>
@@ -64,4 +79,28 @@ button {
 }
 
 button .material-symbols-outlined { font-size: 18px; }
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.row .check { flex: 1; }
+
+button.icon {
+  padding: 0;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+}
+
+button.icon:hover:not(:disabled) {
+  background: #ffffff14;
+  color: var(--text);
+}
 </style>
