@@ -81,6 +81,7 @@ async function loadStruct(ref) {
   if (!s) return null
   await structures.computeProcessors()
   const pe = structures.processorEntry(rel)
+  if (pe) procs.setSessionUse(true)
   if (pe && procs.state.on) s = await applyProcessors(s, pe, rnd(mix(state.seed ?? 0, procs.seedOf(rel))), loadRaw)
   return s
 }
@@ -141,6 +142,7 @@ async function resolve(level) {
 // each build re-centres the assembly, so the camera shifts by however far the base's anchor moved
 async function regenerate() {
   state.solving = true
+  procs.setSessionUse(false)
   try {
     let structure
     try {
@@ -319,6 +321,7 @@ function endSession() {
   base = null
   baseName = null
   prevAnchorWorld = null
+  procs.setSessionUse(false)
   state.active = false
   state.kind = null
   state.reroll = false

@@ -8,8 +8,13 @@ const parseSeed = v => /^[0-9a-f]{1,8}$/i.test(v ?? "") ? parseInt(v, 16) >>> 0 
 
 const state = reactive({
   on: sp.get("proc") !== "0",
-  seed: parseSeed(sp.get("pseed"))
+  seed: parseSeed(sp.get("pseed")),
+  session: false
 })
+
+// pieces pulled into an assembly are not in the loaded list, so the session
+// reports whether any of them carry processors
+const setSessionUse = v => { state.session = v }
 
 // an unshuffled roll stays on the structure's own seed, so the default render
 // matches the game's
@@ -41,5 +46,5 @@ async function shuffle() {
 }
 
 export function useProcessors() {
-  return { state: readonly(state), seedOf, setOn, shuffle, setReloadHandler }
+  return { state: readonly(state), seedOf, setOn, shuffle, setSessionUse, setReloadHandler }
 }

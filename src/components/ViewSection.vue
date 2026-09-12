@@ -1,16 +1,22 @@
 <script setup>
-import { ref } from "vue"
+import { computed, ref } from "vue"
 import { useScene } from "../composables/useScene.js"
 import { useBuild } from "../composables/useBuild.js"
 import { useProcessors } from "../composables/useProcessors.js"
+import { useStructures } from "../composables/useStructures.js"
 import { useLock } from "../composables/useLock.js"
 
 const sceneApi = useScene()
 const { view } = sceneApi
 const { state: buildState } = useBuild()
 const procs = useProcessors()
+const structures = useStructures()
 const { locked } = useLock()
 const collapsed = ref(false)
+
+// only worth offering where something on screen actually has processors
+const hasProcessors = computed(() => procs.state.session
+  || structures.state.selected.some(rel => !!structures.processorEntry(rel)))
 </script>
 
 <template>
@@ -44,7 +50,7 @@ const collapsed = ref(false)
         <input type="checkbox" v-model="view.grid">
         Grid
       </label>
-      <div class="row">
+      <div v-if="hasProcessors" class="row">
         <label class="check" title="The block rewrites the game applies when it places a structure: mossify, rot, and the cobwebs in abandoned villages">
           <input type="checkbox" :checked="procs.state.on" :disabled="locked"
             @change="procs.setOn($event.target.checked)">
