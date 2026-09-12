@@ -1335,18 +1335,23 @@ function shapeFor(e) {
   return [0, 0, 0, 16, 16, 16]
 }
 
-// the whole build's bounds: block 0 starts half a block back from the root
-const _outlineBox = new THREE.Box3()
+// block 0 of a part starts half a block back from the root; a combined load
+// boxes each structure rather than the arrangement around them
 let outline = null
-function updateOutline() {
-  const size = current.value?.size
-  const on = sceneApi.view.wireframe === "outline" && root && size
-  if (!on) return outline?.hide()
-  outline ??= sceneApi.makeHighlight()
+function outlineBox(off, size) {
   const p = root.position
-  _outlineBox.min.set(p.x - 8, p.y - 8, p.z - 8)
-  _outlineBox.max.set(p.x + size[0] * 16 - 8, p.y + size[1] * 16 - 8, p.z + size[2] * 16 - 8)
-  outline.show(_outlineBox)
+  return new THREE.Box3(
+    new THREE.Vector3(p.x + off[0] * 16 - 8, p.y + off[1] * 16 - 8, p.z + off[2] * 16 - 8),
+    new THREE.Vector3(p.x + (off[0] + size[0]) * 16 - 8, p.y + (off[1] + size[1]) * 16 - 8, p.z + (off[2] + size[2]) * 16 - 8)
+  )
+}
+
+function updateOutline() {
+  const s = current.value
+  if (sceneApi.view.wireframe !== "outline" || !root || !s?.size) return outline?.hide()
+  outline ??= sceneApi.makeOutline()
+  const parts = s.__parts?.length ? s.__parts : [{ off: [0, 0, 0], size: s.size }]
+  outline.show(parts.map(part => outlineBox(part.off, part.size)))
 }
 
 watch(() => sceneApi.view.wireframe, updateOutline)

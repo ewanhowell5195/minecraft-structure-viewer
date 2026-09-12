@@ -227,6 +227,62 @@ function makeHighlight() {
   }
 }
 
+// bounds boxes drawn whole, unlike the hover highlight's camera-facing edges
+function makeOutline() {
+  const geo = new THREE.BufferGeometry()
+  let pos = new THREE.BufferAttribute(new Float32Array(0), 3)
+  geo.setAttribute("position", pos)
+  const mat = new THREE.LineBasicMaterial({
+    color: 0xffffff,
+    transparent: true,
+    depthTest: false,
+    depthWrite: false,
+    blending: THREE.CustomBlending,
+    blendEquation: THREE.AddEquation,
+    blendSrc: THREE.OneMinusDstColorFactor,
+    blendDst: THREE.ZeroFactor
+  })
+  const lines = new THREE.LineSegments(geo, mat)
+  lines.userData.chrome = true
+  lines.renderOrder = 999
+  lines.frustumCulled = false
+  lines.visible = false
+  scene.add(lines)
+  const EDGES = [
+    [0, 1], [2, 3], [4, 5], [6, 7],
+    [0, 2], [1, 3], [4, 6], [5, 7],
+    [0, 4], [1, 5], [2, 6], [3, 7]
+  ]
+  return {
+    show(boxes) {
+      if (!boxes.length) return this.hide()
+      const need = boxes.length * EDGES.length * 2 * 3
+      if (pos.array.length < need) {
+        pos = new THREE.BufferAttribute(new Float32Array(need), 3)
+        pos.setUsage(THREE.DynamicDrawUsage)
+        geo.setAttribute("position", pos)
+      }
+      const a = pos.array
+      let n = 0
+      for (const box of boxes) {
+        const put = ci => {
+          a[n++] = ci & 1 ? box.max.x : box.min.x
+          a[n++] = ci & 2 ? box.max.y : box.min.y
+          a[n++] = ci & 4 ? box.max.z : box.min.z
+        }
+        for (const [c1, c2] of EDGES) {
+          put(c1)
+          put(c2)
+        }
+      }
+      geo.setDrawRange(0, n / 3)
+      pos.needsUpdate = true
+      lines.visible = true
+    },
+    hide() { lines.visible = false }
+  }
+}
+
 // ortho "zoom" moves no closer, so divide it out
 function updateGridLabels() {
   for (const g of [gridGroup, compare?.leftGrid()]) if (g) updateLabelsOf(g)
@@ -672,6 +728,7 @@ export function useScene() {
     view, scene, overlayScene, init, fit, setGrids, sceneBounds, setOrtho, setOrthoManual, setSky, setCompare,
     takeGrid, disposeGrid, setGridOffset, renderShot, maxShotSize,
     makeHighlight,
+    makeOutline,
     getGridRects: () => gridRects,
     contentRoots, animators, perspCam, FOV, updateProjection, setWalkUpdate, syncAspect,
     get camera() { return camera },
