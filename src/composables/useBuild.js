@@ -1335,6 +1335,22 @@ function shapeFor(e) {
   return [0, 0, 0, 16, 16, 16]
 }
 
+// the whole build's bounds: block 0 starts half a block back from the root
+const _outlineBox = new THREE.Box3()
+let outline = null
+function updateOutline() {
+  const size = current.value?.size
+  const on = sceneApi.view.wireframe === "outline" && root && size
+  if (!on) return outline?.hide()
+  outline ??= sceneApi.makeHighlight()
+  const p = root.position
+  _outlineBox.min.set(p.x - 8, p.y - 8, p.z - 8)
+  _outlineBox.max.set(p.x + size[0] * 16 - 8, p.y + size[1] * 16 - 8, p.z + size[2] * 16 - 8)
+  outline.show(_outlineBox)
+}
+
+watch(() => sceneApi.view.wireframe, updateOutline)
+
 function boxForBlock(b) {
   if (!b || !root) return null
   const s = shapeFor(current.value?.palette[b.state])
@@ -1455,6 +1471,7 @@ function restoreFull() {
   ;({ group: root, handle: sceneHandle, inputIdxOf, nonSolidPalette, markerTextures, animator, entityMarkers, doorByCell, sceneLight } = fullBundle)
   current.value = fullBundle.structure
   state.info = fullBundle.info
+  updateOutline()
   applyTechnicalVisibility()
   useBooks().refresh()
   root.visible = true
@@ -2022,6 +2039,7 @@ async function build(structure = source, refit = true, slice = false, fresh = fa
     useSlicers().onBuild(root, position, [sx, sy, sz], slicedApplied)
     // shader compiles land here in parallel instead of stalling the first visible frame
     try { await sceneApi.renderer.compileAsync(root, sceneApi.perspCam, sceneApi.scene) } catch {}
+    updateOutline()
     state.info = {
       size: `${sx}×${sy}×${sz}`,
       blocks: placedCount,

@@ -31,6 +31,7 @@ const hasProcessors = computed(() => procs.state.session
         <option value="off">Off</option>
         <option value="overlay">Overlay</option>
         <option value="wire">Wireframe</option>
+        <option value="outline">Outline</option>
       </select>
     </div>
     <div class="checks">
