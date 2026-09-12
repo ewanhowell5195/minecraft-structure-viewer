@@ -2,15 +2,13 @@
 import { computed, ref, watch } from "vue"
 import { useBuild } from "../composables/useBuild.js"
 import { useStructure } from "../composables/useStructure.js"
-import { useStructures } from "../composables/useStructures.js"
 import { useScene } from "../composables/useScene.js"
 import { useSky } from "../composables/useSky.js"
 import { useLock } from "../composables/useLock.js"
 import { fileBase } from "../transforms.js"
 
 const { state: buildState, exportCurrent } = useBuild()
-const { state: structureState, canDownload, downloadStructure } = useStructure()
-const structures = useStructures()
+const { state: structureState, downloadLoaded } = useStructure()
 const sceneApi = useScene()
 const { enabled: skyOn } = useSky()
 const { locked } = useLock()
@@ -35,17 +33,11 @@ watch(sizes, list => {
   if (list.length && !list.includes(size.value)) size.value = list[list.length - 1]
 })
 
-// the source file is only the thing on screen when it is the sole structure loaded
-const nbtRel = computed(() => {
-  const sel = structures.state.selected
-  return sel.length === 1 && canDownload(sel[0]) ? sel[0] : ""
-})
-
 function onExport(ev) {
   const v = ev.target.value
   ev.target.value = ""
   if (!v) return
-  if (v === "nbt") downloadStructure(nbtRel.value)
+  if (v === "nbt") downloadLoaded(structureState.name)
   else exportCurrent(v, structureState.name)
 }
 
@@ -81,7 +73,7 @@ async function render() {
       <label for="export">Export</label>
       <select id="export" :disabled="locked || !buildState.info" @change="onExport">
         <option value="" selected>Save as…</option>
-        <option v-if="nbtRel" value="nbt">.nbt</option>
+        <option value="nbt">{{ structureState.count > 1 ? ".nbt (zip)" : ".nbt" }}</option>
         <option value="glb">.glb</option>
         <option value="obj">.obj (zip)</option>
       </select>

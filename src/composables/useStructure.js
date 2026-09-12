@@ -5,7 +5,7 @@ import { useStructures } from "./useStructures.js"
 import { useBuild } from "./useBuild.js"
 import { useSession } from "./useSession.js"
 import { useLock } from "./useLock.js"
-import { read } from "minecraft-block-reader"
+import { read, readNBT } from "minecraft-block-reader"
 import { useWorld } from "./useWorld.js"
 import { fixBuiltin, GENERATED } from "../generators/builtin.js"
 import { makeDebug } from "../debug.js"
@@ -14,6 +14,8 @@ import { useFeatures } from "./useFeatures.js"
 import { generateFeature } from "../features/index.js"
 import { fileBase, mix, pathDimension, rand32, rnd, structureName } from "../transforms.js"
 import { saveBlob } from "../download.js"
+import { makeZip } from "../zip.js"
+import { gzip, writeStructure } from "../nbtwrite.js"
 import { paramUrl, setParams } from "../params.js"
 import { isRemote, prefetchRemote, fetchRemote, remoteName } from "../remote.js"
 import { applyProcessors } from "../processors.js"
@@ -32,7 +34,7 @@ const procs = useProcessors()
 const { locked, withLock } = useLock()
 
 const structure = buildApi.current
-const state = reactive({ name: "", error: "", reading: null, field: null, file: "" })
+const state = reactive({ name: "", error: "", reading: null, field: null, file: "", count: 0 })
 
 let loaded = []
 
@@ -342,6 +344,7 @@ async function apply(refit = true) {
   if (!loaded.every(e => e.world || (e.rel && !e.feature && w.hasStructure(e.rel)))) await buildApi.clearMapArt()
   const features = useFeatures()
   state.file = loaded.find(e => e.file)?.name ?? ""
+  state.count = loaded.length
   buildApi.state.manual = !loaded.every(e => e.rel && !e.feature && structures.has(e.rel))
   structures.stateMut.selected = loaded.filter(e => e.rel && !e.feature).map(e => e.rel)
   features.stateMut.selected = Array.from(new Set(loaded.filter(e => e.feature).map(e => e.rel)))
@@ -419,14 +422,65 @@ const linkTo = params => paramUrl({
 const structureLink = rel => linkTo({ structure: rel })
 const featureLink = rel => linkTo({ feature: rel })
 
-async function downloadStructure(rel) {
+function structureBytesFor(rel) {
   const w = useWorld()
-  const bytes = w.hasStructure(rel) ? await w.structureBytes(rel)
-    : isRemote(rel) ? await fetchRemote(rel)
-    : await structures.structureBytes(rel)
-  if (!bytes) return
-  saveBlob(new Blob([bytes]), fileBase(rel).replace(/\.nbt$/i, "") + ".nbt")
+  return w.hasStructure(rel) ? w.structureBytes(rel)
+    : isRemote(rel) ? fetchRemote(rel)
+    : structures.structureBytes(rel)
 }
+
+// a remote rel is a url, so only its filename is usable inside the zip
+const nbtName = rel => fileBase(rel).replace(/\.nbt$/i, "") + ".nbt"
+const entryName = rel => isRemote(rel) ? nbtName(rel) : rel.replace(/\.nbt$/i, "") + ".nbt"
+
+// generated nbt needs a data version or the game runs every datafixer over it,
+// so it borrows one from a real file in the same pack
+let packVersion = null, packVersionFor = -1
+async function packDataVersion() {
+  if (packVersionFor === packs.state.assetsVersion) return packVersion
+  packVersionFor = packs.state.assetsVersion
+  packVersion = null
+  try {
+    const rel = structures.state.names.find(r => structures.zipPathOf(r))
+    const bytes = rel && await structures.structureBytes(rel)
+    if (bytes) packVersion = (await readNBT(bytes))?.DataVersion ?? null
+  } catch {}
+  return packVersion
+}
+
+// anything with no file behind it (features, builtins, worlds, combined loads)
+// is written out from what is on screen
+async function nbtBytes(entry) {
+  if (entry.rel && canDownload(entry.rel)) {
+    const bytes = await structureBytesFor(entry.rel)
+    if (bytes) return bytes
+  }
+  return entry.structure ? gzip(writeStructure(entry.structure, await packDataVersion())) : null
+}
+
+async function saveEntries(entries, zipName) {
+  if (!entries.length) return
+  if (entries.length === 1) {
+    const bytes = await nbtBytes(entries[0])
+    if (bytes) saveBlob(new Blob([bytes]), nbtName(entries[0].rel ?? entries[0].name))
+    return
+  }
+  const files = []
+  const taken = new Set()
+  for (const e of entries) {
+    const bytes = await nbtBytes(e)
+    if (!bytes) continue
+    const base = entryName(e.rel ?? e.name).replace(/\.nbt$/i, "")
+    let name = base + ".nbt"
+    for (let n = 2; taken.has(name); n++) name = `${base}_${n}.nbt`
+    taken.add(name)
+    files.push({ name, data: bytes })
+  }
+  if (files.length) saveBlob(await makeZip(files), fileBase(zipName) + ".zip")
+}
+
+const downloadStructures = rels => saveEntries(rels.map(rel => ({ rel, name: rel })), "structures")
+const downloadLoaded = zipName => saveEntries(loaded.filter(e => e.structure), zipName || "structures")
 
 async function readVanilla(rel) {
   const w = useWorld()
@@ -796,7 +850,7 @@ packs.setSwapHandler(onAssetsSwapped)
 procs.setReloadHandler(onAssetsSwapped)
 
 export function useStructure() {
-  return { state: readonly(state), structure, apply, loadVanilla, loadDefault, loadMany, loadFile, closeFile, loadObject, loadDebug, loadFeature, loadFeatures, loadFeatureField, clickFeature, cancelReading, setReading, readCancelled, setQuietLoads, processVanilla, canDownload, downloadStructure, structureFolder, structureLink, featureLink, currentFile: () => loaded.some(e => e.file) ? fileObj : null }
+  return { state: readonly(state), structure, apply, loadVanilla, loadDefault, loadMany, loadFile, closeFile, loadObject, loadDebug, loadFeature, loadFeatures, loadFeatureField, clickFeature, cancelReading, setReading, readCancelled, setQuietLoads, processVanilla, canDownload, downloadStructures, downloadLoaded, structureFolder, structureLink, featureLink, currentFile: () => loaded.some(e => e.file) ? fileObj : null }
 }
 
 

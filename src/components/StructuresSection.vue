@@ -14,7 +14,7 @@ import ListTabs from "./ListTabs.vue"
 
 const structures = useStructures()
 const { state, stateMut, computeWorldgen, computeAdvIndex, advVocab, filteredNames } = structures
-const { state: structState, loadVanilla, loadMany, closeFile, canDownload, downloadStructure, structureFolder, structureLink } = useStructure()
+const { state: structState, loadVanilla, loadMany, closeFile, canDownload, downloadStructures, structureFolder, structureLink } = useStructure()
 const ctx = useContextMenu()
 const { locked } = useLock()
 const compare = useCompare()
@@ -49,7 +49,7 @@ function onFileMenu(rel, e) {
   const items = [
     { label: "Copy Path", icon: "content_copy", disabled: !folder, action: () => navigator.clipboard.writeText(folder) },
     { label: "Copy Link", icon: "link", action: () => navigator.clipboard.writeText(structureLink(rel)) },
-    { label: "Download Structure", icon: "download", disabled: !canDownload(rel), action: () => downloadStructure(rel) }
+    { label: "Download Structure", icon: "download", disabled: !canDownload(rel), action: () => downloadStructures([rel]) }
   ]
   // comparing needs exactly one loaded structure, and the panel owns comparison
   if (!locked.value && !compare.versionArmed() && sel.length === 1 && sel[0] !== rel) {
