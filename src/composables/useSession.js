@@ -188,15 +188,20 @@ function syncUrl() {
   })
 }
 
+// the declared cap is only a ceiling; the real one depends on the seed, so it
+// has to be known before a level clamps against it
+async function capForSeed() {
+  if (state.kind === "jigsaw") {
+    genCap = structures.getStructDepth(baseName) ?? genCap
+    state.maxDepth = genCap
+    baseRadius = structures.getStructRadius(baseName) ?? baseRadius
+  } else if (state.steps) await probeDepth()
+}
+
 async function setLevel(target, { freshSeed = false } = {}) {
   if (target > 0 && (freshSeed || state.seed == null)) {
     state.seed = rand32()
-    if (state.kind === "jigsaw") {
-      genCap = structures.getStructDepth(baseName) ?? genCap
-      state.maxDepth = genCap
-      baseRadius = structures.getStructRadius(baseName) ?? baseRadius
-    }
-    else if (state.steps) await probeDepth()
+    await capForSeed()
   }
   target = Math.max(0, Math.min(target, state.maxDepth))
   if (target === 0) state.seed = null
@@ -297,9 +302,12 @@ async function startSession(structure, name) {
 
   if (urlSeed != null) {
     state.seed = urlSeed
-    state.level = state.steps ? Math.max(1, Math.min(urlLevel - 1, state.maxDepth)) : state.maxDepth
+    const want = state.steps ? Math.max(1, urlLevel - 1) : Infinity
     urlSeed = urlLevel = null
-    await regenerate()
+    await capForSeed()
+    await setLevel(want)
+    // reaching the cap can unlock the processing level the url asked for
+    if (state.level < want && state.level < state.maxDepth) await setLevel(want)
     return
   }
   syncUrl()
