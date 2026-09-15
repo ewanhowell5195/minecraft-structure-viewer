@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url"
 import { packBundle } from "./builtin/common.js"
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..")
-for (const name of ["builtin", "features"]) {
+for (const name of ["builtin", "features", "gui"]) {
   const count = packBundle(path.join(root, "bundled", name), path.join(root, "public", `${name}.zip`))
   console.log(`${name}.zip: ${count} files`)
 }

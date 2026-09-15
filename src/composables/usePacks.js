@@ -15,6 +15,7 @@ let baseVirtual = false
 let baseBytes = null
 let builtinBytes = null
 let featureBytes = null
+let guiBytes = null
 let nextId = 1
 
 // the game's hardcoded structures (tools/builtin) and code-built features
@@ -30,6 +31,12 @@ async function loadBuiltin() {
     try {
       const res = await fetch(import.meta.env.BASE_URL + "features.zip")
       if (res.ok) featureBytes = new Uint8Array(await res.arrayBuffer())
+    } catch {}
+  }
+  if (!guiBytes) {
+    try {
+      const res = await fetch(import.meta.env.BASE_URL + "gui.zip")
+      if (res.ok) guiBytes = new Uint8Array(await res.arrayBuffer())
     } catch {}
   }
 }
@@ -69,7 +76,7 @@ const setChannelParam = ch => setParams({ channel: ch === "snapshot" ? "snapshot
 async function rebuildAssets(swap) {
   const lib = await loadLibrary()
   let sources = state.packs.map(p => bytesById.get(p.id)).concat(baseBytes).filter(Boolean)
-  if (sources.length) sources = sources.concat(builtinBytes ?? [], featureBytes ?? [])
+  if (sources.length) sources = sources.concat(builtinBytes ?? [], featureBytes ?? [], guiBytes ?? [])
   const prev = assets.value
   assets.value = sources.length ? await lib.prepareAssets(sources, { cache: true, defaults: "game", version: state.baseId || undefined }) : null
   state.assetsVersion++
