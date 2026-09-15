@@ -804,6 +804,39 @@ function loadFile(file, cacheIt = true) {
   })
 }
 
+function loadFiles(files) {
+  if (!files?.length || locked.value) return
+  return withLock(async () => {
+    state.error = ""
+    const snap = snapshot()
+    try {
+      let failed = 0
+      const entries = await readMany(files, undefined, async file => {
+        try {
+          return { structure: await read(file), name: structureName(file.name), file: true }
+        } catch (err) {
+          console.warn(`couldn't read ${file.name}:`, err)
+          failed++
+          return null
+        }
+      }, "reading files")
+      if (!entries?.length) {
+        if (failed) state.error = failed === 1 ? `couldn't read ${files[0].name}` : `couldn't read any of the ${failed} files`
+        return
+      }
+      setStructureParam(null)
+      state.field = null
+      loaded = entries
+      if (await apply() === false) return restore(snap)
+      fileObj = null
+      uncache("structure")
+      uncache("world")
+    } catch (err) {
+      state.error = `couldn't load files: ${err}`
+    }
+  })
+}
+
 function loadObject(structure, name, keepWorld = false) {
   if (!structure || locked.value) return
   return withLock(async () => {
@@ -850,7 +883,7 @@ packs.setSwapHandler(onAssetsSwapped)
 procs.setReloadHandler(onAssetsSwapped)
 
 export function useStructure() {
-  return { state: readonly(state), structure, apply, loadVanilla, loadDefault, loadMany, loadFile, closeFile, loadObject, loadDebug, loadFeature, loadFeatures, loadFeatureField, clickFeature, cancelReading, setReading, readCancelled, setQuietLoads, processVanilla, canDownload, downloadStructures, downloadLoaded, structureFolder, structureLink, featureLink, currentFile: () => loaded.some(e => e.file) ? fileObj : null }
+  return { state: readonly(state), structure, apply, loadVanilla, loadDefault, loadMany, loadFile, loadFiles, closeFile, loadObject, loadDebug, loadFeature, loadFeatures, loadFeatureField, clickFeature, cancelReading, setReading, readCancelled, setQuietLoads, processVanilla, canDownload, downloadStructures, downloadLoaded, structureFolder, structureLink, featureLink, currentFile: () => loaded.some(e => e.file) ? fileObj : null }
 }
 
 

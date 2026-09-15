@@ -24,6 +24,7 @@ import { initEmbedApi, emit } from "./embed.js"
 import { isRemote, prefetchRemote } from "./remote.js"
 import { compareChanges } from "./compareChanges.js"
 import { routeFiles } from "./fileroute.js"
+import { makeZip } from "./zip.js"
 import { kilo, num } from "./format.js"
 import PacksSection from "./components/PacksSection.vue"
 import CompareSection from "./components/CompareSection.vue"
@@ -73,6 +74,7 @@ const compareState = useCompare().state
 const { locked } = useLock()
 
 const dropping = ref(false)
+const reading = ref(null)
 let dragDepth = 0
 const dragHasFiles = e => Array.from(e.dataTransfer?.types ?? []).includes("Files")
 
@@ -80,7 +82,7 @@ if (!minimal) onMounted(() => {
   addEventListener("dragenter", e => {
     if (!dragHasFiles(e)) return
     e.preventDefault()
-    if (++dragDepth === 1) dropping.value = !locked.value
+    if (++dragDepth === 1) dropping.value = !locked.value && !reading.value
   })
   addEventListener("dragover", e => {
     if (dragHasFiles(e)) e.preventDefault()
@@ -90,15 +92,69 @@ if (!minimal) onMounted(() => {
     dragDepth = 0
     dropping.value = false
   })
-  addEventListener("drop", e => {
+  addEventListener("drop", async e => {
     if (!dragHasFiles(e)) return
     e.preventDefault()
     dragDepth = 0
     dropping.value = false
-    const files = Array.from(e.dataTransfer.files)
-    if (files.length && !locked.value) routeFiles(files)
+    if (locked.value || reading.value) return
+    let files
+    try {
+      files = await droppedFiles(e.dataTransfer, (label, progress, count) => { reading.value = { label, progress, count } })
+    } finally {
+      reading.value = null
+    }
+    if (files.length) routeFiles(files)
   })
 })
+
+// a dropped folder is zipped and named with a trailing slash; entry handles
+// must be taken before awaiting
+async function droppedFiles(dt, onProgress) {
+  const entries = Array.from(dt.items ?? [], item => item.webkitGetAsEntry?.()).filter(Boolean)
+  if (!entries.length) return Array.from(dt.files)
+  const out = []
+  for (const entry of entries) {
+    if (entry.isFile) {
+      const f = await entryFile(entry)
+      if (f) out.push(f)
+      continue
+    }
+    if (!entry.isDirectory) continue
+    onProgress(`Listing ${entry.name}…`, 0)
+    const listed = []
+    await walkEntry(entry, entry.fullPath.length + 1, listed)
+    const total = listed.reduce((n, l) => n + l.file.size, 0) || 1
+    let done = 0
+    const files = []
+    for (const { name, file } of listed) {
+      files.push({ name, data: new Uint8Array(await file.arrayBuffer()) })
+      done += file.size
+      onProgress(`Reading ${entry.name}…`, done / total, `${files.length}/${listed.length} files`)
+    }
+    onProgress(`Packing ${entry.name}…`, 1)
+    const blob = await makeZip(files)
+    out.push(new File([blob], entry.name + "/", { type: blob.type }))
+  }
+  return out
+}
+
+const entryFile = entry => new Promise(resolve => entry.file(resolve, () => resolve(null)))
+
+async function walkEntry(entry, rootLen, out) {
+  if (entry.isFile) {
+    const file = await entryFile(entry)
+    if (file) out.push({ name: entry.fullPath.slice(rootLen), file })
+    return
+  }
+  if (!entry.isDirectory || entry.name === ".git") return
+  const reader = entry.createReader()
+  for (;;) {
+    const batch = await new Promise(resolve => reader.readEntries(resolve, () => resolve([])))
+    if (!batch.length) return
+    for (const e of batch) await walkEntry(e, rootLen, out)
+  }
+}
 const { state: containerState } = useContainer()
 
 const worldState = useWorld().state
@@ -381,10 +437,12 @@ onMounted(async () => {
 
 <template>
   <div class="layout" :class="{ minimal, 'drawer-left': drawer === 'left', 'drawer-right': drawer === 'right' }">
-    <div v-if="dropping" class="drop-veil">
-      <div class="drop-card">
-        <span class="material-symbols-outlined">upload_file</span>
-        Drop to open
+    <div v-if="dropping || reading" class="drop-veil">
+      <div class="drop-card" :class="{ reading }">
+        <span class="material-symbols-outlined" :class="{ spin: reading }">{{ reading ? "progress_activity" : "upload_file" }}</span>
+        <div>{{ reading?.label ?? "Drop to open" }}</div>
+        <span v-if="reading?.count" class="count">{{ reading.count }}</span>
+        <div v-if="reading" class="loadbar"><div class="fill" :style="{ width: reading.progress * 100 + '%' }"></div></div>
       </div>
     </div>
     <aside v-if="!minimal" class="sidebar" @click="closeOnPick">
@@ -491,7 +549,9 @@ onMounted(async () => {
 
 .drop-card {
   display: flex;
+  flex-direction: column;
   align-items: center;
+  text-align: center;
   gap: 10px;
   padding: 18px 26px;
   border-radius: 10px;
@@ -502,7 +562,21 @@ onMounted(async () => {
   user-select: none;
 }
 
+.drop-card.reading { min-width: 300px; }
+
+.drop-card .count {
+  font-family: ui-monospace, monospace;
+  font-weight: 400;
+  color: var(--text-dim);
+}
+
+.drop-card .loadbar { align-self: stretch; }
+
 .drop-card .material-symbols-outlined { font-size: 26px; }
+
+.drop-card .spin { animation: spin 1s linear infinite; }
+
+@keyframes spin { to { transform: rotate(360deg); } }
 
 .sidebar {
   width: 300px;

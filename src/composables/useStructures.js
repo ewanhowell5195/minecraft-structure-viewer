@@ -73,10 +73,11 @@ async function populate() {
     const zip = lib.parseZip(src)
     const keys = Array.from(zip.keys())
     if (isLooseZip(keys)) {
+      const root = packs.isFolderSource(src) ? "folder/" : "zip/"
       for (const k of keys) {
         const m = normZipKey(k).match(LOOSE_RE)
         if (!m) continue
-        const rel = "zip/" + m[1]
+        const rel = root + m[1]
         structPath.set(rel, k)
         looseSrc.set(rel, zip.get(k))
       }

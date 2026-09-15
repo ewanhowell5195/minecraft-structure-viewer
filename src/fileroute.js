@@ -13,7 +13,7 @@ const ARCHIVE_EXT = /\.(zip|jar|mcpack|mcaddon|mcworld)$/i
 export async function classifyFile(file) {
   if (/\.mca$/i.test(file.name)) return "world"
   if (STRUCT_EXT.test(file.name)) return "structure"
-  if (!ARCHIVE_EXT.test(file.name)) return "structure"
+  if (!ARCHIVE_EXT.test(file.name) && !file.name.endsWith("/")) return "structure"
   const lib = await loadLibrary()
   let keys
   try {
@@ -42,6 +42,8 @@ export async function routeFiles(files) {
   if (sources.length) await usePacks().addPacks(sources)
   for (const { kind, file } of rest) {
     if (kind === "world") await useWorld().openWorld(file)
-    else await openStructure(file)
   }
+  const structs = rest.filter(r => r.kind === "structure").map(r => r.file)
+  if (structs.length > 1) await useStructure().loadFiles(structs)
+  else if (structs.length) await openStructure(structs[0])
 }

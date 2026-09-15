@@ -49,8 +49,8 @@ function onFiles(e) {
   <template v-if="live">
     <div class="pack-list">
       <div v-for="(p, i) in state.packs" :key="p.id" class="pack">
-        <span class="material-symbols-outlined kind">folder_zip</span>
-        <span class="name" :title="p.name">{{ p.name }}</span>
+        <span class="material-symbols-outlined kind">{{ p.name.endsWith("/") ? "folder" : "folder_zip" }}</span>
+        <span class="name" :title="p.name">{{ p.name.replace(/\/$/, "") }}</span>
         <template v-if="state.packs.length > 1">
           <button class="icon" title="Move up" :disabled="busy || i === 0"
             @click="emit('move', p.id, -1)"><span class="material-symbols-outlined">keyboard_arrow_up</span></button>
