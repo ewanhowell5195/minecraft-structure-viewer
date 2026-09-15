@@ -95,7 +95,9 @@ a standalone Vue 3 + Vite app.
 - `?minimal` strip the chrome for embedding: no sidebar, walk button,
   structure-blocks menu, or progress bars; the splash stays up with loading
   status until the structure finishes loading, and the info chip drops its
-  draw/tri counts
+  draw/tri counts. Its open-in-viewer button opens the full site in a new tab
+  and hands over whatever is loaded, so an iframe with a `sandbox` attribute
+  needs `allow-popups allow-popups-to-escape-sandbox` in it
 - `?manual` load nothing on start: no vanilla jar and no default structure, so
   the embedding page drives everything over the [embed API](#embed-api).
   `?packs=` still applies if given. Independent of `?minimal`

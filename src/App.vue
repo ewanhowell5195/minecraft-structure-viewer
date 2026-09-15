@@ -20,6 +20,8 @@ import { useSlicers } from "./composables/useSlicers.js"
 import { tab } from "./composables/useTab.js"
 import { minimal } from "./minimal.js"
 import { manual } from "./manual.js"
+import { setParams } from "./params.js"
+import { offerHandoff, receiveHandoff } from "./handoff.js"
 import { initEmbedApi, emit } from "./embed.js"
 import { isRemote, prefetchRemote } from "./remote.js"
 import { compareChanges } from "./compareChanges.js"
@@ -165,55 +167,35 @@ const debugPicker = ref(false)
 const drawer = ref("")
 const toggleDrawer = side => { drawer.value = drawer.value === side ? "" : side }
 const closeOnPick = e => { if (e.target.closest(".tree-file")) drawer.value = "" }
-// refreshed on pointerdown so the link always carries the current url state
+// refreshed on pointerdown so the link always carries the current url state.
+// files the url can't express (embed api loads, drag-drops) follow by handoff
 const mainSiteUrl = ref("")
 const homeUrl = location.origin + location.pathname
 function refreshMainSiteUrl() {
   const u = new URL(location.href)
   u.searchParams.delete("minimal")
   u.searchParams.delete("manual")
+  const base = useComparePacks().state.baseId
+  if (useCompare().getFiles().panel && base && !u.searchParams.get("cversion")) u.searchParams.set("cversion", base)
+  if (minimal) u.searchParams.set("handoff", "1")
   mainSiteUrl.value = u.href
 }
 refreshMainSiteUrl()
 
-// opening the full site hands over whatever the embed is showing: files the
-// url can't express (embed api loads, drag-drops) are written to the user
-// cache first, and the tab is pre-opened so it can navigate once the writes
-// land. cross-site embeds have partitioned storage, where this degrades to
-// the url alone
-async function openFull() {
-  const win = window.open("about:blank", "_blank")
-  refreshMainSiteUrl()
-  const u = manual ? new URL(homeUrl) : new URL(mainSiteUrl.value)
-  if (manual) {
-    const params = new URLSearchParams(location.search)
-    for (const k of ["wy", "wsel", "wloaded", "wdim"]) {
-      const v = params.get(k)
-      if (v !== null) u.searchParams.set(k, v)
-    }
+if (minimal) offerHandoff(() => {
+  const files = useCompare().getFiles()
+  return {
+    structure: files.main ?? useStructure().currentFile(),
+    world: worldState.active ? useWorld().getWorldFile() : null,
+    compare: files.panel
   }
-  try {
-    const files = useCompare().getFiles()
-    const structFile = files.main ?? useStructure().currentFile()
-    const worldFile = worldState.active ? useWorld().getWorldFile() : null
-    if (files.panel) {
-      const base = useComparePacks().state.baseId
-      if (base && !u.searchParams.get("cversion")) u.searchParams.set("cversion", base)
-    }
-    await Promise.all([
-      structFile ? cacheFile("structure", structFile) : uncache("structure"),
-      worldFile ? cacheFile("world", worldFile) : uncache("world"),
-      files.panel ? cacheFile("compare", files.panel) : uncache("compare")
-    ])
-  } catch {}
-  win.location = u.href
-}
+})
 
 const { supported: fullscreenSupported, active: isFullscreen, toggle: toggleFullscreen } = useFullscreen()
 
 watch(() => !!buildState.info || !!current.error, ready => {
   if (ready) minimalReady.value = true
-})
+}, { immediate: true })
 
 const cancelReady = ref(false)
 let cancelTimer = null
@@ -369,6 +351,13 @@ onMounted(async () => {
     })
     beginInit()
     try {
+      if (params.has("handoff") && !minimal) {
+        const handed = await receiveHandoff()
+        if (handed) for (const kind of ["structure", "world", "compare"]) {
+          await (handed[kind] ? cacheFile(kind, handed[kind]) : uncache(kind))
+        }
+        setParams({ handoff: null })
+      }
       const cversion = minimal || manual ? null : params.get("cversion")
       if (cversion) uncache("world")
       // the world restores first so its structures resolve for the param filter below
@@ -502,7 +491,7 @@ onMounted(async () => {
       <button v-if="minimal && minimalReady && fullscreenSupported" class="fs-btn" :title="isFullscreen ? 'Exit fullscreen' : 'Fullscreen'" @click="toggleFullscreen()">
         <span class="material-symbols-outlined">{{ isFullscreen ? "fullscreen_exit" : "fullscreen" }}</span>
       </button>
-      <a v-if="minimal && minimalReady" class="open-full" title="Open in Structure Viewer" @click.prevent="openFull">
+      <a v-if="minimal && minimalReady" class="open-full" title="Open in Structure Viewer" :href="mainSiteUrl" target="_blank" rel="opener" @pointerdown="refreshMainSiteUrl">
         <span class="material-symbols-outlined">open_in_new</span>
       </a>
       <Modal v-if="notFound && !minimal" :width="380" :z="250" class="nf" @close="notFound = ''">
