@@ -48,9 +48,9 @@ const headLabel = computed(() => mode.value === "feature"
 
 <template>
   <div v-if="mode === 'toggle'" class="level-menu" :class="{ locked }">
-    <button :disabled="locked" @click="buildState.hideStructureBlocks = !buildState.hideStructureBlocks">
+    <button class="float-btn" :disabled="locked" @click="buildState.hideStructureBlocks = !buildState.hideStructureBlocks">
       <span class="material-symbols-outlined">{{ buildState.hideStructureBlocks ? "visibility" : "visibility_off" }}</span>
-      {{ buildState.hideStructureBlocks ? "Show Structure Blocks" : "Hide Structure Blocks" }}
+      <span class="label">{{ buildState.hideStructureBlocks ? "Show Structure Blocks" : "Hide Structure Blocks" }}</span>
     </button>
   </div>
   <div v-else-if="mode" class="level-menu" :class="{ locked }">
@@ -106,9 +106,9 @@ const headLabel = computed(() => mode.value === "feature"
         {{ buildState.hideStructureBlocks ? "Show" : "Hide" }}
       </button>
     </div>
-    <button class="head" @click="open = !open">
+    <button class="head float-btn" @click="open = !open">
       <span class="material-symbols-outlined">{{ open ? "expand_more" : "expand_less" }}</span>
-      {{ headLabel }}
+      <span class="label">{{ headLabel }}</span>
     </button>
   </div>
 </template>
@@ -130,15 +130,4 @@ const headLabel = computed(() => mode.value === "feature"
 }
 
 .panel.collapsed { visibility: hidden; }
-
-/* the head, and the lone structure-blocks toggle, stay ordinary buttons */
-.level-menu > button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  white-space: nowrap;
-}
-
-.level-menu > button .material-symbols-outlined { font-size: 18px; }
 </style>

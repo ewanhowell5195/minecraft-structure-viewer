@@ -476,17 +476,17 @@ onMounted(async () => {
         <div v-if="packsState.remoteError" class="chip error remote">{{ packsState.remoteError }}</div>
         <div v-if="!current.error && aim" class="chip aim">{{ aim }}</div>
         <LevelMenu v-if="!minimal && !compareState.on" />
-        <button v-if="(buildState.building || current.reading) && cancelReady" class="cancel-btn" @click="current.reading ? cancelReading() : cancelBuild()">
+        <button v-if="(buildState.building || current.reading) && cancelReady" class="cancel-btn float-btn" @click="current.reading ? cancelReading() : cancelBuild()">
           <span class="material-symbols-outlined">close</span>
-          Cancel
+          <span class="label">Cancel</span>
         </button>
-        <button v-if="!minimal && !compareState.on" class="walk-btn" :disabled="locked || !buildState.info" @click="walkClick()">
+        <button v-if="!minimal && !compareState.on" class="walk-btn float-btn" :disabled="locked || !buildState.info" @click="walkClick()">
           <span class="material-symbols-outlined">directions_walk</span>
-          Walk Around
+          <span class="label">Walk Around</span>
         </button>
-        <button v-if="buildState.info && (buildState.info.blocks || structure?.entities?.length || compareState.on)" class="used-btn" :class="{ solo: compareState.on }" :disabled="locked" @click="usedModal?.open()">
+        <button v-if="buildState.info && (buildState.info.blocks || structure?.entities?.length || compareState.on)" class="used-btn float-btn" :class="{ solo: compareState.on }" :disabled="locked" @click="usedModal?.open()">
           <span class="material-symbols-outlined">list_alt</span>
-          {{ usedLabel }}
+          <span class="label">{{ usedLabel }}</span>
         </button>
         <FindOverlay />
         <CompareOverlay />
@@ -707,20 +707,12 @@ onMounted(async () => {
   position: absolute;
   left: 14px;
   bottom: 12px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
 }
-
-.walk-btn .material-symbols-outlined { font-size: 18px; }
 
 .used-btn {
   position: absolute;
   left: 14px;
   bottom: 52px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
 }
 
 /* no walk button to stack above in minimal or compare mode */
@@ -779,22 +771,14 @@ onMounted(async () => {
   overflow-wrap: anywhere;
 }
 
-.used-btn .material-symbols-outlined { font-size: 18px; }
-
 .cancel-btn {
   position: absolute;
   top: 12px;
   left: 50%;
   transform: translateX(-50%);
-  display: flex;
-  align-items: center;
-  gap: 6px;
 }
 
-.cancel-btn .material-symbols-outlined {
-  font-size: 18px;
-  color: var(--red);
-}
+.cancel-btn .material-symbols-outlined { color: var(--red); }
 
 @media (max-width: 900px) {
   .sidebar {
