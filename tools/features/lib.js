@@ -1,17 +1,15 @@
 import fs from "node:fs"
-import { readZip, unzipEntry } from "../builtin/zip.js"
+import { readZip } from "minecraft-asset-loader"
 import { read } from "minecraft-block-reader"
 import { normStatesDeep } from "../../src/transforms.js"
 
-export function featureFilesFromZip(zipPath) {
+export async function featureFilesFromZip(zipPath) {
   const files = new Map()
-  for (const [k, e] of readZip(fs.readFileSync(zipPath))) {
-    files.set(k, Buffer.from(unzipEntry(e)))
-  }
+  for (const e of readZip(fs.readFileSync(zipPath))) files.set(e.path, Buffer.from(await e.read()))
   return files
 }
 
-export function buildGenCtx(files, clientJarPath) {
+export async function buildGenCtx(files, clientJarPath) {
   const FEATURE_RE = /^data\/([^/]+)\/worldgen\/feature\/(.+)\.json$/
   const featureByRel = new Map()
   for (const [rel, bytes] of files) {
@@ -21,16 +19,16 @@ export function buildGenCtx(files, clientJarPath) {
   const placedByRel = new Map()
   let clientZip = null
   if (fs.existsSync(clientJarPath)) {
-    clientZip = readZip(fs.readFileSync(clientJarPath))
+    clientZip = new Map(readZip(fs.readFileSync(clientJarPath)).map(e => [e.path, e]))
     for (const [entry, e] of clientZip) {
       const m = entry.match(/^data\/([^/]+)\/worldgen\/placed_feature\/(.+)\.json$/)
-      if (m) placedByRel.set(m[1] + "/" + m[2], normStatesDeep(JSON.parse(Buffer.from(unzipEntry(e)).toString())))
+      if (m) placedByRel.set(m[1] + "/" + m[2], normStatesDeep(JSON.parse(Buffer.from(await e.read()).toString())))
     }
   }
   const nsPath = ref => ref.includes(":") ? ref.replace(":", "/") : "minecraft/" + ref
   const loadStruct = async ref => {
     const e = clientZip?.get("data/" + nsPath(ref).replace(/^([^/]+)\//, "$1/structure/") + ".nbt")
-    return e ? read(Buffer.from(unzipEntry(e))) : null
+    return e ? read(Buffer.from(await e.read())) : null
   }
   // a placed feature's inner ref points at the FEATURE registry, never back
   // through placed: ids collide across the two registries
@@ -47,9 +45,8 @@ export function buildGenCtx(files, clientJarPath) {
   const loadProcessors = async ref => {
     const rel = ref.includes(":") ? ref.replace(":", "/") : "minecraft/" + ref
     const [ns, ...rest] = rel.split("/")
-    const bytes = files.get(`data/${ns}/worldgen/processor_list/${rest.join("/")}.json`)
-      ?? (clientZip && clientZip.has(`data/${ns}/worldgen/processor_list/${rest.join("/")}.json`)
-        ? Buffer.from(unzipEntry(clientZip.get(`data/${ns}/worldgen/processor_list/${rest.join("/")}.json`))) : null)
+    const key = `data/${ns}/worldgen/processor_list/${rest.join("/")}.json`
+    const bytes = files.get(key) ?? (clientZip?.has(key) ? Buffer.from(await clientZip.get(key).read()) : null)
     if (!bytes) return []
     try { return normStatesDeep(JSON.parse(bytes.toString()))?.processors ?? [] } catch { return [] }
   }

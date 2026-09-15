@@ -9,7 +9,8 @@ import { lootTableItems, readTrialSpawnerConfig } from "../loot.js"
 import { matchIndex } from "../advfilter.js"
 import { buildProcessorIndex } from "../processors.js"
 import { yieldTask } from "../yield.js"
-import { isLooseZip, normZipKey, LOOSE_RE, entryBytes } from "../loosezip.js"
+import { readZip } from "minecraft-asset-loader"
+import { isLooseZip, normZipKey, LOOSE_RE } from "../loosezip.js"
 
 // structures? also matches the legacy/mod plural folder; pre-1.13 jars keep
 // theirs under assets
@@ -65,36 +66,33 @@ function setWorldStructures(names) {
 }
 
 async function populate() {
-  const lib = await loadLibrary()
   structPath = new Map()
   looseSrc = new Map()
   // lowest priority first so a higher pack's zip path wins the map slot
   for (const src of Array.from(packs.zipSources()).reverse()) {
-    const zip = lib.parseZip(src)
-    const keys = Array.from(zip.keys())
-    if (isLooseZip(keys)) {
+    const entries = readZip(src)
+    if (isLooseZip(entries.map(e => e.path))) {
       const root = packs.isFolderSource(src) ? "folder/" : "zip/"
-      for (const k of keys) {
-        const m = normZipKey(k).match(LOOSE_RE)
+      for (const e of entries) {
+        const m = normZipKey(e.path).match(LOOSE_RE)
         if (!m) continue
         const rel = root + m[1]
-        structPath.set(rel, k)
-        looseSrc.set(rel, zip.get(k))
+        structPath.set(rel, e.path)
+        looseSrc.set(rel, e)
       }
       continue
     }
-    for (const k of keys) {
-      const m = k.match(STRUCT_RE)
-      if (m) structPath.set(m[1] + "/" + m[2], k)
+    for (const e of entries) {
+      const m = e.path.match(STRUCT_RE)
+      if (m) structPath.set(m[1] + "/" + m[2], e.path)
     }
   }
   refreshNames()
 }
 
 async function allZipKeys() {
-  const lib = await loadLibrary()
   const keys = new Set()
-  for (const src of packs.zipSources()) for (const k of lib.parseZip(src).keys()) keys.add(k)
+  for (const src of packs.zipSources()) for (const e of readZip(src)) keys.add(e.path)
   return keys
 }
 
@@ -284,7 +282,7 @@ function visibleNames() {
 }
 
 const zipPathOf = name => structPath.get(name)
-const looseBytesOf = name => entryBytes(looseSrc.get(name))
+const looseBytesOf = async name => looseSrc.get(name)?.read() ?? null
 const has = name => structPath.has(name) || name in GENERATED || worldNames.includes(name)
 const hasBytes = name => structPath.has(name)
 

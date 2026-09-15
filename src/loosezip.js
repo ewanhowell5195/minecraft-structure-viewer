@@ -17,12 +17,3 @@ export function zipKind(keys) {
 }
 
 export const isLooseZip = keys => zipKind(keys) === "loose"
-
-export async function entryBytes(entry) {
-  if (!entry) return null
-  const data = entry.data
-  if (!data) return null
-  if (entry.method === 0) return data
-  const stream = new Blob([data]).stream().pipeThrough(new DecompressionStream("deflate-raw"))
-  return new Uint8Array(await new Response(stream).arrayBuffer())
-}

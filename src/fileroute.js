@@ -1,4 +1,4 @@
-import { loadLibrary } from "./lib.js"
+import { readZip } from "minecraft-asset-loader"
 import { zipKind } from "./loosezip.js"
 import { usePacks } from "./composables/usePacks.js"
 import { useWorld } from "./composables/useWorld.js"
@@ -14,10 +14,9 @@ export async function classifyFile(file) {
   if (/\.mca$/i.test(file.name)) return "world"
   if (STRUCT_EXT.test(file.name)) return "structure"
   if (!ARCHIVE_EXT.test(file.name) && !file.name.endsWith("/")) return "structure"
-  const lib = await loadLibrary()
   let keys
   try {
-    keys = Array.from(lib.parseZip(new Uint8Array(await file.arrayBuffer())).keys())
+    keys = readZip(await file.arrayBuffer()).map(e => e.path)
   } catch {
     return "structure"
   }

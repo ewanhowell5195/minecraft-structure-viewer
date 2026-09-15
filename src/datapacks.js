@@ -1,8 +1,9 @@
+import { readZip } from "minecraft-asset-loader"
 import { normZipKey } from "./loosezip.js"
 
 const DP_STRUCT = /^data\/([^/]+)\/structures?\/(.+)\.nbt$/
 
-export async function datapackStructures(paths, { readFile, parseZip }) {
+export async function datapackStructures(paths, readFile) {
   const out = []
   const zips = []
   for (const sub of paths) {
@@ -18,12 +19,11 @@ export async function datapackStructures(paths, { readFile, parseZip }) {
     try {
       const bytes = await readFile("datapacks/" + sub)
       if (!bytes) continue
-      const zip = parseZip(bytes)
       const group = sub.replace(/\.zip$/i, "")
-      for (const k of zip.keys()) {
-        const key = normZipKey(k)
+      for (const e of readZip(bytes)) {
+        const key = normZipKey(e.path)
         const m = key.match(DP_STRUCT)
-        if (m) out.push({ group, ns: m[1], path: m[2], key, entry: zip.get(k) })
+        if (m) out.push({ group, ns: m[1], path: m[2], key, entry: e })
       }
     } catch {}
   }

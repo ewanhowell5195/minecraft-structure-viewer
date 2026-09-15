@@ -32,7 +32,7 @@ async function main() {
   for (const rel of walk(outDir).sort()) files.set(rel, fs.readFileSync(path.join(outDir, rel)))
   const root = path.resolve(here, "../..")
   writeBundle(path.join(root, "bundled/builtin"), files)
-  const count = packBundle(path.join(root, "bundled/builtin"), path.join(root, "public/builtin.zip"))
+  const count = await packBundle(path.join(root, "bundled/builtin"), path.join(root, "public/builtin.zip"))
   log(`wrote bundled/builtin + public/builtin.zip: ${count} files`)
 }
 

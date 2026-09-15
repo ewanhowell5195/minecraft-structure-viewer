@@ -2,8 +2,6 @@ import { reactive, readonly } from "vue"
 import { read, regionCoords, buildSelection, chunkSurface } from "../world.js"
 import { blockCount } from "../blocklist.js"
 import { readNBT, read as readStructure } from "minecraft-block-reader"
-import { loadLibrary } from "../lib.js"
-import { entryBytes } from "../loosezip.js"
 import { datapackStructures } from "../datapacks.js"
 import { useStructure } from "./useStructure.js"
 import { useBuild } from "./useBuild.js"
@@ -459,8 +457,7 @@ async function addDatapackStructures() {
   const subs = []
   for (const p of files.keys()) if (p.startsWith(base)) subs.push(p.slice(base.length))
   if (!subs.length) return
-  const lib = await loadLibrary()
-  const found = await datapackStructures(subs, { readFile: p => world.file(p), parseZip: lib.parseZip })
+  const found = await datapackStructures(subs, p => world.file(p))
   for (const f of found) addWorldRel(f.group, f.ns, f.path, { key: f.key, ...f.entry ? { entry: f.entry } : { file: f.file } })
 }
 
@@ -468,7 +465,7 @@ const hasStructure = rel => worldRels.has(rel) && !!world
 async function readWorldStructure(rel) {
   const e = worldRels.get(rel)
   if (e.libRel != null) return world.structure(e.libRel)
-  const bytes = e.entry ? await entryBytes(e.entry) : await world.file(e.file)
+  const bytes = e.entry ? await e.entry.read() : await world.file(e.file)
   return readStructure(bytes)
 }
 
@@ -476,7 +473,7 @@ async function readWorldStructure(rel) {
 async function structureBytes(rel) {
   const e = worldRels.get(rel)
   if (!e || !world) return null
-  if (e.entry) return entryBytes(e.entry)
+  if (e.entry) return e.entry.read()
   const path = e.file ?? e.key
   return path ? world.file(path) : null
 }

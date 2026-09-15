@@ -1,6 +1,6 @@
 import fs from "node:fs"
 import path from "node:path"
-import { readZip, unzipEntry, writeZip } from "./zip.js"
+import { readZip, writeZip } from "minecraft-asset-loader"
 
 const MANIFEST = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json"
 
@@ -14,10 +14,10 @@ export function writeBundle(dir, files) {
 }
 
 // sorted entries + timestamp-free writer keep the zip bytes stable, so it only churns with real changes
-export function packBundle(dir, zipPath) {
+export async function packBundle(dir, zipPath) {
   const files = new Map()
   for (const rel of walk(dir).sort()) files.set(rel, fs.readFileSync(path.join(dir, rel)))
-  fs.writeFileSync(zipPath, writeZip(files))
+  fs.writeFileSync(zipPath, await writeZip(files, { compress: false }))
   return files.size
 }
 
@@ -51,14 +51,13 @@ export async function prepareClient(verDir, id, log) {
 }
 
 // the server jar is a bundler holding the real jar + libraries as entries
-export function extractBundler(serverJar, outDir) {
-  const files = readZip(fs.readFileSync(serverJar))
+export async function extractBundler(serverJar, outDir) {
   const jars = []
-  for (const [entry, e] of files) {
-    if (!entry.endsWith(".jar")) continue
-    if (!entry.startsWith("META-INF/libraries/") && !entry.startsWith("META-INF/versions/")) continue
-    const dest = path.join(outDir, path.basename(entry))
-    fs.writeFileSync(dest, unzipEntry(e))
+  for (const e of readZip(fs.readFileSync(serverJar))) {
+    if (!e.path.endsWith(".jar")) continue
+    if (!e.path.startsWith("META-INF/libraries/") && !e.path.startsWith("META-INF/versions/")) continue
+    const dest = path.join(outDir, path.basename(e.path))
+    fs.writeFileSync(dest, await e.read())
     jars.push(dest)
   }
   if (!jars.length) throw new Error("no jars found in bundler")
@@ -92,7 +91,7 @@ export async function prepareVersion(cache, requestedId, log) {
   let classpath = fs.readdirSync(cpDir).filter(f => f.endsWith(".jar")).map(f => path.join(cpDir, f))
   if (!classpath.length) {
     log?.("extracting bundler")
-    classpath = extractBundler(path.join(verDir, "server.jar"), cpDir)
+    classpath = await extractBundler(path.join(verDir, "server.jar"), cpDir)
   }
   return { id, verDir, cp: classpath.join(path.delimiter) }
 }

@@ -5,7 +5,7 @@
 import fs from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
-import { readZip, unzipEntry } from "../builtin/zip.js"
+import { readZip } from "minecraft-asset-loader"
 import { prepareClient, prepareVersion } from "../builtin/common.js"
 
 const here = path.dirname(fileURLToPath(import.meta.url))
@@ -17,27 +17,25 @@ const STEPS = ["raw_generation", "lakes", "local_modifications", "underground_st
 
 const positional = process.argv.slice(2).filter(a => !a.startsWith("--"))
 const { id, verDir } = await prepareVersion(cache, positional[0], log)
-const jar = readZip(fs.readFileSync(await prepareClient(verDir, id, log)))
 const td = new TextDecoder()
-const json = e => JSON.parse(td.decode(unzipEntry(e)))
+const json = async e => JSON.parse(td.decode(await e.read()))
 
 // full jar registries: removed features still traverse here
 const jarFeatures = new Map(), placed = new Map(), biomes = new Map()
-for (const [k, e] of jar) {
+for (const e of readZip(fs.readFileSync(await prepareClient(verDir, id, log)))) {
   let m
-  if ((m = k.match(/^data\/minecraft\/worldgen\/feature\/(.+)\.json$/))) jarFeatures.set("minecraft/" + m[1], json(e))
-  else if ((m = k.match(/^data\/minecraft\/worldgen\/placed_feature\/(.+)\.json$/))) placed.set("minecraft/" + m[1], json(e))
-  else if ((m = k.match(/^data\/minecraft\/worldgen\/biome\/(.+)\.json$/))) biomes.set(m[1], json(e))
+  if ((m = e.path.match(/^data\/minecraft\/worldgen\/feature\/(.+)\.json$/))) jarFeatures.set("minecraft/" + m[1], await json(e))
+  else if ((m = e.path.match(/^data\/minecraft\/worldgen\/placed_feature\/(.+)\.json$/))) placed.set("minecraft/" + m[1], await json(e))
+  else if ((m = e.path.match(/^data\/minecraft\/worldgen\/biome\/(.+)\.json$/))) biomes.set(m[1], await json(e))
 }
 
 // listed = the shipped zip minus the hidden names
-const zip = readZip(fs.readFileSync(path.resolve(here, "../../public/features.zip")))
 const listed = new Map()
 let hidden = []
-for (const [k, e] of zip) {
-  const m = k.match(/^data\/minecraft\/worldgen\/feature\/(.+)\.json$/)
-  if (m) listed.set("minecraft/" + m[1], json(e))
-  if (k === "viewer/hidden_features.json") hidden = json(e)
+for (const e of readZip(fs.readFileSync(path.resolve(here, "../../public/features.zip")))) {
+  const m = e.path.match(/^data\/minecraft\/worldgen\/feature\/(.+)\.json$/)
+  if (m) listed.set("minecraft/" + m[1], await json(e))
+  if (e.path === "viewer/hidden_features.json") hidden = await json(e)
 }
 for (const rel of hidden) listed.delete(rel)
 

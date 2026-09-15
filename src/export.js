@@ -1,7 +1,7 @@
 import * as THREE from "three"
 import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js"
 import { OBJExporter } from "three/addons/exporters/OBJExporter.js"
-import { makeZip } from "./zip.js"
+import { writeZip } from "minecraft-asset-loader"
 import { fileBase } from "./transforms.js"
 import { saveBlob } from "./download.js"
 
@@ -202,14 +202,14 @@ async function objZip(scene, caches, base) {
   scene.traverse(o => {
     if (o.isMesh) for (const m of [].concat(o.material)) materials.set(m.name, m)
   })
-  const files = [
-    { name: `${base}.obj`, data: encoder.encode(obj) },
-    { name: `${base}.mtl`, data: encoder.encode(writeMtl(materials.values())) }
-  ]
+  const files = new Map([
+    [`${base}.obj`, encoder.encode(obj)],
+    [`${base}.mtl`, encoder.encode(writeMtl(materials.values()))]
+  ])
   for (const tex of caches.tex.values()) {
-    files.push({ name: tex.userData.file, data: await pngBytes(tex.image) })
+    files.set(tex.userData.file, await pngBytes(tex.image))
   }
-  return makeZip(files)
+  return new Blob([await writeZip(files)], { type: "application/zip" })
 }
 
 export async function exportScene({ format, name, root }) {

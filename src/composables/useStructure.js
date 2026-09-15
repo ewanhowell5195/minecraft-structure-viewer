@@ -14,7 +14,7 @@ import { useFeatures } from "./useFeatures.js"
 import { generateFeature } from "../features/index.js"
 import { fileBase, mix, pathDimension, rand32, rnd, structureName } from "../transforms.js"
 import { saveBlob } from "../download.js"
-import { makeZip } from "../zip.js"
+import { writeZip } from "minecraft-asset-loader"
 import { gzip, writeStructure } from "../nbtwrite.js"
 import { paramUrl, setParams } from "../params.js"
 import { isRemote, prefetchRemote, fetchRemote, remoteName } from "../remote.js"
@@ -465,18 +465,16 @@ async function saveEntries(entries, zipName) {
     if (bytes) saveBlob(new Blob([bytes]), nbtName(entries[0].rel ?? entries[0].name))
     return
   }
-  const files = []
-  const taken = new Set()
+  const files = new Map()
   for (const e of entries) {
     const bytes = await nbtBytes(e)
     if (!bytes) continue
     const base = entryName(e.rel ?? e.name).replace(/\.nbt$/i, "")
     let name = base + ".nbt"
-    for (let n = 2; taken.has(name); n++) name = `${base}_${n}.nbt`
-    taken.add(name)
-    files.push({ name, data: bytes })
+    for (let n = 2; files.has(name); n++) name = `${base}_${n}.nbt`
+    files.set(name, bytes)
   }
-  if (files.length) saveBlob(await makeZip(files), fileBase(zipName) + ".zip")
+  if (files.size) saveBlob(new Blob([await writeZip(files, { compress: false })]), fileBase(zipName) + ".zip")
 }
 
 const downloadStructures = rels => saveEntries(rels.map(rel => ({ rel, name: rel })), "structures")

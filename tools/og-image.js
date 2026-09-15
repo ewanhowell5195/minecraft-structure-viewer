@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url"
 import * as lib from "block-model-renderer"
 import * as THREE from "three"
 import sharp from "sharp"
-import { readZip, unzipEntry } from "./builtin/zip.js"
+import { readZip } from "minecraft-asset-loader"
 import { prepareVersion, prepareClient } from "./builtin/common.js"
 import { read } from "minecraft-block-reader"
 import { runJigsaw } from "../src/jigsaw.js"
@@ -51,18 +51,18 @@ const { id, verDir } = await prepareVersion(cache, process.argv[2], log)
 log("version:", id, "seed:", SEED)
 
 const jar = fs.readFileSync(await prepareClient(verDir, id, log))
-const jarZip = readZip(jar)
+const jarZip = new Map(readZip(jar).map(e => [e.path, e]))
 const assets = await lib.prepareAssets([jar], { cache: true, defaults: "game" })
 const td = new TextDecoder()
 
 const nsPath = ref => ref.includes(":") ? ref.replace(":", "/") : "minecraft/" + ref
 const loadStruct = async ref => {
   const e = jarZip.get(`data/${nsPath(ref).replace("/", "/structure/")}.nbt`)
-  return e ? read(Buffer.from(unzipEntry(e))) : null
+  return e ? read(Buffer.from(await e.read())) : null
 }
 const loadPool = async ref => {
   const e = jarZip.get(`data/${nsPath(ref).replace("/", "/worldgen/template_pool/")}.json`)
-  return e ? JSON.parse(td.decode(unzipEntry(e))) : null
+  return e ? JSON.parse(td.decode(await e.read())) : null
 }
 const featureJson = rel => normStatesDeep(JSON.parse(fs.readFileSync(path.join(root, "bundled/features/data", rel.replace("/", "/worldgen/feature/") + ".json"))))
 

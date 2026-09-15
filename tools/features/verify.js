@@ -15,8 +15,8 @@ const positional = process.argv.slice(2).filter(a => !a.startsWith("--"))
 const { id, verDir } = await prepareVersion(cache, positional[0], log)
 log("version:", id)
 
-const files = featureFilesFromZip(path.resolve(here, "../../public/features.zip"))
-const ctx = buildGenCtx(files, await prepareClient(verDir, id, log))
+const files = await featureFilesFromZip(path.resolve(here, "../../public/features.zip"))
+const ctx = await buildGenCtx(files, await prepareClient(verDir, id, log))
 
 const failures = new Map()
 let ok = 0, empty = 0

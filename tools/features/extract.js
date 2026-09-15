@@ -6,7 +6,7 @@ import path from "node:path"
 import { execFileSync } from "node:child_process"
 import { fileURLToPath } from "node:url"
 import { javaBin, packBundle, prepareClient, prepareVersion, walk, writeBundle } from "../builtin/common.js"
-import { readZip, unzipEntry } from "../builtin/zip.js"
+import { readZip } from "minecraft-asset-loader"
 import { buildGenCtx } from "./lib.js"
 import { generateFeature } from "../../src/features/index.js"
 import { rnd } from "../../src/transforms.js"
@@ -53,7 +53,7 @@ async function main() {
   structureDupes.sort()
   log(`${structureDupes.length} features dropped as structure dupes of ${captured.size} captured types`)
   const clientJarPath = await prepareClient(verDir, id, log)
-  const ctx = buildGenCtx(files, clientJarPath)
+  const ctx = await buildGenCtx(files, clientJarPath)
 
   // template stampers duplicate the structures tab; the scan follows
   // references, so wrappers go with the stamp they wrap
@@ -121,7 +121,7 @@ async function main() {
   if (Object.keys(treeBiomes).length) files.set("viewer/feature_biomes.json", Buffer.from(JSON.stringify(treeBiomes, null, 2)))
 
   writeBundle(path.join(root, "bundled/features"), files)
-  packBundle(path.join(root, "bundled/features"), path.join(root, "public/features.zip"))
+  await packBundle(path.join(root, "bundled/features"), path.join(root, "public/features.zip"))
   log(`wrote bundled/features + public/features.zip: ${ctx.featureByRel.size} features, ${singles.length} single-block + ${selectors.length} ref-only selectors delisted (${removed.length} unreferenced, removed), ${templateBased.length} template stampers excluded, ${statics.length} static`)
 }
 
@@ -254,14 +254,13 @@ function collectRefs(ctx, json, out, seenPlaced) {
 const OCEANISH = /ocean|river|beach|shore/
 
 async function computeTreeBiomes(ctx, clientJarPath) {
-  const jar = readZip(fs.readFileSync(clientJarPath))
   const td = new TextDecoder()
   const jarFeatures = new Map(), placed = new Map(), biomes = new Map()
-  for (const [k, e] of jar) {
+  for (const e of readZip(fs.readFileSync(clientJarPath))) {
     let m
-    if ((m = k.match(/^data\/minecraft\/worldgen\/feature\/(.+)\.json$/))) jarFeatures.set("minecraft/" + m[1], JSON.parse(td.decode(unzipEntry(e))))
-    else if ((m = k.match(/^data\/minecraft\/worldgen\/placed_feature\/(.+)\.json$/))) placed.set("minecraft/" + m[1], JSON.parse(td.decode(unzipEntry(e))))
-    else if ((m = k.match(/^data\/minecraft\/worldgen\/biome\/(.+)\.json$/))) biomes.set(m[1], JSON.parse(td.decode(unzipEntry(e))))
+    if ((m = e.path.match(/^data\/minecraft\/worldgen\/feature\/(.+)\.json$/))) jarFeatures.set("minecraft/" + m[1], JSON.parse(td.decode(await e.read())))
+    else if ((m = e.path.match(/^data\/minecraft\/worldgen\/placed_feature\/(.+)\.json$/))) placed.set("minecraft/" + m[1], JSON.parse(td.decode(await e.read())))
+    else if ((m = e.path.match(/^data\/minecraft\/worldgen\/biome\/(.+)\.json$/))) biomes.set(m[1], JSON.parse(td.decode(await e.read())))
   }
   function reach(j, out, seen) {
     if (typeof j === "string") {

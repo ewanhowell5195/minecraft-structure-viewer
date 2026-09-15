@@ -24,7 +24,7 @@ import { initEmbedApi, emit } from "./embed.js"
 import { isRemote, prefetchRemote } from "./remote.js"
 import { compareChanges } from "./compareChanges.js"
 import { routeFiles } from "./fileroute.js"
-import { makeZip } from "./zip.js"
+import { writeZip } from "minecraft-asset-loader"
 import { kilo, num } from "./format.js"
 import PacksSection from "./components/PacksSection.vue"
 import CompareSection from "./components/CompareSection.vue"
@@ -126,15 +126,14 @@ async function droppedFiles(dt, onProgress) {
     await walkEntry(entry, entry.fullPath.length + 1, listed)
     const total = listed.reduce((n, l) => n + l.file.size, 0) || 1
     let done = 0
-    const files = []
+    const files = new Map()
     for (const { name, file } of listed) {
-      files.push({ name, data: new Uint8Array(await file.arrayBuffer()) })
+      files.set(name, new Uint8Array(await file.arrayBuffer()))
       done += file.size
-      onProgress(`Reading ${entry.name}…`, done / total, `${files.length}/${listed.length} files`)
+      onProgress(`Reading ${entry.name}…`, done / total, `${files.size}/${listed.length} files`)
     }
     onProgress(`Packing ${entry.name}…`, 1)
-    const blob = await makeZip(files)
-    out.push(new File([blob], entry.name + "/", { type: blob.type }))
+    out.push(new File([await writeZip(files)], entry.name + "/", { type: "application/zip" }))
   }
   return out
 }
