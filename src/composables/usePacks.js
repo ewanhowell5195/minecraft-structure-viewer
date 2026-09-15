@@ -207,11 +207,15 @@ async function addPacks(files, swap) {
   await withBusy(state, async () => {
     const added = []
     for (const file of files) {
+      const bytes = new Uint8Array(await file.arrayBuffer())
+      const hash = fnvHash(bytes)
+      if (state.packs.some(p => p.name === file.name && fnvHash(bytesById.get(p.id)) === hash)) continue
       const id = nextId++
-      bytesById.set(id, new Uint8Array(await file.arrayBuffer()))
+      bytesById.set(id, bytes)
       added.push({ id, name: file.name })
       cachePack(file)
     }
+    if (!added.length) return
     state.packs.unshift(...added)
     setPackOrder(state.packs.map(p => p.name))
     await rebuildAssets(swap)

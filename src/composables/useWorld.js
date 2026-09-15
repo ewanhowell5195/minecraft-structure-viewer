@@ -165,6 +165,7 @@ function fillGridWindow(d, w0x, w0z, size, tpc, hideSel = false) {
 }
 
 async function openWorld(file, cacheIt = true) {
+  if (world && worldFile?.name === file.name && worldFile.size === file.size) return
   state.error = ""
   state.busy = true
   state.active = true
