@@ -1,4 +1,11 @@
+<script>
+import { reactive } from "vue"
+const stack = reactive([])
+let nextId = 0
+</script>
+
 <script setup>
+import { computed, onBeforeUnmount } from "vue"
 defineProps({
   width: { type: Number, required: true },
   z: { type: Number, default: 100 },
@@ -6,10 +13,14 @@ defineProps({
   dismissable: { type: Boolean, default: true }
 })
 const emit = defineEmits(["close"])
+const id = ++nextId
+stack.push(id)
+onBeforeUnmount(() => stack.splice(stack.indexOf(id), 1))
+const top = computed(() => stack[stack.length - 1] === id)
 </script>
 
 <template>
-  <div class="modal-backdrop" :style="{ zIndex: z }" @pointerdown.self="dismissable && emit('close')">
+  <div class="modal-backdrop" :style="{ zIndex: z, display: top ? '' : 'none' }" @pointerdown.self="dismissable && emit('close')">
     <div class="modal-panel" :style="{ width: width + 'px' }">
       <header v-if="$slots.title || $slots.controls || closable">
         <div class="titles">
