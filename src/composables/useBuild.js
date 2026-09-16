@@ -1553,8 +1553,6 @@ let compareSource = null
 const setCompareSource = fn => { compareSource = fn }
 
 // true when a build landed, false when cancelled
-// onPlace runs the moment the new root is in the scene, before anything else
-// can render, for callers that move the camera to follow it
 async function build(structure = source, refit = true, slice = false, fresh = false, onPlace = null) {
   const assets = assetsOverride ?? packs.assets.value
   if (!assets || !structure || state.building) return
@@ -1899,8 +1897,7 @@ async function build(structure = source, refit = true, slice = false, fresh = fa
       return abort()
     }
 
-    // a centre ≡ 8 (mod 16) keeps block-centred templates on the grid lattice;
-    // the floor stays at y 0 whatever the height, so taller builds only grow up
+    // a centre ≡ 8 (mod 16) keeps block-centred templates on the grid lattice
     const gridCentre = v => Math.round((v - 8) / 16) * 16 + 8
     const position = new THREE.Vector3(gridCentre(-(sx - 1) * 8), 8, gridCentre(-(sz - 1) * 8))
     newLight?.setOffset(position)
@@ -1988,6 +1985,15 @@ async function build(structure = source, refit = true, slice = false, fresh = fa
     inputIdxOf = inputIdx
     sceneLight = newLight
     markerTextures = []
+    attachDoors(doorEntries)
+    await attachEntities(structure, lib, assets)
+    await attachSpawnerEggs(structure, lib, assets)
+    await attachShelves(structure, lib, assets)
+    attachMarkerSprites()
+    try {
+      const signs = await makeSignTexts(structure)
+      if (signs) root.add(signs)
+    } catch {}
     sceneApi.scene.add(root)
     sceneApi.contentRoots.add(root)
     sceneApi.syncAspect()
@@ -2034,15 +2040,6 @@ async function build(structure = source, refit = true, slice = false, fresh = fa
       }
     }), caveWire)
     if (refit) sceneApi.fit()
-    attachDoors(doorEntries)
-    await attachEntities(structure, lib, assets)
-    await attachSpawnerEggs(structure, lib, assets)
-    await attachShelves(structure, lib, assets)
-    attachMarkerSprites()
-    try {
-      const signs = await makeSignTexts(structure)
-      if (signs) root.add(signs)
-    } catch {}
     animator = lib.createAnimator(root)
     sceneApi.animators.add(animator)
     useSlicers().onBuild(root, position, [sx, sy, sz], slicedApplied)
