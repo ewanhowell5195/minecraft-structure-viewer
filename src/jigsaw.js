@@ -5,6 +5,9 @@ import { combine } from "./combine.js"
 
 const nsName = s => s.includes(":") ? s : "minecraft:" + s
 
+const inRegion = (b, r) =>
+  b.x0 >= r.x0 && b.x1 <= r.x1 && b.y0 >= r.y0 && b.y1 <= r.y1 && b.z0 >= r.z0 && b.z1 <= r.z1
+
 export async function runJigsaw(start, { loadStruct, loadPool, loadFeature, maxDepth = 6, maxPieces = 48, maxRadius = 96, levelSeed, onProgress, keepJigsaws = true }) {
   const structs = new Map(), pools = new Map()
   async function getStruct(ref) {
@@ -16,9 +19,9 @@ export async function runJigsaw(start, { loadStruct, loadPool, loadFeature, maxD
     return pools.get(ref)
   }
 
-  const startPiece = { struct: start, rot: 0, off: [0, 0, 0], depth: 0, box: pieceBox(start, 0, [0, 0, 0]), onPlot: [] }
+  const startPiece = { struct: start, rot: 0, off: [0, 0, 0], depth: 0, box: pieceBox(start, 0, [0, 0, 0]) }
+  startPiece.free = { region: null, used: [startPiece.box] }
   const pieces = [startPiece]
-  const boxes = [startPiece.box]
   let frontier = [startPiece]
   let exhausted = false
 
@@ -26,7 +29,7 @@ export async function runJigsaw(start, { loadStruct, loadPool, loadFeature, maxD
   // "is anything left", so the level menu can stop AT the last real level
   for (let d = 0; d <= maxDepth && frontier.length && pieces.length < maxPieces; d++) {
     const probe = d === maxDepth
-    const mark = probe && { pieces: pieces.length, boxes: boxes.length, plots: frontier.map(f => f.onPlot.length) }
+    const mark = probe && { pieces: pieces.length, taken: [] }
     const rand = rnd(levelSeed(d + 1))
     const next = []
     for (const src of frontier) {
@@ -39,9 +42,9 @@ export async function runJigsaw(start, { loadStruct, loadPool, loadFeature, maxD
         if (!pool) continue
         const dir = DIR[wj.front]
         const targetPos = [wj.pos[0] + dir[0], wj.pos[1] + dir[1], wj.pos[2] + dir[2]]
-        // a child inside the source footprint collision-checks the source's own
-        // plot, not the global list (else villages pile houses on each other)
-        const attachInside = inBox(targetPos, src.box)
+        // vanilla: a child inside the source box takes space from the source's own
+        // interior, anything else from the space the source itself was placed in
+        const free = inBox(targetPos, src.box) ? (src.inner ??= { region: src.box, used: [] }) : src.free
         let candidates = shuffle(poolTemplates(pool), rand)
         if (typeof pool.fallback === "string") {
           const fb = await getPool(pool.fallback)
@@ -49,14 +52,12 @@ export async function runJigsaw(start, { loadStruct, loadPool, loadFeature, maxD
         }
         const place = (struct, k, off, feature = false, box = pieceBox(struct, k, off)) => {
           if (Math.hypot((box.x0 + box.x1) / 2, (box.z0 + box.z1) / 2) > maxRadius) return false
-          if (attachInside) {
-            if (box.x0 < src.box.x0 || box.x1 > src.box.x1 || box.z0 < src.box.z0 || box.z1 > src.box.z1) return false
-            if (src.onPlot.some(b => boxHit(box, b))) return false
-          } else if (boxes.some(b => boxHit(box, b))) return false
-          const piece = { struct, rot: k, off, depth: d + 1, box, onPlot: [], feature }
+          if (free.region && !inRegion(box, free.region)) return false
+          if (free.used.some(b => boxHit(box, b))) return false
+          const piece = { struct, rot: k, off, depth: d + 1, box, free, feature }
           pieces.push(piece)
-          if (attachInside) src.onPlot.push(box)
-          else boxes.push(box)
+          free.used.push(box)
+          if (probe) mark.taken.push(free)
           next.push(piece)
           if (!probe) onProgress?.(pieces.length)
           return true
@@ -100,8 +101,7 @@ export async function runJigsaw(start, { loadStruct, loadPool, loadFeature, maxD
     if (probe) {
       exhausted = !next.length
       pieces.length = mark.pieces
-      boxes.length = mark.boxes
-      frontier.forEach((f, i) => { f.onPlot.length = mark.plots[i] })
+      while (mark.taken.length) mark.taken.pop().used.pop()
       break
     }
     if (!next.length) { exhausted = true; break }
