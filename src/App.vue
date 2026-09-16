@@ -171,8 +171,7 @@ const mainSiteUrl = ref("")
 const homeUrl = location.origin + location.pathname
 function refreshMainSiteUrl() {
   const u = new URL(location.href)
-  u.searchParams.delete("minimal")
-  u.searchParams.delete("manual")
+  for (const k of ["minimal", "manual", "nosky", "background"]) u.searchParams.delete(k)
   const base = useComparePacks().state.baseId
   if (useCompare().getFiles().panel && base && !u.searchParams.get("cversion")) u.searchParams.set("cversion", base)
   if (minimal) u.searchParams.set("handoff", "1")
