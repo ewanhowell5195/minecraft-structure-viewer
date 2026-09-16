@@ -165,17 +165,17 @@ async function regenerate() {
     }
     if (!structure.dimension) structure.dimension = pathDimension(baseName)
     applyLegacyRenames(structure, packs.state.baseId)
-    await buildApi.build(structure, false)
-    const root = buildApi.getRoot()
-    const a = structure.anchor ?? [0, 0, 0]
-    const aw = new THREE.Vector3(a[0] * 16, a[1] * 16, a[2] * 16).add(root.position)
-    if (prevAnchorWorld) {
-      const delta = aw.clone().sub(prevAnchorWorld)
-      sceneApi.camera.position.add(delta)
-      sceneApi.controls.target.add(delta)
-      sceneApi.controls.update()
-    }
-    prevAnchorWorld = aw
+    await buildApi.build(structure, false, false, false, root => {
+      const a = structure.anchor ?? [0, 0, 0]
+      const aw = new THREE.Vector3(a[0] * 16, a[1] * 16, a[2] * 16).add(root.position)
+      if (prevAnchorWorld) {
+        const delta = aw.clone().sub(prevAnchorWorld)
+        sceneApi.camera.position.add(delta)
+        sceneApi.controls.target.add(delta)
+        sceneApi.controls.update()
+      }
+      prevAnchorWorld = aw
+    })
   } finally {
     state.solving = false
   }

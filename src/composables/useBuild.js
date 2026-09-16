@@ -1553,7 +1553,9 @@ let compareSource = null
 const setCompareSource = fn => { compareSource = fn }
 
 // true when a build landed, false when cancelled
-async function build(structure = source, refit = true, slice = false, fresh = false) {
+// onPlace runs the moment the new root is in the scene, before anything else
+// can render, for callers that move the camera to follow it
+async function build(structure = source, refit = true, slice = false, fresh = false, onPlace = null) {
   const assets = assetsOverride ?? packs.assets.value
   if (!assets || !structure || state.building) return
   ensureRaw(structure)
@@ -1897,9 +1899,10 @@ async function build(structure = source, refit = true, slice = false, fresh = fa
       return abort()
     }
 
-    // a centre ≡ 8 (mod 16) keeps block-centred templates on the grid lattice
+    // a centre ≡ 8 (mod 16) keeps block-centred templates on the grid lattice;
+    // the floor stays at y 0 whatever the height, so taller builds only grow up
     const gridCentre = v => Math.round((v - 8) / 16) * 16 + 8
-    const position = new THREE.Vector3(gridCentre(-(sx - 1) * 8), gridCentre(-(sy - 1) * 8), gridCentre(-(sz - 1) * 8))
+    const position = new THREE.Vector3(gridCentre(-(sx - 1) * 8), 8, gridCentre(-(sz - 1) * 8))
     newLight?.setOffset(position)
 
     const doorEntries = []
@@ -1989,6 +1992,7 @@ async function build(structure = source, refit = true, slice = false, fresh = fa
     sceneApi.contentRoots.add(root)
     sceneApi.syncAspect()
     if (old) sceneApi.contentRoots.delete(old)
+    onPlace?.(root)
     if (animator) sceneApi.animators.delete(animator)
     const parts = structure.__parts ?? [{ off: [0, 0, 0], size: structure.size }]
     // cave cells are clipped to the grid footprint so the outline closes along the grid edge
