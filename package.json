@@ -16,7 +16,7 @@
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.2.1",
-    "block-model-renderer": "^2.12.0",
+    "block-model-renderer": "^2.17.2",
     "vite": "^6.0.0"
   }
 }
