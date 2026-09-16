@@ -9,7 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "minecraft-asset-loader": "^1.5.1",
+    "minecraft-asset-loader": "^1.5.2",
     "minecraft-block-reader": "^2.0.0",
     "three": "0.162.0",
     "vue": "^3.5.13"
