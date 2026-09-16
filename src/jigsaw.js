@@ -47,13 +47,13 @@ export async function runJigsaw(start, { loadStruct, loadPool, loadFeature, maxD
           const fb = await getPool(pool.fallback)
           if (fb) candidates = candidates.concat(shuffle(poolTemplates(fb), rand))
         }
-        const place = (struct, k, off, box = pieceBox(struct, k, off)) => {
+        const place = (struct, k, off, feature = false, box = pieceBox(struct, k, off)) => {
           if (Math.hypot((box.x0 + box.x1) / 2, (box.z0 + box.z1) / 2) > maxRadius) return false
           if (attachInside) {
             if (box.x0 < src.box.x0 || box.x1 > src.box.x1 || box.z0 < src.box.z0 || box.z1 > src.box.z1) return false
             if (src.onPlot.some(b => boxHit(box, b))) return false
           } else if (boxes.some(b => boxHit(box, b))) return false
-          const piece = { struct, rot: k, off, depth: d + 1, box, onPlot: [] }
+          const piece = { struct, rot: k, off, depth: d + 1, box, onPlot: [], feature }
           pieces.push(piece)
           if (attachInside) src.onPlot.push(box)
           else boxes.push(box)
@@ -79,7 +79,7 @@ export async function runJigsaw(start, { loadStruct, loadPool, loadFeature, maxD
             const org = feat.origin ?? [0, 0, 0]
             const [tx, ty, tz] = targetPos
             const box = { x0: tx, y0: ty, z0: tz, x1: tx + 1, y1: ty + 1, z1: tz + 1 }
-            if (place(feat, 0, [tx - org[0], ty - org[1], tz - org[2]], box)) break jig
+            if (place(feat, 0, [tx - org[0], ty - org[1], tz - org[2]], true, box)) break jig
             continue
           }
           const child = await getStruct(loc)

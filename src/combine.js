@@ -43,7 +43,7 @@ export function combine(pieces) {
   for (const piece of pieces) {
     const { struct, rot = 0, off = [0, 0, 0], mir = null, ow = false, keepJigsaws = false } = piece
     const [px, py, pz] = struct.size ?? []
-    if (px > 0 && py > 0 && pz > 0) {
+    if (px > 0 && py > 0 && pz > 0 && !piece.feature) {
       const blo = [Infinity, Infinity, Infinity], bhi = [-Infinity, -Infinity, -Infinity]
       for (let cx = 0; cx < 2; cx++) for (let cy = 0; cy < 2; cy++) for (let cz = 0; cz < 2; cz++) {
         const c = rotPos(mirrorPos([cx * (px - 1), cy * (py - 1), cz * (pz - 1)], mir), rot)
