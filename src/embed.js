@@ -99,10 +99,10 @@ const COMMANDS = {
   async loadPacks({ base, packs }) {
     await usePacks().loadPacks({ base, packs })
   },
-  async loadStructure({ data, name, path }) {
+  async loadStructure({ data, name, path, version }) {
     const structure = useStructure()
     if (data !== undefined) {
-      await structure.loadFile(toFile(data, name), false)
+      await structure.loadFile(toFile(data, name), false, path ? { rel: path, version } : null)
     } else if (path) {
       if (!useStructures().has(path)) throw new Error(`structure not found: ${path}`)
       await structure.loadVanilla(path)

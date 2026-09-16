@@ -171,6 +171,14 @@ const mainSiteUrl = ref("")
 const homeUrl = location.origin + location.pathname
 function refreshMainSiteUrl() {
   const u = new URL(fullSiteUrl(location.href))
+  const origin = useStructure().currentOrigin()
+  if (origin) {
+    u.searchParams.set("structure", origin.rel)
+    if (origin.version) {
+      u.searchParams.set("version", origin.version)
+      u.searchParams.delete("channel")
+    }
+  }
   const base = useComparePacks().state.baseId
   if (useCompare().getFiles().panel && base && !u.searchParams.get("cversion")) u.searchParams.set("cversion", base)
   if (minimal) u.searchParams.set("handoff", "1")
@@ -181,7 +189,7 @@ refreshMainSiteUrl()
 if (minimal) offerHandoff(() => {
   const files = useCompare().getFiles()
   return {
-    structure: files.main ?? useStructure().currentFile(),
+    structure: useStructure().currentOrigin() ? null : files.main ?? useStructure().currentFile(),
     world: worldState.active ? useWorld().getWorldFile() : null,
     compare: files.panel
   }

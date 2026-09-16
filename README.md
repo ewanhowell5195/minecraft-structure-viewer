@@ -197,13 +197,16 @@ assets once, at the end.
 
 #### `loadStructure`
 
-`{ data, name }` or `{ path }`.
+`{ data, name, path, version }` or `{ path }`.
 
 - `data` raw structure bytes in any supported format (`.nbt`, `.litematic`,
   `.schem` or `.mcstructure`), detected from the bytes; `name` is the display
   name
 - `path` a resource-relative path from the loaded sources, as listed by
-  `listStructures`
+  `listStructures`. On its own it loads that structure; beside `data` it says
+  what the bytes are, so the open-in-viewer button links to that path (with
+  `version`, the game version it belongs to, when given) instead of handing the
+  bytes over
 
 #### `listStructures`
 

@@ -402,6 +402,8 @@ const structureFolder = rel => {
   return path ? path.slice(0, path.lastIndexOf("/")) : ""
 }
 
+const currentOrigin = () => loaded.length === 1 ? loaded[0].origin ?? null : null
+
 const linkTo = params => paramUrl({
   structure: null,
   feature: null,
@@ -415,6 +417,7 @@ const linkTo = params => paramUrl({
   wsel: null,
   wloaded: null,
   wdim: null,
+  ...currentOrigin()?.version && { version: currentOrigin().version, channel: null },
   ...params
 }).href
 
@@ -777,7 +780,7 @@ function loadDebug(kind) {
 
 let fileObj = null
 
-function loadFile(file, cacheIt = true) {
+function loadFile(file, cacheIt = true, origin = null) {
   if (!file || locked.value) return
   return withLock(async () => {
     state.error = ""
@@ -786,7 +789,7 @@ function loadFile(file, cacheIt = true) {
       const s = await read(file)
       setStructureParam(null)
       state.field = null
-      loaded = [{ structure: s, name: structureName(file.name), file: true }]
+      loaded = [{ structure: s, name: structureName(file.name), file: true, origin }]
       if (await apply() === false) return restore(snap)
       fileObj = file
       if (cacheIt) {
@@ -877,7 +880,7 @@ packs.setSwapHandler(onAssetsSwapped)
 procs.setReloadHandler(onAssetsSwapped)
 
 export function useStructure() {
-  return { state: readonly(state), structure, apply, loadVanilla, loadDefault, loadMany, loadFile, loadFiles, closeFile, loadObject, loadDebug, loadFeature, loadFeatures, loadFeatureField, clickFeature, cancelReading, setReading, readCancelled, setQuietLoads, processVanilla, canDownload, downloadStructures, downloadLoaded, structureFolder, structureLink, featureLink, currentFile: () => loaded.some(e => e.file) ? fileObj : null }
+  return { state: readonly(state), structure, apply, loadVanilla, loadDefault, loadMany, loadFile, loadFiles, closeFile, loadObject, loadDebug, loadFeature, loadFeatures, loadFeatureField, clickFeature, cancelReading, setReading, readCancelled, setQuietLoads, processVanilla, canDownload, downloadStructures, downloadLoaded, structureFolder, structureLink, featureLink, currentFile: () => loaded.some(e => e.file) ? fileObj : null, currentOrigin }
 }
 
 
