@@ -11,6 +11,7 @@ import { getFont, measure, drawText } from "../mcfont.js"
 import { drawTooltip, onTooltipFrame, MARGIN } from "../tooltip.js"
 import { describeTable, prettyName, stackKey } from "../loot.js"
 import { num } from "../format.js"
+import { minimal, fullSiteUrl } from "../minimal.js"
 import { iconInfo, acquireIcon, releaseIcon, nextToken } from "../icons.js"
 import Modal from "./Modal.vue"
 import Seg from "./Seg.vue"
@@ -84,6 +85,10 @@ function close() {
 
 const structureApi = useStructure()
 function loadPoolEntry(p) {
+  if (minimal) {
+    open(fullSiteUrl(p.feature ? structureApi.featureLink(p.feature) : structureApi.structureLink(p.rel)), "_blank")
+    return
+  }
   container.close()
   if (walk.state.on) walk.exit()
   if (p.feature) structureApi.loadFeature(p.feature)
@@ -428,7 +433,7 @@ watch(() => [state.open, state.stacks, state.gui], () => {
                 <span class="pid">{{ state.poolId }}</span>
               </div>
               <div v-for="(p, i) in state.poolEntries ?? []" :key="i" class="item-row pe"
-                :class="{ clickable: p.clickable }" :title="p.clickable ? 'Load ' + p.label : ''"
+                :class="{ clickable: p.clickable }" :title="p.clickable ? (minimal ? 'Open in Structure Viewer: ' : 'Load ') + p.label : ''"
                 @click="p.clickable && loadPoolEntry(p)">
                 <span class="nm mono-nm">{{ poolLeaf(p.label) }}</span>
                 <span class="meter"><i :style="{ width: Math.max(p.pct, 1.5) + '%' }"></i></span>

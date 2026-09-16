@@ -18,7 +18,7 @@ import { restoreFile, cacheFile, uncache } from "./userCache.js"
 import { useContainer } from "./composables/useContainer.js"
 import { useSlicers } from "./composables/useSlicers.js"
 import { tab } from "./composables/useTab.js"
-import { minimal } from "./minimal.js"
+import { minimal, fullSiteUrl } from "./minimal.js"
 import { manual } from "./manual.js"
 import { setParams } from "./params.js"
 import { offerHandoff, receiveHandoff } from "./handoff.js"
@@ -170,8 +170,7 @@ const closeOnPick = e => { if (e.target.closest(".tree-file")) drawer.value = ""
 const mainSiteUrl = ref("")
 const homeUrl = location.origin + location.pathname
 function refreshMainSiteUrl() {
-  const u = new URL(location.href)
-  for (const k of ["minimal", "manual", "nosky", "background"]) u.searchParams.delete(k)
+  const u = new URL(fullSiteUrl(location.href))
   const base = useComparePacks().state.baseId
   if (useCompare().getFiles().panel && base && !u.searchParams.get("cversion")) u.searchParams.set("cversion", base)
   if (minimal) u.searchParams.set("handoff", "1")
