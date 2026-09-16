@@ -194,12 +194,12 @@ async function remapLoaderStates(structure, lib, assets) {
   }
 }
 
-export const NOON = 6000
+export const DEFAULT_DAYTIME = 1000
 
 const state = reactive({
   lighting: "world",
   fullbright: false,
-  daytime: NOON,
+  daytime: DEFAULT_DAYTIME,
   dimension: "overworld",
   hideStructureBlocks: localStorage.getItem("hideStructureBlocks") !== "false",
   structureVoids: localStorage.getItem("structureVoids") === "true",
@@ -259,7 +259,7 @@ function answerWarn(ok) {
 }
 
 // seeded into template userData so the library shares one live uniform: daytime changes re-light with no rebuild
-const daytimeUniform = { value: NOON }
+const daytimeUniform = { value: DEFAULT_DAYTIME }
 const clocksSoon = debounce(updateClocks, 150)
 // each build carries its own uniform, so the stashed half needs the time too
 watch(() => state.daytime, v => {
@@ -268,11 +268,11 @@ watch(() => state.daytime, v => {
   clocksSoon()
 })
 
-let savedDaytime = NOON
+let savedDaytime = DEFAULT_DAYTIME
 watch(() => state.fullbright, on => {
   if (on) {
     savedDaytime = state.daytime
-    state.daytime = NOON
+    state.daytime = DEFAULT_DAYTIME
   } else {
     state.daytime = savedDaytime
   }

@@ -1,7 +1,7 @@
 import { reactive, readonly } from "vue"
 import * as THREE from "three"
 import { useScene } from "./useScene.js"
-import { useBuild } from "./useBuild.js"
+import { useBuild, DEFAULT_DAYTIME } from "./useBuild.js"
 import { useWorld } from "./useWorld.js"
 import { usePacks } from "./usePacks.js"
 import { useLock } from "./useLock.js"
@@ -42,7 +42,7 @@ let world = null
 let origin = null            // [blockX, blockY, blockZ] of the spawn chunk corner
 let yRange = null
 let dimension = "overworld"
-let daytime = 6000
+let daytime = DEFAULT_DAYTIME
 let lightOff = false
 let chunkMap = null           // "cx,cz" -> chunk descriptor
 let tileSet = null            // "tx,tz" tile keys with at least one chunk
