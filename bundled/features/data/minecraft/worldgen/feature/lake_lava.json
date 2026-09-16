@@ -1,11 +1,12 @@
 {
   "fluid": {
-    "state": "minecraft:lava",
-    "type": "minecraft:simple_state_provider"
+    "properties": {
+      "level": "0"
+    },
+    "id": "minecraft:lava"
   },
   "barrier": {
-    "state": "minecraft:stone",
-    "type": "minecraft:simple_state_provider"
+    "id": "minecraft:stone"
   },
   "can_place_feature": {
     "type": "minecraft:true"

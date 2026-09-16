@@ -1,7 +1,9 @@
 {
   "trunk_provider": {
-    "state": "minecraft:poplar_log",
-    "type": "minecraft:simple_state_provider"
+    "properties": {
+      "axis": "y"
+    },
+    "id": "minecraft:poplar_log"
   },
   "log_length": {
     "min_inclusive": 4,
@@ -13,8 +15,7 @@
     {
       "probability": 0.1,
       "block_provider": {
-        "state": "minecraft:brown_mushroom",
-        "type": "minecraft:simple_state_provider"
+        "id": "minecraft:brown_mushroom"
       },
       "directions": [
         "up"

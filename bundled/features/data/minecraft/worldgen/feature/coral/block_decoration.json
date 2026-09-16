@@ -8,7 +8,7 @@
               "feature": {
                 "to_place": {
                   "blocks": "#minecraft:corals",
-                  "type": "minecraft:random_block_provider"
+                  "type": "minecraft:random_block"
                 },
                 "type": "minecraft:simple_block"
               },
@@ -49,10 +49,10 @@
         "to_place": {
           "state": {
             "blocks": "#minecraft:wall_corals",
-            "type": "minecraft:random_block_provider"
+            "type": "minecraft:random_block"
           },
           "direction": "north",
-          "type": "minecraft:rotated_block_provider"
+          "type": "minecraft:rotated"
         },
         "type": "minecraft:simple_block"
       },
@@ -81,10 +81,10 @@
         "to_place": {
           "state": {
             "blocks": "#minecraft:wall_corals",
-            "type": "minecraft:random_block_provider"
+            "type": "minecraft:random_block"
           },
           "direction": "east",
-          "type": "minecraft:rotated_block_provider"
+          "type": "minecraft:rotated"
         },
         "type": "minecraft:simple_block"
       },
@@ -113,10 +113,10 @@
         "to_place": {
           "state": {
             "blocks": "#minecraft:wall_corals",
-            "type": "minecraft:random_block_provider"
+            "type": "minecraft:random_block"
           },
           "direction": "south",
-          "type": "minecraft:rotated_block_provider"
+          "type": "minecraft:rotated"
         },
         "type": "minecraft:simple_block"
       },
@@ -145,10 +145,10 @@
         "to_place": {
           "state": {
             "blocks": "#minecraft:wall_corals",
-            "type": "minecraft:random_block_provider"
+            "type": "minecraft:random_block"
           },
           "direction": "west",
-          "type": "minecraft:rotated_block_provider"
+          "type": "minecraft:rotated"
         },
         "type": "minecraft:simple_block"
       },

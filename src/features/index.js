@@ -1,5 +1,5 @@
 // ports of the game's placement code over an empty world: the viewer's floor grid is the ground
-import { nextInt, sampleFloat, sampleInt, sampleState, pickWeighted, intBounds } from "./providers.js"
+import { nextInt, sampleFloat, sampleInt, sampleState, pickWeighted, intBounds, providerType } from "./providers.js"
 import { generateTree, generateFallenTree } from "./tree.js"
 import { runEndSpike } from "../generators/endspikes.js"
 import { DIR, HORIZ, OPP, shuffle, statePicker } from "../transforms.js"
@@ -1287,7 +1287,7 @@ Object.assign(TYPES, {
 })
 
 function contextualState(world, p, rand, x, y, z) {
-  if (strip(p.type ?? "") === "rule_based_state_provider") {
+  if (providerType(p) === "rule_based") {
     for (const rule of p.rules ?? []) {
       if (testPredicate(world, rule.if_true, x, y, z)) return sampleState(rule.then, rand)
     }

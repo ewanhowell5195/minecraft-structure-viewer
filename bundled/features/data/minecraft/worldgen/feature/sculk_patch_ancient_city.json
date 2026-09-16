@@ -17,8 +17,10 @@
           {
             "feature": {
               "to_place": {
-                "state": "minecraft:sculk_catalyst",
-                "type": "minecraft:simple_state_provider"
+                "properties": {
+                  "bloom": "false"
+                },
+                "id": "minecraft:sculk_catalyst"
               },
               "type": "minecraft:simple_block"
             },
@@ -44,15 +46,12 @@
           {
             "feature": {
               "to_place": {
-                "state": {
-                  "properties": {
-                    "waterlogged": "false",
-                    "shrieking": "false",
-                    "can_summon": "true"
-                  },
-                  "id": "minecraft:sculk_shrieker"
+                "properties": {
+                  "waterlogged": "false",
+                  "shrieking": "false",
+                  "can_summon": "true"
                 },
-                "type": "minecraft:simple_state_provider"
+                "id": "minecraft:sculk_shrieker"
               },
               "type": "minecraft:simple_block"
             },

@@ -1,7 +1,6 @@
 {
   "state_provider": {
-    "state": "minecraft:clay",
-    "type": "minecraft:simple_state_provider"
+    "id": "minecraft:clay"
   },
   "target": {
     "blocks": [

@@ -2,6 +2,7 @@ import fs from "node:fs"
 import { readZip } from "minecraft-asset-loader"
 import { read } from "minecraft-block-reader"
 import { normStatesDeep } from "../../src/transforms.js"
+import { inlineProviders } from "../../src/features/providers.js"
 
 export async function featureFilesFromZip(zipPath) {
   const files = new Map()
@@ -26,6 +27,12 @@ export async function buildGenCtx(files, clientJarPath) {
     }
   }
   const nsPath = ref => ref.includes(":") ? ref.replace(":", "/") : "minecraft/" + ref
+  const readProvider = async id => {
+    const key = `data/${nsPath(id).replace("/", "/worldgen/block_state_provider/")}.json`
+    const bytes = files.get(key) ?? (clientZip?.has(key) ? Buffer.from(await clientZip.get(key).read()) : null)
+    return bytes ? normStatesDeep(JSON.parse(bytes.toString())) : null
+  }
+  for (const map of [featureByRel, placedByRel]) for (const json of map.values()) await inlineProviders(json, readProvider)
   const loadStruct = async ref => {
     const e = clientZip?.get("data/" + nsPath(ref).replace(/^([^/]+)\//, "$1/structure/") + ".nbt")
     return e ? read(Buffer.from(await e.read())) : null

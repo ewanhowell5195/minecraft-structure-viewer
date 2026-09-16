@@ -1,24 +1,19 @@
 {
   "blocks": {
     "filling_provider": {
-      "state": "minecraft:air",
-      "type": "minecraft:simple_state_provider"
+      "id": "minecraft:air"
     },
     "inner_layer_provider": {
-      "state": "minecraft:amethyst_block",
-      "type": "minecraft:simple_state_provider"
+      "id": "minecraft:amethyst_block"
     },
     "alternate_inner_layer_provider": {
-      "state": "minecraft:budding_amethyst",
-      "type": "minecraft:simple_state_provider"
+      "id": "minecraft:budding_amethyst"
     },
     "middle_layer_provider": {
-      "state": "minecraft:calcite",
-      "type": "minecraft:simple_state_provider"
+      "id": "minecraft:calcite"
     },
     "outer_layer_provider": {
-      "state": "minecraft:smooth_basalt",
-      "type": "minecraft:simple_state_provider"
+      "id": "minecraft:smooth_basalt"
     },
     "inner_placements": [
       "minecraft:small_amethyst_bud",

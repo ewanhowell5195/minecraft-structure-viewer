@@ -80,42 +80,64 @@ const TAG_POOLS = {
   "minecraft:wall_corals": ["tube_coral_wall_fan", "brain_coral_wall_fan", "bubble_coral_wall_fan", "fire_coral_wall_fan", "horn_coral_wall_fan"]
 }
 
+// 26.3 shortened the provider type names; a provider position may also hold a
+// bare block state, or (before inlineProviders) the name of a registry entry
+const PROVIDER_TYPES = {
+  simple_state_provider: "simple",
+  weighted_state_provider: "weighted",
+  rotated_block_provider: "rotated",
+  randomized_int_state_provider: "randomized_int",
+  rule_based_state_provider: "rule_based",
+  noise_provider: "noise",
+  dual_noise_provider: "dual_noise",
+  noise_threshold_provider: "noise_threshold",
+  random_block_provider: "random_block"
+}
+
+export function providerType(p) {
+  if (!p || typeof p !== "object" || p.type === undefined) return null
+  const t = strip(p.type)
+  return PROVIDER_TYPES[t] ?? t
+}
+
 export function sampleState(p, rand) {
   if (p == null) return null
-  switch (strip(p.type)) {
-    case "simple_state_provider": return p.state
-    case "weighted_state_provider": return pickWeighted(p.entries, rand).data
-    case "rotated_block_provider": {
+  switch (providerType(p)) {
+    case null: return p
+    case "simple": return p.state
+    case "weighted": return pickWeighted(p.entries, rand).data
+    case "rotated": {
       const dirs = ["down", "up", "north", "south", "west", "east"]
       const dir = p.direction ? strip(p.direction) : dirs[nextInt(rand, 6)]
-      const base = p.state?.type ? sampleState(p.state, rand) : p.state
+      const base = sampleState(p.state, rand)
       if (!base?.id) return base
       const props = { ...(base.properties ?? {}) }
       if ("axis" in props) props.axis = dir === "down" || dir === "up" ? "y" : dir === "north" || dir === "south" ? "z" : "x"
       else if (("facing" in props || /_wall_fan$/.test(strip(base.id))) && dir !== "up" && dir !== "down") props.facing = dir
       return { id: base.id, properties: props }
     }
-    case "randomized_int_state_provider": {
+    case "randomized_int": {
       const s = sampleState(p.source, rand)
       return { id: s.id, properties: { ...(s.properties ?? {}), [p.property]: String(sampleInt(p.values, rand)) } }
     }
-    case "rule_based_state_provider": {
+    case "rule_based": {
       const rule = p.rules?.[0]
       if (rule?.then) return sampleState(rule.then, rand)
       return p.fallback ? sampleState(p.fallback, rand) : null
     }
-    case "noise_provider":
-    case "dual_noise_provider": {
+    case "copy_properties": return sampleState(p.source, rand)
+    case "noise":
+    case "dual_noise": {
       const states = p.states ?? []
       return states.length ? states[nextInt(rand, states.length)] : null
     }
-    case "noise_threshold_provider": {
+    case "noise_threshold": {
       if (rand() < 0.5 && p.default_state) return p.default_state
       const pool = rand() < (p.high_chance ?? 0.5) ? p.high_states : p.low_states
       const states = pool?.length ? pool : [p.default_state]
       return states[nextInt(rand, states.length)]
     }
-    case "random_block_provider": {
+    case "random_block": {
       const pool = Array.isArray(p.blocks)
         ? p.blocks.map(b => b.replace("minecraft:", ""))
         : TAG_POOLS[String(p.blocks).replace(/^#/, "")] ?? null
@@ -123,4 +145,31 @@ export function sampleState(p, rand) {
     }
   }
   return p.state ?? null
+}
+
+// replaces every string naming a worldgen/block_state_provider entry with that
+// entry's json; readProvider takes the id and returns the json or null
+const ID_RE = /^[a-z0-9_.-]+:[a-z0-9_./-]+$/
+
+export async function inlineProviders(node, readProvider, memo = new Map()) {
+  if (Array.isArray(node)) {
+    for (let i = 0; i < node.length; i++) node[i] = await inlineProviders(node[i], readProvider, memo)
+    return node
+  }
+  if (!node || typeof node !== "object") return node
+  for (const [k, v] of Object.entries(node)) {
+    if (typeof v !== "string") {
+      node[k] = await inlineProviders(v, readProvider, memo)
+      continue
+    }
+    if (k === "type" || !ID_RE.test(v)) continue
+    if (!memo.has(v)) {
+      memo.set(v, null)
+      const hit = await readProvider(v)
+      if (hit) memo.set(v, await inlineProviders(hit, readProvider, memo))
+    }
+    const hit = memo.get(v)
+    if (hit) node[k] = structuredClone(hit)
+  }
+  return node
 }

@@ -1,7 +1,9 @@
 {
   "trunk_provider": {
-    "state": "minecraft:mangrove_log",
-    "type": "minecraft:simple_state_provider"
+    "properties": {
+      "axis": "y"
+    },
+    "id": "minecraft:mangrove_log"
   },
   "trunk_placer": {
     "base_height": 4,
@@ -22,8 +24,12 @@
     "type": "minecraft:upwards_branching_trunk_placer"
   },
   "foliage_provider": {
-    "state": "minecraft:mangrove_leaves",
-    "type": "minecraft:simple_state_provider"
+    "properties": {
+      "waterlogged": "false",
+      "persistent": "false",
+      "distance": "7"
+    },
+    "id": "minecraft:mangrove_leaves"
   },
   "foliage_placer": {
     "radius": 3,
@@ -39,13 +45,14 @@
       "type": "minecraft:uniform"
     },
     "root_provider": {
-      "state": "minecraft:mangrove_roots",
-      "type": "minecraft:simple_state_provider"
+      "properties": {
+        "waterlogged": "false"
+      },
+      "id": "minecraft:mangrove_roots"
     },
     "above_root_placement": {
       "above_root_provider": {
-        "state": "minecraft:moss_carpet",
-        "type": "minecraft:simple_state_provider"
+        "id": "minecraft:moss_carpet"
       },
       "above_root_placement_chance": 0.5
     },
@@ -56,8 +63,10 @@
         "minecraft:muddy_mangrove_roots"
       ],
       "muddy_roots_provider": {
-        "state": "minecraft:muddy_mangrove_roots",
-        "type": "minecraft:simple_state_provider"
+        "properties": {
+          "axis": "y"
+        },
+        "id": "minecraft:muddy_mangrove_roots"
       },
       "max_root_width": 8,
       "max_root_length": 15,
@@ -79,27 +88,7 @@
       "probability": 0.14,
       "exclusion_radius_xz": 1,
       "exclusion_radius_y": 0,
-      "block_provider": {
-        "source": {
-          "state": {
-            "properties": {
-              "waterlogged": "false",
-              "stage": "0",
-              "hanging": "true",
-              "age": "0"
-            },
-            "id": "minecraft:mangrove_propagule"
-          },
-          "type": "minecraft:simple_state_provider"
-        },
-        "property": "age",
-        "values": {
-          "min_inclusive": 0,
-          "max_inclusive": 4,
-          "type": "minecraft:uniform"
-        },
-        "type": "minecraft:randomized_int_state_provider"
-      },
+      "block_provider": "minecraft:mangrove_propagule",
       "required_empty_blocks": 2,
       "directions": [
         "down"
@@ -112,23 +101,6 @@
     }
   ],
   "ignore_vines": true,
-  "below_trunk_provider": {
-    "rules": [
-      {
-        "if_true": {
-          "predicate": {
-            "tag": "minecraft:cannot_replace_below_tree_trunk",
-            "type": "minecraft:matching_block_tag"
-          },
-          "type": "minecraft:not"
-        },
-        "then": {
-          "state": "minecraft:dirt",
-          "type": "minecraft:simple_state_provider"
-        }
-      }
-    ],
-    "type": "minecraft:rule_based_state_provider"
-  },
+  "below_trunk_provider": "minecraft:soil_beneath_tree",
   "type": "minecraft:tree"
 }

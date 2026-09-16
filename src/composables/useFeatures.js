@@ -4,6 +4,7 @@ import { usePacks } from "./usePacks.js"
 import { numeric, strip, rnd, normStatesDeep } from "../transforms.js"
 import { matchIndex } from "../advfilter.js"
 import { generateFeature } from "../features/index.js"
+import { inlineProviders } from "../features/providers.js"
 import { read } from "minecraft-block-reader"
 import { useStructures } from "./useStructures.js"
 import { yieldTask } from "../yield.js"
@@ -158,12 +159,15 @@ async function readFeature(rel) {
   const slash = rel.indexOf("/")
   const ns = rel.slice(0, slash), name = rel.slice(slash + 1)
   const legacy = await readJson(`data/${ns}/worldgen/configured_feature/${name}.json`)
-  if (legacy) return flatConfig(legacy)
+  if (legacy) return withProviders(flatConfig(legacy))
   const current = await readJson(`data/${ns}/worldgen/feature/${name}.json`)
-  if (current) return flatConfig(current)
+  if (current) return withProviders(flatConfig(current))
   const zp = featurePath.get(rel)
-  return zp ? flatConfig(await readJson(zp)) : null
+  return zp ? withProviders(flatConfig(await readJson(zp))) : null
 }
+
+const readProvider = id => readJson(`data/${nsPath(id).replace("/", "/worldgen/block_state_provider/")}.json`)
+const withProviders = json => inlineProviders(json, readProvider)
 
 const nsPath = ref => ref.includes(":") ? ref.replace(":", "/") : "minecraft/" + ref
 

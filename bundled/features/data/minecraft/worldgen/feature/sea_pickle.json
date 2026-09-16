@@ -1,8 +1,11 @@
 {
   "to_place": {
     "source": {
-      "state": "minecraft:sea_pickle",
-      "type": "minecraft:simple_state_provider"
+      "properties": {
+        "waterlogged": "true",
+        "pickles": "1"
+      },
+      "id": "minecraft:sea_pickle"
     },
     "property": "pickles",
     "values": {
@@ -10,7 +13,7 @@
       "max_inclusive": 4,
       "type": "minecraft:uniform"
     },
-    "type": "minecraft:randomized_int_state_provider"
+    "type": "minecraft:randomized_int"
   },
   "type": "minecraft:simple_block"
 }

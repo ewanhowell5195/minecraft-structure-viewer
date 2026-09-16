@@ -1,7 +1,9 @@
 {
   "trunk_provider": {
-    "state": "minecraft:cherry_log",
-    "type": "minecraft:simple_state_provider"
+    "properties": {
+      "axis": "y"
+    },
+    "id": "minecraft:cherry_log"
   },
   "trunk_placer": {
     "base_height": 7,
@@ -41,8 +43,12 @@
     "type": "minecraft:cherry_trunk_placer"
   },
   "foliage_provider": {
-    "state": "minecraft:cherry_leaves",
-    "type": "minecraft:simple_state_provider"
+    "properties": {
+      "waterlogged": "false",
+      "persistent": "false",
+      "distance": "7"
+    },
+    "id": "minecraft:cherry_leaves"
   },
   "foliage_placer": {
     "radius": 4,
@@ -65,23 +71,6 @@
     }
   ],
   "ignore_vines": true,
-  "below_trunk_provider": {
-    "rules": [
-      {
-        "if_true": {
-          "predicate": {
-            "tag": "minecraft:cannot_replace_below_tree_trunk",
-            "type": "minecraft:matching_block_tag"
-          },
-          "type": "minecraft:not"
-        },
-        "then": {
-          "state": "minecraft:dirt",
-          "type": "minecraft:simple_state_provider"
-        }
-      }
-    ],
-    "type": "minecraft:rule_based_state_provider"
-  },
+  "below_trunk_provider": "minecraft:soil_beneath_tree",
   "type": "minecraft:tree"
 }

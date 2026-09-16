@@ -1,10 +1,12 @@
 {
   "state_provider": {
     "state": {
-      "state": "minecraft:hay_block",
-      "type": "minecraft:simple_state_provider"
+      "properties": {
+        "axis": "y"
+      },
+      "id": "minecraft:hay_block"
     },
-    "type": "minecraft:rotated_block_provider"
+    "type": "minecraft:rotated"
   },
   "type": "minecraft:block_pile"
 }
