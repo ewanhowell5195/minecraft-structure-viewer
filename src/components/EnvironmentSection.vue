@@ -1,6 +1,6 @@
 <script setup>
 import { computed, ref } from "vue"
-import { useBuild, NOON } from "../composables/useBuild.js"
+import { useBuild, DEFAULT_DAYTIME } from "../composables/useBuild.js"
 import { useLock } from "../composables/useLock.js"
 import { useSky } from "../composables/useSky.js"
 
@@ -13,6 +13,13 @@ const lighting = computed({
   get: () => buildState.lighting === "world",
   set: v => { buildState.lighting = v ? "world" : "off" }
 })
+
+// a typed time wraps like the game's, so 24000 is midnight again
+function setDaytime(input) {
+  const n = Math.round(Number(input.value))
+  if (input.value !== "" && Number.isFinite(n)) buildState.daytime = ((n % 24000) + 24000) % 24000
+  input.value = buildState.daytime
+}
 </script>
 
 <template>
@@ -46,8 +53,9 @@ const lighting = computed({
       <label v-if="buildState.lighting === 'world' && !buildState.fullbright && lightDim === 'overworld'" class="check daytime">
         Daytime
         <input type="range" min="0" max="23999" v-model.number="buildState.daytime">
-        <span class="value">{{ buildState.daytime }}</span>
-        <button class="reset" title="Reset to noon" :disabled="buildState.daytime === NOON" @click.prevent="buildState.daytime = NOON">
+        <input type="number" class="value" min="0" max="23999" :value="buildState.daytime"
+          @change="setDaytime($event.target)" @keydown.enter="$event.target.blur()">
+        <button class="reset" title="Reset daytime" :disabled="buildState.daytime === DEFAULT_DAYTIME" @click.prevent="buildState.daytime = DEFAULT_DAYTIME">
           <span class="material-symbols-outlined">restart_alt</span>
         </button>
       </label>
@@ -67,11 +75,26 @@ const lighting = computed({
 
 .daytime .value {
   flex: none;
-  min-width: 5ch;
+  width: 6ch;
+  padding: 0;
+  border: none;
+  background: none;
   text-align: right;
   font-variant-numeric: tabular-nums;
   font-size: 12px;
   color: var(--text-dim);
+  -moz-appearance: textfield;
+}
+
+.daytime .value:focus {
+  color: var(--text);
+  outline: none;
+}
+
+.daytime .value::-webkit-outer-spin-button,
+.daytime .value::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 
 .daytime .reset {
