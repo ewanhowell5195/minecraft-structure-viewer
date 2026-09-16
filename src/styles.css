@@ -327,7 +327,6 @@ aside button.wide .material-symbols-outlined { font-size: 18px; }
   color: var(--text-dim);
 }
 
-/* buttons floating over the viewport: icon pinned left, label centred in the rest */
 .float-btn {
   display: flex;
   align-items: center;

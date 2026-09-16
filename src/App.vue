@@ -110,8 +110,7 @@ if (!minimal) onMounted(() => {
   })
 })
 
-// a dropped folder is zipped and named with a trailing slash; entry handles
-// must be taken before awaiting
+// entry handles must be taken before awaiting
 async function droppedFiles(dt, onProgress) {
   const entries = Array.from(dt.items ?? [], item => item.webkitGetAsEntry?.()).filter(Boolean)
   if (!entries.length) return Array.from(dt.files)
@@ -167,8 +166,7 @@ const debugPicker = ref(false)
 const drawer = ref("")
 const toggleDrawer = side => { drawer.value = drawer.value === side ? "" : side }
 const closeOnPick = e => { if (e.target.closest(".tree-file")) drawer.value = "" }
-// refreshed on pointerdown so the link always carries the current url state.
-// files the url can't express (embed api loads, drag-drops) follow by handoff
+// refreshed on pointerdown so the link always carries the current url state
 const mainSiteUrl = ref("")
 const homeUrl = location.origin + location.pathname
 function refreshMainSiteUrl() {

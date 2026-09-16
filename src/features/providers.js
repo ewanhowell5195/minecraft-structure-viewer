@@ -80,8 +80,6 @@ const TAG_POOLS = {
   "minecraft:wall_corals": ["tube_coral_wall_fan", "brain_coral_wall_fan", "bubble_coral_wall_fan", "fire_coral_wall_fan", "horn_coral_wall_fan"]
 }
 
-// 26.3 shortened the provider type names; a provider position may also hold a
-// bare block state, or (before inlineProviders) the name of a registry entry
 const PROVIDER_TYPES = {
   simple_state_provider: "simple",
   weighted_state_provider: "weighted",
@@ -147,8 +145,6 @@ export function sampleState(p, rand) {
   return p.state ?? null
 }
 
-// replaces every string naming a worldgen/block_state_provider entry with that
-// entry's json; readProvider takes the id and returns the json or null
 const ID_RE = /^[a-z0-9_.-]+:[a-z0-9_./-]+$/
 
 export async function inlineProviders(node, readProvider, memo = new Map()) {

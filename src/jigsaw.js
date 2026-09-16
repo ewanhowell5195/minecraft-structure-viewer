@@ -70,8 +70,7 @@ export async function runJigsaw(start, { loadStruct, loadPool, loadFeature, maxD
           tried.add(key)
           // feature_pool_element: the game gives it one jigsaw at the feature origin
           // facing down, so it only joins an upward-facing one, and since
-          // 26.3-snapshot-6 that jigsaw takes whatever name the parent targets.
-          // its bounding box is the one block at the origin, so it never collides
+          // 26.3-snapshot-6 that jigsaw takes whatever name the parent targets
           if (typeof loc !== "string") {
             if (!loadFeature || wj.front !== "up") continue
             const feat = await loadFeature(loc.feature, Math.floor(rand() * 0x7fffffff)).catch(() => null)

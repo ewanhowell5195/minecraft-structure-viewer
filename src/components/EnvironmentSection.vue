@@ -14,7 +14,6 @@ const lighting = computed({
   set: v => { buildState.lighting = v ? "world" : "off" }
 })
 
-// a typed time wraps like the game's, so 24000 is midnight again
 function setDaytime(input) {
   const n = Math.round(Number(input.value))
   if (input.value !== "" && Number.isFinite(n)) buildState.daytime = ((n % 24000) + 24000) % 24000
