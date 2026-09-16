@@ -50,6 +50,8 @@ let prevAnchorWorld = null
 // adopted by the next session to start, then cleared; captured up front because
 // loads rewrite the query string
 let urlSeed = null, urlLevel = null
+const urlPending = () => urlSeed != null
+let firstBuild = false
 function adoptUrlSession(hex, level) {
   if (!hex || !/^[0-9a-f]{1,8}$/i.test(hex)) return
   urlSeed = parseInt(hex, 16) >>> 0
@@ -93,8 +95,8 @@ async function loadPool(ref) {
   return buf ? JSON.parse(new TextDecoder().decode(buf)) : null
 }
 
-// feature_pool_element: names a placed feature, rolled fresh per placement, and
-// unpadded so village trees skip the grass pad the Features tab draws
+// feature_pool_element: rolled fresh per placement, and unpadded so village trees
+// skip the grass pad the Features tab draws
 async function loadFeature(ref, seed) {
   const [ns, path] = nsSplit(ref)
   const rel = ns + "/" + path
@@ -161,11 +163,17 @@ async function regenerate() {
       }
     } catch (err) {
       buildApi.state.status = `couldn't assemble: ${err}`
+      if (firstBuild) {
+        firstBuild = false
+        await buildApi.build(base, true, false, true)
+      }
       return
     }
     if (!structure.dimension) structure.dimension = pathDimension(baseName)
     applyLegacyRenames(structure, packs.state.baseId)
-    await buildApi.build(structure, false, false, false, root => {
+    const fresh = firstBuild
+    firstBuild = false
+    await buildApi.build(structure, fresh, false, fresh, root => {
       const a = structure.anchor ?? [0, 0, 0]
       const aw = new THREE.Vector3(a[0] * 16, a[1] * 16, a[2] * 16).add(root.position)
       if (prevAnchorWorld) {
@@ -260,12 +268,13 @@ async function jigsawsCanAct(structure) {
   return false
 }
 
-async function startSession(structure, name) {
+async function startSession(structure, name, unbuilt = false) {
   base = structure
   baseName = name
   prevAnchorWorld = null
   const proc = PROC.find(p => p.entry === name)
   const isJigsaw = structure.palette.some(e => JIGSAW.test(e?.id || ""))
+  const baseBuild = () => buildApi.build(structure, true, false, true)
   if (proc && generators[proc.gen]) {
     state.kind = proc.gen
     state.label = proc.label
@@ -293,21 +302,25 @@ async function startSession(structure, name) {
     state.maxDepth = 1
   } else {
     endSession()
+    if (unbuilt) await baseBuild()
     return
   }
+  const restoring = urlSeed != null
+  if (unbuilt && !restoring) await baseBuild()
   state.level = 0
   state.seed = null
   state.active = true
-  const root = buildApi.getRoot()
+  const root = unbuilt ? null : buildApi.getRoot()
   if (root) {
     const a = structure.anchor ?? [0, 0, 0]
     prevAnchorWorld = new THREE.Vector3(a[0] * 16, a[1] * 16, a[2] * 16).add(root.position)
   }
 
-  if (urlSeed != null) {
+  if (restoring) {
     state.seed = urlSeed
     const want = state.steps ? Math.max(1, urlLevel - 1) : Infinity
     urlSeed = urlLevel = null
+    firstBuild = unbuilt
     await capForSeed()
     await setLevel(want)
     // reaching the cap can unlock the processing level the url asked for
@@ -341,7 +354,7 @@ async function rebase(structure, name) {
 export function useSession() {
   return {
     state: readonly(state),
-    startSession, endSession, adoptUrlSession, rebase, probeDepth,
+    startSession, endSession, adoptUrlSession, urlPending, rebase, probeDepth,
     next, all, undo, reset, reloadAll, fullReload, generate
   }
 }

@@ -369,8 +369,9 @@ async function apply(refit = true) {
       session.endSession()
     } else {
       if (rel) setStructureParam(rel)
-      if (await buildApi.build(withDim(s), refit, false, true) === false) return false
-      await session.startSession(s, name)
+      const restoring = session.urlPending()
+      if (!restoring && await buildApi.build(withDim(s), refit, false, true) === false) return false
+      await session.startSession(withDim(s), name, restoring)
     }
   } else {
     const allFeatures = loaded.every(e => e.feature)
