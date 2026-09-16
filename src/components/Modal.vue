@@ -20,7 +20,7 @@ const top = computed(() => stack[stack.length - 1] === id)
 </script>
 
 <template>
-  <div class="modal-backdrop" :style="{ zIndex: z, display: top ? '' : 'none' }" @pointerdown.self="dismissable && emit('close')">
+  <div class="modal-backdrop" :style="{ zIndex: z }" :hidden="!top" @pointerdown.self="dismissable && emit('close')">
     <div class="modal-panel" :style="{ width: width + 'px' }">
       <header v-if="$slots.title || $slots.controls || closable">
         <div class="titles">
