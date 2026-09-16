@@ -47,8 +47,7 @@ export async function runJigsaw(start, { loadStruct, loadPool, loadFeature, maxD
           const fb = await getPool(pool.fallback)
           if (fb) candidates = candidates.concat(shuffle(poolTemplates(fb), rand))
         }
-        const place = (struct, k, off) => {
-          const box = pieceBox(struct, k, off)
+        const place = (struct, k, off, box = pieceBox(struct, k, off)) => {
           if (Math.hypot((box.x0 + box.x1) / 2, (box.z0 + box.z1) / 2) > maxRadius) return false
           if (attachInside) {
             if (box.x0 < src.box.x0 || box.x1 > src.box.x1 || box.z0 < src.box.z0 || box.z1 > src.box.z1) return false
@@ -71,13 +70,16 @@ export async function runJigsaw(start, { loadStruct, loadPool, loadFeature, maxD
           tried.add(key)
           // feature_pool_element: the game gives it one jigsaw at the feature origin
           // facing down, so it only joins an upward-facing one, and since
-          // 26.3-snapshot-6 that jigsaw takes whatever name the parent targets
+          // 26.3-snapshot-6 that jigsaw takes whatever name the parent targets.
+          // its bounding box is the one block at the origin, so it never collides
           if (typeof loc !== "string") {
             if (!loadFeature || wj.front !== "up") continue
             const feat = await loadFeature(loc.feature, Math.floor(rand() * 0x7fffffff)).catch(() => null)
             if (!feat?.blocks?.length) continue
             const org = feat.origin ?? [0, 0, 0]
-            if (place(feat, 0, [targetPos[0] - org[0], targetPos[1] - org[1], targetPos[2] - org[2]])) break jig
+            const [tx, ty, tz] = targetPos
+            const box = { x0: tx, y0: ty, z0: tz, x1: tx + 1, y1: ty + 1, z1: tz + 1 }
+            if (place(feat, 0, [tx - org[0], ty - org[1], tz - org[2]], box)) break jig
             continue
           }
           const child = await getStruct(loc)

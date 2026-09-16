@@ -93,12 +93,12 @@ async function loadPool(ref) {
   return buf ? JSON.parse(new TextDecoder().decode(buf)) : null
 }
 
-// feature_pool_element: rolled fresh per placement, and unpadded so village trees
-// skip the grass pad the Features tab draws
+// feature_pool_element: names a placed feature, rolled fresh per placement, and
+// unpadded so village trees skip the grass pad the Features tab draws
 async function loadFeature(ref, seed) {
   const [ns, path] = nsSplit(ref)
   const rel = ns + "/" + path
-  const json = await features.readFeature(rel)
+  const json = await features.resolvePlaced(ref)
   if (!json) return null
   return generateFeature(rel, json, rnd(seed), features.resolvePlaced, r => loadRaw(nsSplit(r).join("/")), null, features.loadProcessors)
 }
