@@ -5,8 +5,7 @@ import { combine } from "./combine.js"
 
 const nsName = s => s.includes(":") ? s : "minecraft:" + s
 
-const inRegion = (b, r) =>
-  b.x0 >= r.x0 && b.x1 <= r.x1 && b.y0 >= r.y0 && b.y1 <= r.y1 && b.z0 >= r.z0 && b.z1 <= r.z1
+const inRegion = (b, r) => b.x0 >= r.x0 && b.x1 <= r.x1 && b.y0 >= r.y0 && b.y1 <= r.y1 && b.z0 >= r.z0 && b.z1 <= r.z1
 
 export async function runJigsaw(start, { loadStruct, loadPool, loadFeature, maxDepth = 6, maxPieces = 48, maxRadius = 96, levelSeed, onProgress, keepJigsaws = true }) {
   const structs = new Map(), pools = new Map()
