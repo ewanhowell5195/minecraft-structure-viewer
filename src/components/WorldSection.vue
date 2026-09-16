@@ -144,9 +144,6 @@ function fitView() {
 
 let R = null, win = null, dataRev = -1
 
-// the nearest chunk to the map centre that exists in the world, searched over
-// the visible window only; spirals outward and exits on the first hit, so it
-// only pays a full sweep when nothing in view is valid
 function nearestValidChunk() {
   if (!view || !bounds) return null
   const span = W / view.px
@@ -181,7 +178,6 @@ function nearestValidChunk() {
 
 const explorable = ref(false)
 
-// enter streaming at the nearest valid chunk to the map's centre
 async function exploreWorld() {
   const spawn = nearestValidChunk()
   if (!spawn) return
@@ -248,9 +244,6 @@ watch(mapEl, (el, old) => {
 })
 document.addEventListener("visibilitychange", () => { if (!document.hidden) nextTick(draw) })
 
-// explore mode: the selection hides, the map follows the player with the
-// vanilla marker centred and rotating with the camera, and the prior view
-// (zoom included) comes back on exit
 const exploring = ref(false)
 const playerIconEl = ref(null)
 let savedView = null

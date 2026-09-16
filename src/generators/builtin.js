@@ -67,7 +67,6 @@ function setCell(s, cells, stateFor, pos, id, properties, nbt) {
   }
 }
 
-// ---- jungle temple
 
 function fixJungleTemple(s, masks, rand) {
   const cells = cellMap(s), stateFor = statePicker(s)
@@ -76,7 +75,6 @@ function fixJungleTemple(s, masks, rand) {
   }
 }
 
-// ---- desert pyramid
 
 function fixDesertPyramid(s, masks, rand) {
   const cells = cellMap(s), stateFor = statePicker(s)

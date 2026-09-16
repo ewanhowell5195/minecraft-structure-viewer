@@ -27,13 +27,11 @@ const advMode = computed(() => state.filterMode === "block")
 const advIndexing = computed(() => advMode.value && !state.advReady)
 const vocab = computed(() => (void state.advReady, advMode.value ? features.advVocab() : []))
 
-// mode-filtered set (before the name filter box); the tree builds from this
 const filtered = computed(() => (void state.advReady, void state.advQuery, advMode.value ? features.filteredNames() : state.names))
 const shown = computed(() => (void state.filterText, void state.names.length, void state.advReady, void state.advQuery, features.visibleNames()))
 
 const flat = computed(() => state.filterText.trim() ? shown.value : null)
 
-// curated folders decide the tree shape; the rel stays the id everywhere
 const tree = computed(() => {
   const entries = filtered.value.map(rel => {
     const folder = features.folderOf(rel)

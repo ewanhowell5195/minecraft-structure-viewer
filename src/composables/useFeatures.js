@@ -81,7 +81,6 @@ function collectBlockNames(node, out) {
 
 const AIR = new Set(["air", "cave_air", "void_air", "structure_void"])
 
-// fossil/template features stamp structure files into the world
 async function loadStruct(ref) {
   const path = ref.includes(":") ? ref.replace(":", "/") : "minecraft/" + ref
   const zp = structures.zipPathOf(path)

@@ -47,7 +47,6 @@ const SIDES = [{ id: "before", label: "Before" }, { id: "after", label: "After" 
 
 const rules = computed(() => state.table ? describeTable(state.table) : [])
 
-// identical stacks combine into one row with the grand total
 const listStacks = computed(() => {
   const merged = new Map()
   for (const s of state.stacks) {

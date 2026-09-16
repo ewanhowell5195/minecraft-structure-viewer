@@ -157,7 +157,6 @@ const grassTop = (x, z) => {
   return world.get(wkey(x, y, z)) === GRASS && !world.has(wkey(x, y + 1, z)) ? y : null
 }
 
-// trees, thicker toward the edges, kept off the buildings and each other
 const trand = rnd(mix(SEED, 780))
 const treeSpots = []
 let planted = 0
@@ -165,7 +164,6 @@ for (let attempt = 0; attempt < 9000 && planted < TREE_COUNT; attempt++) {
   const x = vcx - EXT + 2 + Math.floor(trand() * (EXT * 2 - 4))
   const z = vcz - EXT + 2 + Math.floor(trand() * (EXT * 2 - 4))
   if (treeSpots.some(([sx, sz]) => Math.abs(sx - x) < 4 && Math.abs(sz - z) < 4)) continue
-  // sparse meadow near the village thickening into forest at the edges
   const ex = Math.max(0, Math.abs(x - vcx) - (maxX - minX) / 2)
   const ez = Math.max(0, Math.abs(z - vcz) - (maxZ - minZ) / 2)
   const f = Math.min(1, Math.max(ex, ez) / (EXT * 0.7))
@@ -188,7 +186,6 @@ for (let attempt = 0; attempt < 9000 && planted < TREE_COUNT; attempt++) {
   planted++
 }
 
-// ground cover: short grass with the odd flower
 const FLOWERS = ["minecraft:poppy", "minecraft:dandelion", "minecraft:oxeye_daisy", "minecraft:cornflower"]
 let cover = 0
 for (let x = vcx - EXT; x <= vcx + EXT; x++) {

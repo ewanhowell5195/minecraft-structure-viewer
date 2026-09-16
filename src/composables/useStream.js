@@ -16,10 +16,6 @@ import { isInspectable } from "../loot.js"
 // full-reload, never re-execute alongside the old instance
 if (import.meta.hot) import.meta.hot.decline()
 
-// world streaming: TILE x TILE chunks per tile, each tile its own createScene
-// build bordered with a chunk ring of context blocks so culling, fluid shaping
-// and the light volume come out seamless. Entered from walk mode; the orbit
-// build is torn down on entry and rebuilt from the loaded selection on exit.
 const TILE = 2
 const RENDER_DIST = 3
 const DISPOSE_DIST = RENDER_DIST + 1
@@ -39,18 +35,18 @@ let sharedAtlas = null
 let atlasLayout = null
 let occlSeed = null
 let world = null
-let origin = null            // [blockX, blockY, blockZ] of the spawn chunk corner
+let origin = null
 let yRange = null
 let dimension = "overworld"
 let daytime = DEFAULT_DAYTIME
 let lightOff = false
-let chunkMap = null           // "cx,cz" -> chunk descriptor
-let tileSet = null            // "tx,tz" tile keys with at least one chunk
-let buildWorkers = []         // { worker, ready, inflight } tile build workers
+let chunkMap = null
+let tileSet = null
+let buildWorkers = []
 let buildSeq = 0
 const buildJobs = new Map()
-const gridCache = new Map()   // "cx,cz" -> Promise<chunk grid> for main-thread builds
-const tiles = new Map()       // "cx,cz" -> { handle, group, grid, softs, boxes }
+const gridCache = new Map()
+const tiles = new Map()
 let queueGen = 0
 let building = false
 let playerTile = null
@@ -64,7 +60,6 @@ function chunkOf(worldBlockX, worldBlockZ) {
   return [Math.floor(worldBlockX / 16), Math.floor(worldBlockZ / 16)]
 }
 
-// scene-space block coords -> owning tile key
 function tkeyAt(gx, gz) {
   const cx = Math.floor((gx + origin[0]) / 16), cz = Math.floor((gz + origin[2]) / 16)
   return ckey(Math.floor(cx / TILE), Math.floor(cz / TILE))
@@ -493,7 +488,6 @@ function cellAt(t, gx, gy, gz) {
   return { pos: [cd[i], cd[i + 1], cd[i + 2]], ti: cd[i + 3], pi: cd[i + 4], entry: { id: p.id, properties: p.properties ?? undefined } }
 }
 
-// walk-facing provider, the same surface useBuild offers the walk mode
 const provider = {
   getRoot: () => root,
   blockAt(wx, wy, wz) {
@@ -586,7 +580,6 @@ const provider = {
     tiles.get(tkeyAt(c.bell.pos[0], c.bell.pos[2]))?.dyn?.ring?.(c.bell.pos, c.bell.dir)
     return true
   },
-  // orbit-mode hover and click over a suspended session's tiles
   pick(ox, oy, oz, dx, dy, dz, reach = 4000) {
     const c = marchContainer(ox, oy, oz, dx, dy, dz, reach)
     if (!c) return null
@@ -671,7 +664,6 @@ function marchDoor(ox, oy, oz, dx, dy, dz) {
   return null
 }
 
-// scene-space column -> highest solid block top, for the spawn point
 async function surfaceAt(gx, gz) {
   const t = tiles.get(tkeyAt(gx, gz))
   if (!t?.grid) return null
@@ -710,7 +702,6 @@ async function enter(spawn) {
   chunkMap = new Map(w.getChunks().map(c => [ckey(c.cx, c.cz), c]))
   tileSet = new Set()
   for (const c of chunkMap.values()) tileSet.add(ckey(Math.floor(c.cx / TILE), Math.floor(c.cz / TILE)))
-  // spawn at the given chunk (the map's centre focus)
   const wxb = spawn.cx * 16 + 8, wzb = spawn.cz * 16 + 8
   let [scx, scz] = chunkOf(wxb, wzb)
   if (!chunkMap.has(ckey(scx, scz))) {
@@ -807,8 +798,6 @@ function exit(cam) {
   resumeCam = cam ?? null
 }
 
-// full teardown: before a fresh stream entry or when a new orbit build
-// replaces the scene
 function shutdown() {
   state.on = false
   state.session = false

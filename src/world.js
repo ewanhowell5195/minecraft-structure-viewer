@@ -408,9 +408,6 @@ export async function buildSelection(world, selected, { yMin = -Infinity, yMax =
   return out
 }
 
-// dense columnar chunk for streaming: palette plus a Uint16Array grid of
-// palette index + 1 (0 = air), laid out y-major then (z*16 + x). No per-block
-// objects; entries materialize later, only for cells that survive filtering
 export async function chunkGrid(world, c, { yMin, yMax }) {
   const { palette, grid, blockEntities, empty } = await world.chunkGrid(c, { yMin, yMax })
   return {
@@ -425,7 +422,6 @@ export async function chunkGrid(world, c, { yMin, yMax }) {
   }
 }
 
-// merge chunk palettes into one tile palette; returns per-chunk local->global maps
 export function mergeTilePalettes(chunkGrids) {
   const globalPalette = []
   const key = new Map()
@@ -447,8 +443,6 @@ export function mergeTilePalettes(chunkGrids) {
   return { globalPalette, maps }
 }
 
-// combines own + ring chunk grids into one volume, drops buried cells, and
-// materializes createScene entries only for survivors (own entries first).
 // solidArr/doorArr/dynArr are per global-palette-index (+1) flags
 export function assembleTile({ chunkGrids, maps, globalPalette, solidArr, doorArr, dynArr, gcx0, gcz0, chunksAcross, yMin, yMax, origin, ownTest }) {
   const W = chunksAcross * 16

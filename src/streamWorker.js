@@ -1,8 +1,3 @@
-// chunk parsing and whole tile builds for world streaming: zip inflate, NBT
-// decode, createScene and geometry packing happen here so tile builds stop
-// stealing main-thread frames. The worker adopts the main thread's prestitched
-// atlas layout so packed tiles reference fixed atlas coordinates; runtime
-// textures not in the layout get space requested from main as they appear.
 import { read, regionCoords, chunkGrid, mergeTilePalettes, assembleTile } from "./world.js"
 import { loadLibrary } from "./lib.js"
 import { OPENABLE, packDoorTemplates } from "./composables/useStreamDoors.js"

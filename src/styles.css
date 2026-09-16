@@ -136,7 +136,6 @@ aside section .check {
   user-select: none;
 }
 
-/* shared icon/name/count list rows: chest list and odds panes, used blocks and entities */
 .item-row {
   display: flex;
   align-items: center;
@@ -155,7 +154,6 @@ aside section .check {
   white-space: nowrap;
 }
 
-/* shared modal shell (Modal.vue) */
 .modal-backdrop {
   position: fixed;
   inset: 0;
@@ -165,7 +163,6 @@ aside section .check {
   justify-content: center;
 }
 
-/* a structure row in either tree (the folder tree and the flat filter list) */
 .tree-file {
   cursor: pointer;
   color: #8fb3cc;
@@ -179,7 +176,6 @@ aside section .check {
 .tree-file:hover, .tree-file.ctx-target { color: #fff; background: #ffffff12; }
 .tree-file.sel { color: #6fd487; background: #6fd4871f; }
 
-/* a job's progress in the sidebar: the world's load, the comparison's sweep */
 .loadbar {
   height: 6px;
   border-radius: 3px;
@@ -193,7 +189,6 @@ aside section .check {
   transition: width 0.15s;
 }
 
-/* the version row and layered pack list, in the Packs and Compare panels */
 .channel {
   display: grid;
   grid-template-columns: 1fr 1fr auto;
@@ -284,7 +279,6 @@ aside section .check {
 
 .pack button.icon .material-symbols-outlined { font-size: 18px; }
 
-/* full-width sidebar action, icon beside its label */
 aside button.wide {
   display: flex;
   align-items: center;
@@ -295,7 +289,6 @@ aside button.wide {
 
 aside button.wide .material-symbols-outlined { font-size: 18px; }
 
-/* a floating stack of actions: the tree's context menu, the level menu's popup */
 .menu-panel {
   display: flex;
   flex-direction: column;
@@ -341,7 +334,6 @@ aside button.wide .material-symbols-outlined { font-size: 18px; }
   text-align: center;
 }
 
-/* a structure's name over the viewport, beside its info chip */
 .name-tag {
   flex: none;
   white-space: nowrap;
@@ -399,7 +391,6 @@ aside button.wide .material-symbols-outlined { font-size: 18px; }
   padding-right: 14px;
 }
 
-/* segmented controls: tab bars and sort toggles */
 .seg {
   display: flex;
   gap: 4px;
@@ -435,7 +426,6 @@ aside button.wide .material-symbols-outlined { font-size: 18px; }
   color: var(--text);
 }
 
-/* shared blockstate chips: jigsaw "Turns into" facts and used blocks breakdowns */
 .fprops {
   display: flex;
   flex-wrap: wrap;

@@ -77,7 +77,6 @@ const attach = (x, y, z, radiusOffset, opts = {}) => ({
 })
 const isDouble = a => a.sizeX === 2 && a.sizeZ === 2
 
-// ---- trunk placers: each returns the foliage attachment list
 
 const TRUNKS = {
   straight_trunk_placer(ctx, p, height, rand) {
@@ -330,7 +329,6 @@ const TRUNKS = {
   }
 }
 
-// ---- foliage placers
 
 function leavesRow(ctx, fp, a, radius, yo, skip) {
   const off = isDouble(a) ? 1 : 0
@@ -536,7 +534,6 @@ function foliageHeightOf(fp, rand, treeHeight) {
   return 3
 }
 
-// ---- decorators
 
 function decorate(ctx, decorators, rand, opts) {
   const logs = [...ctx.logs].sort((p, q) => p[1] - q[1])
@@ -775,8 +772,7 @@ function decorate(ctx, decorators, rand, opts) {
   }
 }
 
-// ---- root placer: nothing obstructs the walks here except the grid, which
-// ends a branch like unplaceable terrain does in game
+// nothing obstructs the root walks here except the grid, which ends a branch like unplaceable terrain does in game
 
 function placeMangroveRoots(ctx, rp, trunkY, rand) {
   const placement = rp.mangrove_root_placement
@@ -814,7 +810,6 @@ function placeMangroveRoots(ctx, rp, trunkY, rand) {
   }
 }
 
-// ---- entry points
 
 export function generateTree(world, config, rand, opts) {
   const ctx = makeTreeCtx(world, config, rand)

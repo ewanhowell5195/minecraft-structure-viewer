@@ -451,8 +451,7 @@ function poseLids(block, entry, on) {
   openLids = on ? positions : []
 }
 
-// the other half of a double chest, so the modal can show both inventories;
-// in game the type "right" half provides the first 27 slots
+// in game the type "right" half of a double chest provides the first 27 slots
 function chestPartner(block, entry) {
   const p = entry?.properties ?? {}
   if ((p.type !== "left" && p.type !== "right") || !p.facing) return null
@@ -843,7 +842,6 @@ function underRay(e, canvas) {
   return buildApi.rayHit(o.x, o.y, o.z, d.x, d.y, d.z, 4000)
 }
 
-// easter egg: bells ring where you whack them, no hitbox or hover
 function ringBellUnder(e, canvas) {
   const { origin: o, direction: d } = screenRay(e, canvas)
   if (streamApi.state.session) streamApi.provider.ringBell(o.x, o.y, o.z, d.x, d.y, d.z)

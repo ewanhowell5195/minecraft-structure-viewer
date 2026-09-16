@@ -3,7 +3,6 @@ import { computed, ref } from "vue"
 import { useLock } from "../composables/useLock.js"
 import VersionModal from "./VersionModal.vue"
 
-// the version row and pack list, shared by the Packs section and the comparison panel
 const props = defineProps({
   target: { type: String, default: "packs" },
   state: { type: Object, required: true },

@@ -177,8 +177,6 @@ function fillMaterial({ colour, alpha }, front) {
   return material
 }
 
-// world coordinates for a group's blocks, so cells and explicit boxes draw
-// through the same instanced path
 function boxesOf(group, root) {
   if (group.boxes) return group.boxes
   return group.cells.map(p => ({
@@ -297,8 +295,6 @@ export function setHighlights(input) {
   return groups.reduce((n, g) => n + g.cells.length, 0)
 }
 
-// for the app's own overlays: takes parsed colours and world boxes rather than
-// the embed API's css and block coords
 export function setOverlay(name, groups) {
   layers.set(name, groups.map(g => ({
     flash: false,

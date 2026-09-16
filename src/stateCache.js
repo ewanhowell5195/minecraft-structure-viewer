@@ -1,7 +1,4 @@
-// persisted per-state computed data (occlusion masks) keyed by the loaded
-// source set, so cold builds skip recomputing what a previous session already
-// derived from the same packs. Typed arrays survive IndexedDB's structured
-// clone, so entries round-trip without serialization.
+// typed arrays survive IndexedDB's structured clone, so entries round-trip without serialization
 const DB_NAME = "sv-state-cache"
 const STORE = "occlusion"
 const MAX_RECORDS = 8

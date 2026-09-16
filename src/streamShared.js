@@ -1,8 +1,5 @@
 import * as THREE from "three"
 
-// helpers shared by the stream main thread, the stream workers, and the door
-// module; each context gets its own module instance, so the caches are
-// per-context by construction
 export const isPlane = el => el?.from && (el.from[0] === el.to[0] || el.from[1] === el.to[1] || el.from[2] === el.to[2])
 
 // blocks the lib loads as dynamic models (live part rigs, pose methods); their

@@ -375,7 +375,6 @@ export function makeMineshaft(typeName, single = null, fixedSections = null) {
         continue
       }
 
-      // ---- corridor
       const len = p.sections * 5 - 1
       const w = (x, y, z, s, props, nbt) => placeOriented(p, x, y, z, s, props, nbt)
       const inCave = (x, z) => {
@@ -502,7 +501,6 @@ export function makeMineshaft(typeName, single = null, fixedSections = null) {
       entities.push({ pos: [wx + 0.5, wy + 0.5, wz + 0.5], nbt: { id: "minecraft:chest_minecart", LootTable: "minecraft:chests/abandoned_mineshaft" } })
     }
 
-    // ---- normalise to a structure
 
     const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity]
     for (const c of cells.values()) {

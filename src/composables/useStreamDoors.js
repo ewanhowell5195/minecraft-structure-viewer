@@ -1,12 +1,6 @@
 import * as THREE from "three"
 import { templateBoxes, cloneShaderShared } from "../streamShared.js"
 
-// interactive doors for streamed tiles: door blocks are excluded from tile
-// geometry by the worker and shipped as a list; this module grows a global
-// cache of canonical door templates (rotation folded per instance, like the
-// orbit build's door system) and gives each tile its own instanced meshes so
-// materials carry that tile's light volume. Toggling swaps open/closed
-// instance slots exactly like orbit's setDoorInstance.
 export const OPENABLE = /(^|:)([a-z_]+_)?(door|trapdoor|fence_gate)$/
 
 const PANEL = {
@@ -73,7 +67,6 @@ function mergeInstanceSource(geometry, material) {
 
 const stateKeyOf = (id, props) => id + "|" + JSON.stringify(props ?? null)
 
-// stateKey -> { key, rot } and canon key -> { parts: [{geometry, material, base}] } | null
 const stateInfo = new Map()
 const canonParts = new Map()
 const boxCache = new Map()
@@ -217,9 +210,8 @@ export async function packDoorTemplates(lib, assets, doors, shippedStates, shipp
   return { pack: { states, templates, bitmaps }, transfers }
 }
 
-// main side: revive shipped templates into the global canon cache. baseMat is
-// any lib world-lighting material from the tile; per-tile light rebinding
-// still happens in cloneMaterialFor
+// baseMat is any lib world-lighting material from the tile; per-tile light
+// rebinding still happens in cloneMaterialFor
 export function importDoorTemplates(pack, baseMat) {
   if (!pack) return
   const textures = []
@@ -299,7 +291,6 @@ function setInstance(slots, key, slot, pos, rot, visible) {
   }
 }
 
-// builds the door meshes for one tile; returns a registry or null
 export async function attachTileDoors({ lib, assets, doors, group, lightMat, onToggle }) {
   if (!doors?.length) return null
   const regs = new Map()

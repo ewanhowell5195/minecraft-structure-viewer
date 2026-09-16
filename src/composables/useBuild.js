@@ -146,7 +146,7 @@ async function remapLoaderStates(structure, lib, assets) {
   const raw = structure.raw
   const byPos = new Map()
   for (let i = 0, bi = 0; i < raw.length; i += 4, bi++) byPos.set(raw[i + 1] + "," + raw[i + 2] + "," + raw[i + 3], bi)
-  const matched = new Map() // stateIdx -> resolved models or null
+  const matched = new Map()
   async function matchedModels(stateIdx) {
     if (matched.has(stateIdx)) return matched.get(stateIdx)
     let result = null
@@ -208,9 +208,9 @@ const state = reactive({
   manual: false,
   building: false,
   status: "",
-  progress: null, // { phase: "build" | "optimise", done, total } while working
+  progress: null,
   info: null,
-  warn: null // { seconds } while a slow-build confirmation is showing
+  warn: null
 })
 
 const WARN_MS = 10000
@@ -288,19 +288,19 @@ function sameProps(a, b) {
 }
 
 const current = shallowRef(null)
-let source = null // the structure as loaded/combined; current may be a display strip of it
+let source = null
 let root = null
 let sceneHandle = null
 // compare mode keeps the outgoing build alive as the other half of the split
 let stashed = null, stashNext = false
-let inputIdxOf = null // structure block index -> createScene input index, -1 for door/loader/air
-let nonSolidPalette = new Set() // handle palette indices with all-plane models
+let inputIdxOf = null
+let nonSolidPalette = new Set()
 if (typeof window !== "undefined") window.__vroot = () => root
 let animator = null
 let templates = null
 let nonSolid = new Set()
 let sceneLight = null
-let entityMarkers = [] // root-local coords
+let entityMarkers = []
 let markerTextures = []
 let pendingMarkers = []
 let doorByCell = new Map()
@@ -344,9 +344,9 @@ function blockAt(wx, wy, wz) {
 
 // rotation-only state variants share one unrotated template, the rotation folded
 // into each instance matrix; hidden instances collapse to zero scale
-let doorSlots = new Map() // canonKey -> { count, meshes: InstancedMesh[] }
-let stateRender = new Map() // stateIdx -> { key, rot: Matrix4 }
-let canonDoorTmpl = new Map() // canonKey -> template Group
+let doorSlots = new Map()
+let stateRender = new Map()
+let canonDoorTmpl = new Map()
 
 const _dm = new THREE.Matrix4()
 const _dzero = new THREE.Matrix4().makeScale(0, 0, 0)
@@ -1215,8 +1215,7 @@ const FLUID_BLOCK = /(^|:)(water|flowing_water|lava|flowing_lava|bubble_column)$
 const isFluidBlock = e => !!(e?.id && FLUID_BLOCK.test(e.id))
 
 
-// returns { door }, { container }, { entity } or a plain { block }; blocked by
-// real collision boxes, not whole cells, so it passes gaps like the game
+// blocked by real collision boxes, not whole cells, so it passes gaps like the game
 const _aimBox = new THREE.Box3()
 function rayHit(ox, oy, oz, dx, dy, dz, REACH = 80) {
   const structure = current.value
@@ -1284,7 +1283,6 @@ function ringBell(ox, oy, oz, dx, dy, dz) {
   return tryRingBell(rayHit(ox, oy, oz, dx, dy, dz, 4000), ox, oy, oz, dx, dy, dz)
 }
 
-// { toggled: blocks }, { entity }, a container block, or false
 function interact(ox, oy, oz, dx, dy, dz) {
   const h = rayHit(ox, oy, oz, dx, dy, dz)
   if (h?.door) return { toggled: toggleDoor(h.door) }
@@ -1552,7 +1550,6 @@ const setLightDimSource = fn => { lightDimSource = fn }
 let compareSource = null
 const setCompareSource = fn => { compareSource = fn }
 
-// true when a build landed, false when cancelled
 async function build(structure = source, refit = true, slice = false, fresh = false, onPlace = null) {
   const assets = assetsOverride ?? packs.assets.value
   if (!assets || !structure || state.building) return

@@ -1,6 +1,3 @@
-// procedural terrain generator for framed map art, running fully on the GPU:
-// the fragment shader evaluates the whole per-pixel pipeline, and river tracing
-// runs in prep passes (one parallel trace pass per priority level).
 import { getFont, measure, drawText } from "./mcfont.js"
 
 function hash(x, y) {
@@ -740,7 +737,6 @@ function createRenderer(canvas) {
     return { out, rows }
   }
 
-  // ---- GPU river prep --------------------------------------------------------
   if (!gl.getExtension("EXT_color_buffer_float")) throw new Error("EXT_color_buffer_float unavailable")
   const linkProg = frag => {
     const p = gl.createProgram()

@@ -621,7 +621,6 @@ const TYPES = {
   }
 }
 
-// ---- adapted where the game needs terrain context the empty world can't provide
 
 Object.assign(TYPES, {
   async no_op() {},
@@ -1354,9 +1353,6 @@ async function generatePlaced(world, ref, rand, resolvePlaced, x, y, z) {
   if (inner) await generate(world, inner, rand, resolvePlaced, x, y, z)
 }
 
-// the game's placement pipeline is a position stream: each modifier maps every
-// position to zero or more; biome/height filters have no meaning here and pass
-// through. Returns the surviving positions.
 // world-reading filters assume real terrain around the feature; when the empty
 // showcase world fails one wholesale it is skipped, while partial elimination
 // still means what it means (rand-driven filters always apply)

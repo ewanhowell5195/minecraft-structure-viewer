@@ -152,7 +152,6 @@ export async function runMonument(loadStruct, { maxDepth = Infinity, seed, stats
     }
   }
 
-  // ---- room graph
 
   function generateRoomGraph() {
     const roomGrid = new Array(75).fill(null)
@@ -333,7 +332,6 @@ export async function runMonument(loadStruct, { maxDepth = Infinity, seed, stats
   childPieces.push({ kind: "wing", dir: direction, box: rightWingBox, mainDesign: (wingRandom + 1) & 1 })
   childPieces.push({ kind: "penthouse", dir: direction, box: penthouseBox })
 
-  // ---- building shell
 
   function generateWing(p, isFlipped, xoff) {
     generateBox(p, xoff + 0, 0, 0, xoff + 24, 0, 20, BASE_GRAY)
@@ -547,7 +545,6 @@ export async function runMonument(loadStruct, { maxDepth = Infinity, seed, stats
     for (let x = 21; x <= 36; x += 3) placeBlock(p, DOT_DECO, x, 13, 38)
   }
 
-  // ---- child room pieces
 
   function entryPost(p) {
     generateBox(p, 0, 3, 0, 2, 3, 7, BASE_LIGHT)

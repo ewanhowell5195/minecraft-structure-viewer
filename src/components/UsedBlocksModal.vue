@@ -61,7 +61,6 @@ function compute() {
     count: g.count,
     states: Array.from(g.states.values()).sort((a, b) => b.count - a.count)
   }))
-  // most-varying properties lead each row
   for (const g of blocks) {
     const values = new Map()
     for (const st of g.states) for (const k of Object.keys(st.props ?? {})) {

@@ -649,7 +649,6 @@ onMounted(async () => {
   pointer-events: none;
 }
 
-/* the loaded structure's name, and the chip beside it, share one row */
 .topbar {
   position: absolute;
   top: 12px;

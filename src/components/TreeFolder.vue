@@ -11,8 +11,6 @@ const props = defineProps({
   collapseToken: { type: Number, default: 0 }
 })
 
-// the owning section provides the tab-specific behaviour: selection source,
-// file click/menu, and the folder Load all
 const api = inject("treeApi")
 const ctx = useContextMenu()
 const { locked } = useLock()
@@ -77,7 +75,6 @@ function expandAll(name) {
   cascade[name] = (cascade[name] ?? 0) + 1
 }
 
-// unmounting the subtree is what resets every level below to collapsed
 function collapseAll(name) {
   dropFrom(opened, name)
   dropFrom(mounted, name)

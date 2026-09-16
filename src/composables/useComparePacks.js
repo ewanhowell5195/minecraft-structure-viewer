@@ -7,8 +7,6 @@ import { mb } from "../format.js"
 import { useLock } from "./useLock.js"
 import { STRUCT_RE } from "./useStructures.js"
 
-// the comparison side's own stack, prepared independently of the main one:
-// nothing here touches the pack cache or the icon workers
 
 const state = reactive({
   armed: false,

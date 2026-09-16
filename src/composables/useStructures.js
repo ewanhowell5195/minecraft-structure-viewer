@@ -96,8 +96,6 @@ async function allZipKeys() {
   return keys
 }
 
-// starterSet: not listed as a piece by any non-start pool; standaloneSet:
-// starters that pull nothing else in (entity spawns don't count)
 function computeWorldgen() {
   worldgenPromise ??= (async () => {
     const lib = await loadLibrary()
@@ -163,8 +161,6 @@ function computeWorldgen() {
   return worldgenPromise
 }
 
-// item stacks stored directly in a container block entity (chests are usually
-// LootTable-driven, but pre-filled Items and the container component both occur)
 function collectContainerItems(nbt, out) {
   const items = nbt?.Items ?? nbt?.components?.["minecraft:container"]
   if (!Array.isArray(items)) return
@@ -178,8 +174,6 @@ function collectContainerItems(nbt, out) {
 
 const SPAWNER_RE = /(^|[:_])spawner$/
 
-// entities a spawner block will produce, from its inline data or its (possibly
-// file-referenced) trial spawner config
 async function collectSpawnerEntities(nbt, out, trialCache) {
   const push = id => { if (typeof id === "string") out.add(strip(id)) }
   push(nbt.SpawnData?.entity?.id)
@@ -195,8 +189,6 @@ async function collectSpawnerEntities(nbt, out, trialCache) {
   }
 }
 
-// scan every structure once, building block/item/entity -> structures inverted
-// indexes; cached until the assets change (see refresh)
 async function computeAdvIndex() {
   advPromise ??= (async () => {
     const lib = await loadLibrary()

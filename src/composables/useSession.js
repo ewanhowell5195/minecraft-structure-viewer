@@ -141,7 +141,6 @@ async function resolve(level) {
   return res
 }
 
-// each build re-centres the assembly, so the camera shifts by however far the base's anchor moved
 async function regenerate() {
   state.solving = true
   procs.setSessionUse(false)

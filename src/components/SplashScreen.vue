@@ -1,7 +1,4 @@
 <script setup>
-// single splash/loading screen: the minimal-mode landing state, load progress,
-// and the stream "preparing world" screen all render through this with
-// different configs (see the `splash` computed in App.vue)
 import { customBackground, lightBackground } from "../background.js"
 
 defineProps({

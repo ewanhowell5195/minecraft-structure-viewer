@@ -227,7 +227,6 @@ function makeHighlight() {
   }
 }
 
-// bounds boxes drawn whole, unlike the hover highlight's camera-facing edges
 function makeOutline() {
   const geo = new THREE.BufferGeometry()
   let pos = new THREE.BufferAttribute(new Float32Array(0), 3)

@@ -1,4 +1,3 @@
-// user-provided packs/structure/world files persist like the vanilla jars do
 const KEY = "https://sv-user.cache/"
 const CACHE = "sv-user-files"
 const META = "sv-user-cache"

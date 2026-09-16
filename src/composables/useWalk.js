@@ -17,13 +17,11 @@ if (import.meta.hot) import.meta.hot.decline()
 const sceneApi = useScene()
 const buildApi = useBuild()
 const streamApi = useStream()
-// streaming swaps the world queries (blocks, collision, aiming) to the tile provider
 const wapi = () => streamApi.state.on ? streamApi.provider : buildApi
 const containerApi = useContainer()
 const { locked } = useLock()
 const fullscreen = useFullscreen()
 
-// the clock on the number row, dawn through to midnight
 const DAY_PRESETS = [18000, 23000, 0, 2000, 4000, 6000, 9000, 12000, 14000, 16000]
 const DAY_SCRUB = 500
 const DAY = 24000
@@ -768,7 +766,7 @@ addEventListener("keydown", e => {
     exit()
     return
   }
-  e.preventDefault() // capture all input while walking
+  e.preventDefault()
   if (e.code === "Space" && !e.repeat && !noclip) {
     const t = performance.now()
     if (t - fly.lastSpace < DOUBLE_TAP) {

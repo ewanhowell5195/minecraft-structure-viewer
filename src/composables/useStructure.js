@@ -397,13 +397,11 @@ async function remoteEntry(url) {
 // generated builtins have no file behind them, so they can't be saved
 const canDownload = rel => !!rel && (structures.hasBytes(rel) || useWorld().hasStructure(rel) || isRemote(rel))
 
-// where the file sits inside its pack, eg data/minecraft/structure/igloo
 const structureFolder = rel => {
   const path = structures.zipPathOf(rel) ?? useWorld().structurePath(rel)
   return path ? path.slice(0, path.lastIndexOf("/")) : ""
 }
 
-// opens the one thing alone, keeping the pack and comparison context
 const linkTo = params => paramUrl({
   structure: null,
   feature: null,
@@ -449,8 +447,6 @@ async function packDataVersion() {
   return packVersion
 }
 
-// anything with no file behind it (features, builtins, worlds, combined loads)
-// is written out from what is on screen
 async function nbtBytes(entry) {
   if (entry.rel && canDownload(entry.rel)) {
     const bytes = await structureBytesFor(entry.rel)
@@ -875,7 +871,6 @@ async function onAssetsSwapped() {
     await buildApi.build(await packLoaded(), false)
     return
   }
-  // no args: rebuild the build's own source (current may be a display strip)
   if (structure.value) await buildApi.build(undefined, false)
 }
 packs.setSwapHandler(onAssetsSwapped)

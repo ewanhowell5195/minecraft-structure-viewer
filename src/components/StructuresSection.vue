@@ -23,8 +23,6 @@ const fileInput = ref(null)
 const treeEl = ref(null)
 const collapsed = ref(false)
 
-// a plain click opens from both versions; modified clicks keep the combine
-// behaviour, unless only the compared version has the structure
 function openRel(rel, ev) {
   const mod = ev?.shiftKey || ev?.ctrlKey || ev?.metaKey
   if (compare.versionArmed() && (!mod || !structures.has(rel))) return compare.openVersion(rel)

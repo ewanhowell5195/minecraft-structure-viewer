@@ -8,9 +8,6 @@ import { yieldTask } from "../yield.js"
 import { read } from "minecraft-block-reader"
 import { sameStructure } from "../structdiff.js"
 
-// which files the comparison version gained, dropped and changed. equal bytes
-// settle a pair cheaply; the rest parse and compare on content, since versions
-// re-serialise every file without changing what most of them hold
 
 const packs = usePacks()
 const comparePacks = useComparePacks()
