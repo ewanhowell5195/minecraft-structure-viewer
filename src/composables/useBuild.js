@@ -210,7 +210,8 @@ const state = reactive({
   status: "",
   progress: null,
   info: null,
-  warn: null
+  warn: null,
+  landed: 0
 })
 
 const WARN_MS = 10000
@@ -1996,6 +1997,7 @@ async function build(structure = source, refit = true, slice = false, fresh = fa
     sceneApi.syncAspect()
     if (old) sceneApi.contentRoots.delete(old)
     onPlace?.(root)
+    state.landed++
     if (animator) sceneApi.animators.delete(animator)
     const parts = structure.__parts ?? [{ off: [0, 0, 0], size: structure.size }]
     // cave cells are clipped to the grid footprint so the outline closes along the grid edge

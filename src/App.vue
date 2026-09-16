@@ -197,7 +197,7 @@ if (minimal) offerHandoff(() => {
 
 const { supported: fullscreenSupported, active: isFullscreen, toggle: toggleFullscreen } = useFullscreen()
 
-watch(() => !!buildState.info || !!current.error, ready => {
+watch(() => !!buildState.landed || !!current.error, ready => {
   if (ready) minimalReady.value = true
 }, { immediate: true })
 
@@ -491,7 +491,9 @@ onMounted(async () => {
       <ContextMenu />
       <BuildProgress />
       <BuildWarning />
-      <SplashScreen v-if="splash" v-bind="splash" @cancel="splashCancel" @linkdown="refreshMainSiteUrl" />
+      <Transition name="splash">
+        <SplashScreen v-if="splash" v-bind="splash" @cancel="splashCancel" @linkdown="refreshMainSiteUrl" />
+      </Transition>
       <button v-if="minimal && minimalReady && fullscreenSupported" class="fs-btn" :title="isFullscreen ? 'Exit fullscreen' : 'Fullscreen'" @click="toggleFullscreen()">
         <span class="material-symbols-outlined">{{ isFullscreen ? "fullscreen_exit" : "fullscreen" }}</span>
       </button>
@@ -526,6 +528,13 @@ onMounted(async () => {
   display: flex;
   height: 100%;
 }
+
+.splash-leave-active {
+  transition: opacity 0.25s;
+  pointer-events: none;
+}
+
+.splash-leave-to { opacity: 0; }
 
 .drop-veil {
   position: fixed;
