@@ -124,7 +124,8 @@ export function combine(pieces) {
     anchor: [-lo[0], -lo[1], -lo[2]],
     __parts: boxes.map(b => ({
       off: [b.lo[0] - lo[0], b.lo[1] - lo[1], b.lo[2] - lo[2]],
-      size: [b.hi[0] - b.lo[0] + 1, b.hi[1] - b.lo[1] + 1, b.hi[2] - b.lo[2] + 1]
+      size: [b.hi[0] - b.lo[0] + 1, b.hi[1] - b.lo[1] + 1, b.hi[2] - b.lo[2] + 1],
+      grid: false
     }))
   }
 }

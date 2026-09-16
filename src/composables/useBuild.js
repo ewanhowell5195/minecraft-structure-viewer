@@ -1999,7 +1999,9 @@ async function build(structure = source, refit = true, slice = false, fresh = fa
     onPlace?.(root)
     state.landed++
     if (animator) sceneApi.animators.delete(animator)
-    const parts = structure.__parts ?? [{ off: [0, 0, 0], size: structure.size }]
+    const whole = [{ off: [0, 0, 0], size: structure.size }]
+    let parts = structure.__parts?.filter(p => p.grid !== false) ?? whole
+    if (!parts.length) parts = whole
     // cave cells are clipped to the grid footprint so the outline closes along the grid edge
     let caveWire = null
     if (structure.cave) {
