@@ -39,6 +39,7 @@ let origin = null
 let yRange = null
 let dimension = "overworld"
 let daytime = DEFAULT_DAYTIME
+let dayU = null
 let lightOff = false
 let chunkMap = null
 let tileSet = null
@@ -188,6 +189,13 @@ function pumpIntegrate() {
 }
 const integrateSlot = () => new Promise(res => { integrateQueue.push(res); pumpIntegrate() })
 
+function bindDaytime(group) {
+  group.traverse(o => {
+    if (!o.isMesh) return
+    for (const m of [].concat(o.material)) if (m?.uniforms?.daytime) m.uniforms.daytime = dayU
+  })
+}
+
 async function buildTileWorker(tx, tz, gen) {
   const res = await workerTile(tx, tz)
   if (gen !== queueGen) return
@@ -200,6 +208,7 @@ async function buildTileWorker(tx, tz, gen) {
   await integrateSlot()
   if (gen !== queueGen) return
   const revived = lib.reviveScene(msg.payload, { atlas: sharedAtlas, releaseArrays: true })
+  bindDaytime(revived.group)
   const ox = tx * TILE * 16 - origin[0], oz = tz * TILE * 16 - origin[2]
   const oy = yRange.yMin, gh = yRange.yMax - yRange.yMin + 1
   const gw = TILE * 16
@@ -235,6 +244,7 @@ async function buildTileWorker(tx, tz, gen) {
     tile.dyn = await attachTileDynamics({ lib, assets, blocks: msg.dynamics, lightMat, sharedAtlas, dimension, daytime, lightOff })
     if (gen !== queueGen) { tile.dyn?.dispose(); revived.dispose(); return }
     if (tile.dyn) {
+      bindDaytime(tile.dyn.group)
       root.add(tile.dyn.group)
       if (tile.dyn.animator) sceneApi2().animators.add(tile.dyn.animator)
     }
@@ -343,6 +353,7 @@ async function buildTileMain(tx, tz, gen) {
       buried[bi >> 3] |= 1 << (bi & 7)
     }
   }
+  bindDaytime(handle.group)
   const palette = handle.palette.map(p => ({ id: p.id, properties: p.properties ?? null }))
   const tile = { handle, group: handle.group, cellData: cd, grid, ox, oy, oz, gw, gh, palette, softs, boxes: new Map(), buried }
   if (at.nbts.length) tile.nbtMap = new Map(at.nbts.map(n => [n.pos.join(","), n.nbt]))
@@ -360,6 +371,7 @@ async function buildTileMain(tx, tz, gen) {
     tile.dyn = await attachTileDynamics({ lib, assets, blocks: at.dynamics, lightMat, sharedAtlas, dimension, daytime, lightOff })
     if (gen !== queueGen) { tile.dyn?.dispose(); try { handle.dispose?.() } catch {} return }
     if (tile.dyn) {
+      bindDaytime(tile.dyn.group)
       root.add(tile.dyn.group)
       if (tile.dyn.animator) sceneApi2().animators.add(tile.dyn.animator)
     }
@@ -718,6 +730,7 @@ async function enter(spawn) {
   yRange = { yMin: ws.yMin, yMax: ws.yMax }
   dimension = /^(the_nether|the_end)$/.test(ws.dimension) ? ws.dimension : "overworld"
   daytime = buildApi2().state.daytime
+  dayU = { value: daytime }
   lightOff = buildApi2().state.fullbright || buildApi2().state.lighting !== "world"
   origin = [scx * 16, 0, scz * 16]
 
@@ -752,6 +765,7 @@ async function enter(spawn) {
     const wfile = w.getWorldFile()
     if (wfile) startBuildWorkers(wfile, ws.dimension)
     root = new THREE.Group()
+    root.userData.daytime = dayU
     sceneApi2().scene.add(root)
     sceneApi2().contentRoots.add(root)
 
