@@ -81,7 +81,8 @@ function ensureOutline() {
 
 function buildCollision() {
   collCells = new Map()
-  floorY = sceneApi.sceneBounds().min.y
+  const grids = sceneApi.getGridRects()
+  floorY = grids.length ? Math.min(...grids.map(r => r.y)) : sceneApi.sceneBounds().min.y
 }
 
 function cellBoxes(ci, cj, ck) {
