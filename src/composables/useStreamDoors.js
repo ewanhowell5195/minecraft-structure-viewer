@@ -234,7 +234,7 @@ export function importDoorTemplates(pack, baseMat) {
   for (const t of pack.templates ?? []) {
     if (canonParts.has(t.key)) continue
     if (!t.parts) { canonParts.set(t.key, null); continue }
-    if (!baseMat?.uniforms) continue
+    if (!baseMat) continue
     const parts = []
     for (const p of t.parts) {
       const geo = new THREE.BufferGeometry()
@@ -245,13 +245,17 @@ export function importDoorTemplates(pack, baseMat) {
         const tex = textureFor(spec.tex)
         if (tex && spec.colorSpace != null) tex.colorSpace = spec.colorSpace
         const c = cloneShaderShared(baseMat)
-        c.uniforms.map = { value: tex }
-        c.uniforms.emission = { value: spec.emission }
-        c.uniforms.shadeEnabled = { value: spec.shadeEnabled }
-        c.uniforms.shadeOverride = { value: new THREE.Vector3(...spec.shadeOverride) }
-        c.uniforms.aoEnabled = { value: spec.aoEnabled }
-        c.defines = { ...c.defines }
-        delete c.defines.FACE_ATTRS
+        if (c.uniforms) {
+          c.uniforms.map = { value: tex }
+          c.uniforms.emission = { value: spec.emission }
+          c.uniforms.shadeEnabled = { value: spec.shadeEnabled }
+          c.uniforms.shadeOverride = { value: new THREE.Vector3(...spec.shadeOverride) }
+          c.uniforms.aoEnabled = { value: spec.aoEnabled }
+          c.defines = { ...c.defines }
+          delete c.defines.FACE_ATTRS
+        } else {
+          c.map = tex
+        }
         c.side = spec.side
         c.transparent = spec.transparent
         c.depthWrite = spec.depthWrite

@@ -41,6 +41,8 @@ let dimension = "overworld"
 let daytime = DEFAULT_DAYTIME
 let dayU = null
 let lightOff = false
+let lightMode = "world"
+const lightingSpec = () => lightMode !== "world" ? lightMode : lightOff ? { dimension, daytime, light: false } : { dimension, daytime }
 let chunkMap = null
 let tileSet = null
 let buildWorkers = []
@@ -50,6 +52,8 @@ const gridCache = new Map()
 const tiles = new Map()
 let queueGen = 0
 let building = false
+let rebuilding = false
+const live = () => state.on || rebuilding
 let playerTile = null
 let onTilesChanged = null
 
@@ -94,7 +98,7 @@ function startBuildWorkers(file, dim, count = Math.min(3, Math.max(1, Math.floor
           version: packs2().state.baseId || undefined,
           occl: occlSeed,
           layout: atlasLayout,
-          cfg: { origin, tile: TILE, dimension, daytime, lightOff }
+          cfg: { origin, tile: TILE, dimension, daytime, lighting: lightingSpec() }
         })
         return
       }
@@ -228,7 +232,7 @@ async function buildTileWorker(tx, tz, gen) {
       if (!o.isMesh) return
       for (const m of [].concat(o.material)) {
         if (!lightMat && m?.uniforms?.lightVol) lightMat = m
-        if (!baseMat && m?.uniforms?.worldShade) baseMat = m
+        if (!baseMat && (m?.uniforms?.worldShade || m?.isMeshBasicMaterial)) baseMat = m
       }
     })
   }
@@ -241,7 +245,7 @@ async function buildTileWorker(tx, tz, gen) {
     // integration frame instead of stacking it on the revive frame
     await integrateSlot()
     if (gen !== queueGen) { revived.dispose(); return }
-    tile.dyn = await attachTileDynamics({ lib, assets, blocks: msg.dynamics, lightMat, sharedAtlas, dimension, daytime, lightOff })
+    tile.dyn = await attachTileDynamics({ lib, assets, blocks: msg.dynamics, lightMat, sharedAtlas, lighting: lightingSpec() })
     if (gen !== queueGen) { tile.dyn?.dispose(); revived.dispose(); return }
     if (tile.dyn) {
       bindDaytime(tile.dyn.group)
@@ -307,7 +311,7 @@ async function buildTileMain(tx, tz, gen) {
     return
   }
   const handle = await lib.createScene(assets, input, {
-    lighting: lightOff ? { dimension, daytime, light: false } : { dimension, daytime },
+    lighting: lightingSpec(),
     keepTemplates: true,
     ignoreAtlases: true,
     technical: false,
@@ -368,7 +372,7 @@ async function buildTileMain(tx, tz, gen) {
     tile.doors = await attachTileDoors({ lib, assets, doors, group: handle.group, lightMat, onToggle: () => onTilesChanged?.() })
   }
   if (at.dynamics.length) {
-    tile.dyn = await attachTileDynamics({ lib, assets, blocks: at.dynamics, lightMat, sharedAtlas, dimension, daytime, lightOff })
+    tile.dyn = await attachTileDynamics({ lib, assets, blocks: at.dynamics, lightMat, sharedAtlas, lighting: lightingSpec() })
     if (gen !== queueGen) { tile.dyn?.dispose(); try { handle.dispose?.() } catch {} return }
     if (tile.dyn) {
       bindDaytime(tile.dyn.group)
@@ -439,12 +443,12 @@ function desired(tx, tz) {
 }
 
 async function pump() {
-  if (building || !state.on) return
+  if (building || !live()) return
   building = true
   const gen = queueGen
   const inflight = new Map()
   try {
-    while (state.on && gen === queueGen) {
+    while (live() && gen === queueGen) {
       if (!playerTile) break
       // disposals free GPU resources, so they pace through the same per-frame
       // slot as integrations: a burst of tiles crossing the dispose radius at
@@ -454,11 +458,11 @@ async function pump() {
         const dx = ttx - playerTile[0], dz = ttz - playerTile[1]
         if (dx * dx + dz * dz > (DISPOSE_DIST + 0.5) ** 2) {
           await integrateSlot()
-          if (!state.on || gen !== queueGen) break
+          if (!live() || gen !== queueGen) break
           disposeTile(k)
         }
       }
-      if (!state.on) break
+      if (!live()) break
       const want = desired(playerTile[0], playerTile[1]).filter(([tx, tz]) => !inflight.has(ckey(tx, tz)))
       state.pending = want.length + inflight.size
       if (!want.length && !inflight.size) break
@@ -477,6 +481,7 @@ async function pump() {
   } finally {
     state.pending = 0
     building = false
+    rebuilding = false
   }
 }
 
@@ -502,6 +507,7 @@ function cellAt(t, gx, gy, gz) {
 
 const provider = {
   getRoot: () => root,
+  hasTileAt: (wx, wz) => tiles.has(tkeyAt(Math.round(wx / 16), Math.round(wz / 16))),
   blockAt(wx, wy, wz) {
     const gx = Math.round(wx / 16), gy = Math.round(wy / 16), gz = Math.round(wz / 16)
     const t = tiles.get(tkeyAt(gx, gz))
@@ -692,6 +698,31 @@ async function surfaceAt(gx, gz) {
   return null
 }
 
+function applyLighting() {
+  const b = buildApi2()
+  lightMode = b.state.lighting
+  lightOff = b.state.fullbright || lightMode !== "world"
+  dimension = b.state.fullbright ? "overworld" : b.lightDim()
+}
+
+function repump() {
+  if (building) return setTimeout(repump, 50)
+  rebuilding = true
+  pump()
+}
+
+function restyle() {
+  if (!state.session) return
+  queueGen++
+  for (const k of Array.from(tiles.keys())) disposeTile(k)
+  applyLighting()
+  stopWorkers()
+  const w = useWorld()
+  const wfile = w.getWorldFile()
+  if (wfile) startBuildWorkers(wfile, w.state.dimension)
+  repump()
+}
+
 async function enter(spawn) {
   if (state.session && !state.on) {
     if (resumeCam) {
@@ -728,10 +759,9 @@ async function enter(spawn) {
 
   const ws = w.state
   yRange = { yMin: ws.yMin, yMax: ws.yMax }
-  dimension = /^(the_nether|the_end)$/.test(ws.dimension) ? ws.dimension : "overworld"
+  const worldDim = /^(the_nether|the_end)$/.test(ws.dimension) ? ws.dimension : "overworld"
   daytime = buildApi2().state.daytime
   dayU = { value: daytime }
-  lightOff = buildApi2().state.fullbright || buildApi2().state.lighting !== "world"
   origin = [scx * 16, 0, scz * 16]
 
   state.on = true
@@ -743,7 +773,8 @@ async function enter(spawn) {
   try {
     // fresh build drops the old orbit scene immediately so it isn't eating
     // frame time while the world spins up
-    await buildApi2().build(EMPTY, false, false, true)
+    await buildApi2().build({ ...EMPTY, dimension: worldDim }, false, false, true)
+    applyLighting()
     sceneApi2().setGrids([])
 
     // animate: true makes the lib tick the atlas's animated regions at 20Hz
@@ -834,7 +865,7 @@ export function useStream() {
   return {
     state: readonly(state),
     provider,
-    enter, exit, shutdown, tick,
+    enter, exit, shutdown, tick, restyle,
     setTilesChanged: fn => { onTilesChanged = fn }
   }
 }

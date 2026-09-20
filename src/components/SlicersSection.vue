@@ -2,15 +2,17 @@
 import { ref } from "vue"
 import { useSlicers } from "../composables/useSlicers.js"
 import { useLock } from "../composables/useLock.js"
+import { useStream } from "../composables/useStream.js"
 
 const { state } = useSlicers()
 const { locked } = useLock()
+const stream = useStream()
 const collapsed = ref(false)
 const AXES = ["x", "y", "z"]
 </script>
 
 <template>
-  <section :class="{ collapsed }">
+  <section :class="{ collapsed, off: stream.state.session }">
     <h2 @click="collapsed = !collapsed">
       <span class="material-symbols-outlined chev">{{ collapsed ? "chevron_right" : "expand_more" }}</span>
       Slicers
@@ -18,11 +20,11 @@ const AXES = ["x", "y", "z"]
     <div class="checks">
       <div v-for="a in AXES" :key="a" class="slicer">
         <label class="check">
-          <input type="checkbox" v-model="state[a].on" :disabled="locked">
+          <input type="checkbox" v-model="state[a].on" :disabled="locked || stream.state.session">
           {{ a.toUpperCase() }} axis
         </label>
         <span class="pos">{{ state[a].on ? state[a].i : "" }}</span>
-        <button class="icon" :class="{ active: state[a].flip }" :disabled="!state[a].on || locked"
+        <button class="icon" :class="{ active: state[a].flip }" :disabled="!state[a].on || locked || stream.state.session"
           title="Flip which side is sliced" @click="state[a].flip = !state[a].flip">
           <span class="material-symbols-outlined">{{ a === "y" ? "swap_vert" : "swap_horiz" }}</span>
         </button>
@@ -75,5 +77,10 @@ button.icon .material-symbols-outlined { font-size: 18px; }
 .hint {
   font-size: 11px;
   color: var(--text-dim);
+}
+
+.off .checks, .off .hint {
+  opacity: 0.4;
+  pointer-events: none;
 }
 </style>

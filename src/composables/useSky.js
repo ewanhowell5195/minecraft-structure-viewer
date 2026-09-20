@@ -4,11 +4,13 @@ import { usePacks } from "./usePacks.js"
 import { useBuild } from "./useBuild.js"
 import { useScene } from "./useScene.js"
 import { useWalk } from "./useWalk.js"
+import { useStream } from "./useStream.js"
 
 const packs = usePacks()
 const build = useBuild()
 const scene = useScene()
 const walk = useWalk()
+const stream = useStream()
 
 const enabled = ref(!new URLSearchParams(location.search).has("nosky"))
 const active = computed(() => walk.state.on || enabled.value)
@@ -64,6 +66,7 @@ watch(lightDim, async () => {
   if (!build.getRoot() || build.state.building) return
   const { useCompare } = await import("./useCompare.js")
   if (useCompare().state.on) return
+  if (stream.state.session) return stream.restyle()
   build.build(undefined, false)
 })
 

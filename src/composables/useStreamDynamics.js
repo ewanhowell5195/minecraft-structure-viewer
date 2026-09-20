@@ -8,10 +8,11 @@ const _wp = new THREE.Vector3()
 // tile builds them on the main thread as a small live createScene of their
 // own. The group sits outside the frozen tile subtree so poses keep animating,
 // and its materials bind the tile's light volume through a light shim
-export async function attachTileDynamics({ lib, assets, blocks, lightMat, sharedAtlas, dimension, daytime, lightOff }) {
+export async function attachTileDynamics({ lib, assets, blocks, lightMat, sharedAtlas, lighting }) {
   if (!blocks?.length) return null
   const u = lightMat?.uniforms
-  const lightShim = !lightOff && u?.lightVol ? {
+  const world = typeof lighting === "object"
+  const lightShim = world && lighting.light !== false && u?.lightVol ? {
     uniforms: {
       lightVol: u.lightVol, lightVolOrigin: u.lightVolOrigin, lightVolSize: u.lightVolSize,
       lightVolTex: u.lightVolTex, lightVolCols: u.lightVolCols
@@ -24,7 +25,7 @@ export async function attachTileDynamics({ lib, assets, blocks, lightMat, shared
     return e
   })
   const handle = await lib.createScene(assets, input, {
-    lighting: { dimension, daytime, light: lightShim },
+    lighting: world ? { ...lighting, light: lightShim } : lighting,
     keepTemplates: true,
     ignoreAtlases: true,
     technical: false,

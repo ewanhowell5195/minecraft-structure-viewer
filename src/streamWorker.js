@@ -62,7 +62,7 @@ async function buildTile(m) {
   const doors = at.doors
   if (!tileCount) { self.postMessage({ type: "tile", id: m.id, empty: true }); return }
   const handle = await lib.createScene(assets, input, {
-    lighting: cfg.lightOff ? { dimension: cfg.dimension, daytime: cfg.daytime, light: false } : { dimension: cfg.dimension, daytime: cfg.daytime },
+    lighting: cfg.lighting,
     keepTemplates: true,
     ignoreAtlases: true,
     technical: false,

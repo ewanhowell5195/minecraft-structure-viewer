@@ -1547,6 +1547,7 @@ const setAssetsOverride = v => { assetsOverride = v }
 
 let lightDimSource = null
 const setLightDimSource = fn => { lightDimSource = fn }
+const lightDim = () => lightDimSource?.() ?? state.dimension
 
 let compareSource = null
 const setCompareSource = fn => { compareSource = fn }
@@ -2085,7 +2086,11 @@ async function build(structure = source, refit = true, slice = false, fresh = fa
   }
 }
 
-watch(() => [state.lighting, state.fullbright], () => build(undefined, false))
+watch(() => [state.lighting, state.fullbright], async () => {
+  const stream = (await import("./useStream.js")).useStream()
+  if (stream.state.session) return stream.restyle()
+  build(undefined, false)
+})
 watch(() => state.hideStructureBlocks, v => {
   localStorage.setItem("hideStructureBlocks", String(v))
   build(undefined, false)
@@ -2154,7 +2159,7 @@ async function clearMapArt() {
 export function useBuild() {
   return {
     state, current, build, cancel, answerWarn, setRestoreGate, restoreGateCheck, getRoot, getTemplates, getNonSolid, showFull, restoreFull,
-    stashNextBuild, takeStash, disposeStash, setAssetsOverride, setLightDimSource, setCompareSource,
+    stashNextBuild, takeStash, disposeStash, setAssetsOverride, setLightDimSource, lightDim, setCompareSource,
     blockAt, blockEntryAt, boxForBlock, boxForEntity, boxForEntityData, markerUnderRay, rayHit, interact, aimDoor, blockBoxes, ringBell, exportCurrent, clearMapArt
   }
 }
