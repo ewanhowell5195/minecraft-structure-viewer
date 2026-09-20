@@ -577,7 +577,7 @@ function attachDoors(entries) {
     const open = structure.palette[e.b.state].properties.open === "true"
     setDoorInstance(e.openIdx, e.openSlot, e.b.pos, open)
     setDoorInstance(e.closedIdx, e.closedSlot, e.b.pos, !open)
-    doorByCell.set(e.b.pos.join(","), { b: e.b, openIdx: e.openIdx, closedIdx: e.closedIdx, openSlot: e.openSlot, closedSlot: e.closedSlot, pair: null })
+    doorByCell.set(e.b.pos.join(","), { b: e.b, bi: e.bi, openIdx: e.openIdx, closedIdx: e.closedIdx, openSlot: e.openSlot, closedSlot: e.closedSlot, pair: null })
   }
   for (const reg of doorByCell.values()) {
     if (!isDoorName(structure.palette[reg.b.state].id)) continue
