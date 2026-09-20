@@ -9,7 +9,7 @@ import { useWalk } from "../composables/useWalk.js"
 import { useWorld } from "../composables/useWorld.js"
 import { getFont, measure, drawText } from "../mcfont.js"
 import { drawTooltip, onTooltipFrame, MARGIN } from "../tooltip.js"
-import { describeTable, prettyName, stackKey } from "../loot.js"
+import { describeTable, prettyName, stackKey, toolHint } from "../loot.js"
 import { num } from "../format.js"
 import { minimal, fullSiteUrl } from "../minimal.js"
 import { iconInfo, acquireIcon, releaseIcon, nextToken } from "../icons.js"
@@ -47,6 +47,7 @@ const TABS = computed(() => state.dataRows || state.item ? [] : state.table
 const SIDES = [{ id: "before", label: "Before" }, { id: "after", label: "After" }]
 
 const rules = computed(() => state.table ? describeTable(state.table) : [])
+const needsTool = computed(() => state.table ? toolHint(state.table) : null)
 
 const listStacks = computed(() => {
   const merged = new Map()
@@ -497,7 +498,7 @@ watch(() => [state.open, state.stacks, state.gui], () => {
 
           <div v-if="state.tab === 'odds' && !state.item" class="pane">
             <div v-if="state.oddsBusy" class="empty">Measuring drop rates over 10,000 opens…</div>
-            <div v-else-if="state.odds && !state.odds.length" class="empty">This table never drops anything.</div>
+            <div v-else-if="state.odds && !state.odds.length" class="empty">{{ needsTool ? `This table only drops with ${needsTool}.` : "This table never drops anything." }}</div>
             <template v-else-if="state.odds">
               <div class="cols"><span class="nm">Item · most common first</span><span class="chance-h">Chance</span><span class="cnt-h">Amount</span></div>
               <div v-for="o in state.odds" :key="o.id + JSON.stringify(o.components ?? null)" class="item-row clickable" @click="container.openItem(o)">

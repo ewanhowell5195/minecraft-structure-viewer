@@ -72,14 +72,52 @@ function rollNum(n, int = false) {
   return n.value ?? 1
 }
 
-// only random_chance is meaningful without world context; others pass
-const passes = conditions => (conditions ?? []).every(c =>
-  strip(c.condition || "") !== "random_chance" || Math.random() < (c.chance ?? 1))
+// 26.3 renamed conditions/functions to condition/modifier, moved their type key to "type", and allows a single object or a bare string where the array was
+const normCond = c => typeof c === "string" ? { type: c } : c && typeof c === "object" ? c : null
+const asList = v => v == null ? [] : Array.isArray(v) ? v : [v]
+const condsOf = node => asList(node?.condition ?? node?.conditions).map(normCond).filter(Boolean)
+const condType = c => strip(c.type ?? c.condition ?? "")
+const fnsOf = node => asList(node?.modifier ?? node?.functions).filter(f => f && typeof f === "object")
+const fnType = f => strip(f.type ?? f.function ?? "")
+
+function toolKind(c) {
+  const t = condType(c)
+  if (t === "tool/can_silk_touch") return "silk touch"
+  if (t === "tool/can_shear") return "shears"
+  if (t !== "match_tool") return null
+  const p = c.predicate ?? {}
+  if (JSON.stringify(p.predicates?.["minecraft:enchantments"] ?? "").includes("silk_touch")) return "silk touch"
+  if (JSON.stringify(p.items ?? "").includes("shears")) return "shears"
+  return "a specific tool"
+}
+
+function evalCond(c) {
+  const t = condType(c)
+  if (t === "all_of" || t === "any_of") {
+    const hit = t === "any_of"
+    const terms = asList(c.terms).map(normCond).filter(Boolean).map(evalCond)
+    if (terms.some(v => v === hit)) return hit
+    if (terms.some(v => v === undefined)) return undefined
+    return !hit
+  }
+  if (t === "inverted") {
+    const v = c.term == null ? undefined : evalCond(normCond(c.term))
+    return v === undefined ? undefined : !v
+  }
+  if (t === "random_chance") return Math.random() < (c.chance ?? 1)
+  if (t === "random_chance_with_enchanted_bonus") return Math.random() < (c.unenchanted_chance ?? 1)
+  // chances are indexed by enchantment level, and nothing is enchanted here
+  if (t === "table_bonus") return Math.random() < (c.chances?.[0] ?? 1)
+  if (toolKind(c)) return false
+  return undefined
+}
+
+const passes = node => condsOf(node).every(c => evalCond(c) !== false)
 
 function applyFunctions(fns, stack) {
   for (const f of fns ?? []) {
-    const t = strip(f.function || "")
-    if (!passes(f.conditions)) continue
+    const t = fnType(f)
+    if (!passes(f)) continue
     if (t === "set_count") stack.count = Math.max(1, Math.round(rollNum(f.count, true)))
     else if (t === "set_data") stack.id = mapId(stack.raw ?? stack.id, Math.round(rollNum(f.data, true)))
     else if (t === "enchant_randomly" || t === "enchant_with_levels") stack.enchanted = true
@@ -91,8 +129,8 @@ async function applyEntry(entry, pool, out) {
   const type = strip(entry.type || "item")
   if (type === "item") {
     const stack = { id: mapId(entry.name), raw: entry.name, count: 1 }
-    applyFunctions(entry.functions, stack)
-    applyFunctions(pool?.functions, stack)
+    applyFunctions(fnsOf(entry), stack)
+    applyFunctions(fnsOf(pool), stack)
     delete stack.raw
     out.push(stack)
   } else if (type === "loot_table") {
@@ -101,14 +139,14 @@ async function applyEntry(entry, pool, out) {
   } else if (type === "alternatives" || type === "group" || type === "sequence") {
     for (const c of entry.children ?? []) {
       if (type === "alternatives") {
-        if (passes(c.conditions)) { await applyEntry(c, pool, out); break }
+        if (passes(c)) { await applyEntry(c, pool, out); break }
       } else await applyEntry(c, pool, out)
     }
   }
 }
 
 function pickEntry(entries) {
-  const usable = entries.filter(e => passes(e.conditions))
+  const usable = entries.filter(e => passes(e))
   const total = usable.reduce((a, e) => a + (e.weight ?? 1), 0)
   let r = Math.random() * total
   for (const e of usable) {
@@ -119,14 +157,17 @@ function pickEntry(entries) {
 }
 
 async function rollInto(table, out) {
+  const start = out.length
   for (const pool of table.pools ?? []) {
-    if (!passes(pool.conditions)) continue
+    if (!passes(pool)) continue
     const n = Math.round(rollNum(pool.rolls ?? 1, true))
     for (let i = 0; i < n; i++) {
       const entry = pickEntry(pool.entries ?? [])
       if (entry) await applyEntry(entry, pool, out)
     }
   }
+  const fns = fnsOf(table)
+  if (fns.length) for (let i = start; i < out.length; i++) applyFunctions(fns, out[i])
 }
 
 export async function rollLoot(table) {
@@ -160,8 +201,8 @@ async function entryItems(entry, out, seen) {
   } else if (type === "alternatives" || type === "group" || type === "sequence") {
     for (const c of entry.children ?? []) await entryItems(c, out, seen)
   }
-  for (const f of entry.functions ?? []) {
-    if (strip(f.function || "") !== "set_contents") continue
+  for (const f of fnsOf(entry)) {
+    if (fnType(f) !== "set_contents") continue
     for (const nested of f.entries ?? []) await entryItems(nested, out, seen)
   }
 }
@@ -207,23 +248,67 @@ function fmtNum(n) {
   return String(n.value ?? 1)
 }
 
+const pct = n => +(n * 100).toFixed(n >= 0.1 ? 0 : 2) + "% chance"
+
+function chanceOf(node) {
+  for (const c of condsOf(node)) {
+    const t = condType(c)
+    if (t === "random_chance") return c.chance ?? 1
+    if (t === "random_chance_with_enchanted_bonus") return c.unenchanted_chance ?? 1
+    if (t === "table_bonus") return c.chances?.[0] ?? 1
+    if (t === "all_of" || t === "any_of") {
+      for (const term of asList(c.terms).map(normCond).filter(Boolean)) {
+        const v = chanceOf({ condition: term })
+        if (v != null) return v
+      }
+    }
+  }
+  return null
+}
+
+export function toolHint(table) {
+  const kinds = new Set()
+  const scanCond = c => {
+    const k = toolKind(c)
+    if (k) kinds.add(k)
+    for (const term of asList(c.terms).concat(asList(c.term)).map(normCond).filter(Boolean)) scanCond(term)
+  }
+  const scanNode = node => {
+    for (const c of condsOf(node)) scanCond(c)
+    for (const f of fnsOf(node)) scanNode(f)
+  }
+  const scanEntry = e => {
+    scanNode(e)
+    for (const c of e.children ?? []) scanEntry(c)
+  }
+  for (const t of Array.isArray(table) ? table : [table]) {
+    for (const pool of t?.pools ?? []) {
+      scanNode(pool)
+      for (const e of pool.entries ?? []) scanEntry(e)
+    }
+  }
+  return kinds.size ? Array.from(kinds).join(" or ") : null
+}
+
 export function describeTable(table) {
   return (table.pools ?? []).map(pool => {
     const entries = pool.entries ?? []
     const total = entries.reduce((a, e) => a + (e.weight ?? 1), 0) || 1
-    const chance = (pool.conditions ?? []).find(c => strip(c.condition || "") === "random_chance")
+    const chance = chanceOf(pool)
     return {
       rolls: fmtNum(pool.rolls ?? 1),
       bonus: pool.bonus_rolls ? fmtNum(pool.bonus_rolls) : null,
-      chance: chance ? Math.round((chance.chance ?? 1) * 100) + "% chance" : null,
+      chance: chance != null ? pct(chance) : null,
       entries: entries.map(e => {
         const type = strip(e.type || "item")
-        const fns = e.functions ?? []
-        const sc = fns.find(f => strip(f.function) === "set_count")
-        const sd = fns.find(f => strip(f.function) === "set_data")
+        const fns = fnsOf(e)
+        const sc = fns.find(f => fnType(f) === "set_count")
+        const sd = fns.find(f => fnType(f) === "set_data")
         const notes = []
+        const ec = chanceOf(e)
+        if (ec != null) notes.push(pct(ec))
         for (const f of fns) {
-          const fn = strip(f.function || "")
+          const fn = fnType(f)
           if (fn === "enchant_randomly") notes.push("enchanted")
           else if (fn === "enchant_with_levels") notes.push(`enchanted, ${fmtNum(f.levels)} levels`)
           else if (fn === "set_potion") notes.push(strip(f.id))
