@@ -9,6 +9,8 @@ import { useStream } from "./useStream.js"
 import { useWalk } from "./useWalk.js"
 import { THREE } from "../lib.js"
 
+const CLOUD_HEIGHT = 192.33
+
 const packs = usePacks()
 const build = useBuild()
 const scene = useScene()
@@ -21,7 +23,6 @@ const enabled = ref(false)
 
 let handle = null
 let token = 0
-const holder = new THREE.Group()
 
 function worldOrigin() {
   const o = stream.state.session ? stream.origin() : null
@@ -33,8 +34,8 @@ function worldOrigin() {
 function place() {
   if (!handle) return
   const o = worldOrigin()
-  holder.position.set(-(o[0] * 16 + 8), -(o[1] * 16 + 8), -(o[2] * 16 + 8))
-  holder.updateMatrixWorld(true)
+  handle.offset = [o[0] + 0.5, o[2] + 0.5]
+  handle.height = CLOUD_HEIGHT - o[1] - 0.5
   handle.group.visible = sky.skyDim.value === "overworld"
   const left = stream.state.session && !stream.state.on ? stream.exitPosition() : null
   handle.anchor = walk.state.on || stream.state.on ? null : left ? [left.x, left.y, left.z] : stream.state.session ? null : scene.sceneBounds().getCenter(new THREE.Vector3())
@@ -62,9 +63,8 @@ async function apply() {
   if (id !== token) return next.dispose()
   clear()
   handle = next
-  holder.add(handle.group)
   place()
-  scene.setClouds(holder)
+  scene.setClouds(handle.group)
 }
 
 watch([enabled, () => packs.assets.value], apply, { immediate: true })
