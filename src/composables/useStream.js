@@ -918,6 +918,7 @@ export function useStream() {
   return {
     fog: fogRef,
     exitPosition: () => resumeCam,
+    origin: () => origin,
     state: readonly(state),
     provider,
     enter, exit, shutdown, tick, restyle,
