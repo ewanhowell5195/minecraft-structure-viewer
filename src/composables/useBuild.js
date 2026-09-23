@@ -1631,28 +1631,17 @@ async function build(structure = source, refit = true, slice = false, fresh = fa
 
     // flood filled over what actually builds, so a slice relights; oversized scenes skip it
     if (state.lighting === "world" && !state.fullbright && lib.computeSceneLight && (sx + 2) * (sy + 2) * (sz + 2) <= 58000000) {
-      const lightBlocks = []
-      // per-state shared descriptors keep the lib's identity memo effective
-      const lightSC = new Map()
+      const lightPalette = structure.palette.map(e => {
+        if (!e?.id || AIR.test(e.id)) return null
+        const name = legacyNames.get(e.id) ?? e.id
+        return { id: name, properties: fixLegacyProps(name.replace("minecraft:", ""), e.properties) ?? {} }
+      })
       const lraw = structure.raw
-      for (let i = 0; i < lraw.length; i += 4) {
-        const state = lraw[i]
-        let sc = lightSC.get(state)
-        if (sc === undefined) {
-          const e = structure.palette[state]
-          if (!e?.id || AIR.test(e.id)) sc = null
-          else {
-            const name = legacyNames.get(e.id) ?? e.id
-            sc = { id: name, properties: fixLegacyProps(name.replace("minecraft:", ""), e.properties) ?? {} }
-          }
-          lightSC.set(state, sc)
-        }
-        if (!sc) continue
-        lightBlocks.push({ id: sc.id, properties: sc.properties, pos: [lraw[i + 1], lraw[i + 2], lraw[i + 3]] })
-      }
-      if (lightBlocks.length) {
+      let lit = false
+      for (let i = 0; i < lraw.length && !lit; i += 4) lit = !!lightPalette[lraw[i]]
+      if (lit) {
         state.status = "lighting…"
-        newLight = await lib.computeSceneLight(lightBlocks, {
+        newLight = await lib.computeSceneLight({ palette: lightPalette, raw: lraw }, {
           assets,
           dimension: buildDim,
           onProgress: (done, total) => {
@@ -1701,7 +1690,10 @@ async function build(structure = source, refit = true, slice = false, fresh = fa
 
     const braw = structure.raw
     const bcount = braw.length >> 2
-    let inputBlocks = []
+    const inputPalette = []
+    const inputNbt = new Map()
+    let inputRaw = null
+    let total = 0
     const inputIdx = new Int32Array(bcount).fill(-1)
     const stateCache = new Map()
     const scFor = state => {
@@ -1718,7 +1710,8 @@ async function build(structure = source, refit = true, slice = false, fresh = fa
             biome: e.__biome,
             isShelf: /(^|_)shelf$/.test(short),
             isBanner: /(^|_)banner$/.test(short),
-            solid: false
+            solid: false,
+            flat: -1
           }
         }
         stateCache.set(state, sc)
@@ -1765,6 +1758,8 @@ async function build(structure = source, refit = true, slice = false, fresh = fa
     const buriedBits = enc ? new Uint8Array((sx * sy * sz + 7) >> 3) : null
     structure.__buried = buriedBits
     const blockNbt = structure.blockNbt
+    const frames = (structure.entities ?? []).filter(e => typeof e.nbt?.id === "string" && FRAME.test(e.nbt.id))
+    inputRaw = new Int32Array((placeable + frames.length) * 4)
     for (let i = 0, j = 0; i < bcount; i++, j += 4) {
       const sc = stateCache.get(braw[j])
       if (!sc) continue
@@ -1774,47 +1769,58 @@ async function build(structure = source, refit = true, slice = false, fresh = fa
         buriedBits[bi >> 3] |= 1 << (bi & 7)
         continue
       }
-      const entry = { id: sc.name, pos: [x, y, z] }
-      if (sc.props) entry.properties = sc.props
-      if (sc.biome) entry.biome = sc.biome
+      if (sc.flat < 0) {
+        const pe = { id: sc.name }
+        if (sc.props) pe.properties = sc.props
+        if (sc.biome) pe.biome = sc.biome
+        sc.flat = inputPalette.length
+        inputPalette.push(pe)
+      }
       if (sc.isShelf || sc.isBanner) {
         const nbt = blockNbt.get(i)
         if (nbt?.Items && sc.isShelf) {
           const items = nbt.Items.filter(it => typeof it?.id === "string" && !LIVE_ITEM.test(it.id))
-          if (items.length) entry.nbt = { Items: items, align_items_to_bottom: nbt.align_items_to_bottom }
+          if (items.length) inputNbt.set(total, { Items: items, align_items_to_bottom: nbt.align_items_to_bottom })
         }
         if ((nbt?.patterns || nbt?.Patterns) && sc.isBanner) {
-          entry.nbt = { patterns: nbt.patterns ?? nbt.Patterns }
+          inputNbt.set(total, { patterns: nbt.patterns ?? nbt.Patterns })
         }
       }
-      inputIdx[i] = inputBlocks.length
-      inputBlocks.push(entry)
+      inputIdx[i] = total
+      inputRaw[total * 4] = sc.flat
+      inputRaw[total * 4 + 1] = x
+      inputRaw[total * 4 + 2] = y
+      inputRaw[total * 4 + 3] = z
+      total++
     }
     // frame models ride the main scene mesh as blocks (facing blockstates are a
     // lib override); only the contained item stays an entity attachment
-    for (const e of structure.entities ?? []) {
-      const id = e.nbt?.id
-      if (typeof id !== "string" || !FRAME.test(id)) continue
+    for (const e of frames) {
+      const id = e.nbt.id
       const item = e.nbt.Item?.id ?? ""
       const invisible = Number(e.nbt.Invisible ?? 0) === 1
       if (invisible && (!item || LIVE_ITEM.test(item))) continue
       const map = /(^|:)filled_map$/.test(item)
-      const entry = {
+      inputPalette.push({
         id: id.includes("glow") ? "minecraft:glow_item_frame" : "minecraft:item_frame",
-        pos: [Math.floor(e.pos[0]), Math.floor(e.pos[1]), Math.floor(e.pos[2])],
         overlay: true,
         properties: {
           facing: FACING6[Number(e.nbt.Facing ?? 3)] ?? "south",
           map: map ? "true" : "false"
         }
-      }
+      })
       if (typeof item === "string" && item && !LIVE_ITEM.test(item)) {
-        entry.nbt = { Item: e.nbt.Item, ItemRotation: e.nbt.ItemRotation }
-        if (invisible) entry.nbt.Invisible = 1
+        const nbt = { Item: e.nbt.Item, ItemRotation: e.nbt.ItemRotation }
+        if (invisible) nbt.Invisible = 1
+        inputNbt.set(total, nbt)
       }
-      inputBlocks.push(entry)
+      inputRaw[total * 4] = inputPalette.length - 1
+      inputRaw[total * 4 + 1] = Math.floor(e.pos[0])
+      inputRaw[total * 4 + 2] = Math.floor(e.pos[1])
+      inputRaw[total * 4 + 3] = Math.floor(e.pos[2])
+      total++
     }
-    const total = inputBlocks.length
+    const inputBlocks = { palette: inputPalette, raw: inputRaw.subarray(0, total * 4), blockNbt: inputNbt }
 
     const perfCal = loadPerf()
     let warnedOnce = false
