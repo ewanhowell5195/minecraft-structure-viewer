@@ -1630,7 +1630,7 @@ async function build(structure = source, refit = true, slice = false, fresh = fa
     await ensureOcclusionCache(lib, assets)
 
     // flood filled over what actually builds, so a slice relights; oversized scenes skip it
-    if (state.lighting === "world" && !state.fullbright && lib.computeSceneLight && (sx + 2) * (sy + 2) * (sz + 2) <= 48000000) {
+    if (state.lighting === "world" && !state.fullbright && lib.computeSceneLight && (sx + 2) * (sy + 2) * (sz + 2) <= 58000000) {
       const lightBlocks = []
       // per-state shared descriptors keep the lib's identity memo effective
       const lightSC = new Map()

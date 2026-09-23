@@ -115,7 +115,31 @@ function addBaked(scene, geometry, material, matrix, caches) {
 
 // exporters can't represent invisible material groups, and obj can't carry a
 // multi-material mesh at all, so those explode into one mesh per group
+const floatNormalGeos = new WeakMap()
+
+function floatNormals(geometry) {
+  const n = geometry.attributes.normal
+  if (!n || n.array instanceof Float32Array) return geometry
+  let out = floatNormalGeos.get(geometry)
+  if (!out) {
+    const arr = new Float32Array(n.count * 3)
+    for (let i = 0; i < n.count; i++) {
+      arr[i * 3] = n.getX(i)
+      arr[i * 3 + 1] = n.getY(i)
+      arr[i * 3 + 2] = n.getZ(i)
+    }
+    out = new THREE.BufferGeometry()
+    for (const [name, attr] of Object.entries(geometry.attributes)) out.setAttribute(name, attr)
+    out.setAttribute("normal", new THREE.BufferAttribute(arr, 3))
+    out.setIndex(geometry.index)
+    for (const g of geometry.groups) out.addGroup(g.start, g.count, g.materialIndex)
+    floatNormalGeos.set(geometry, out)
+  }
+  return out
+}
+
 function bakeMesh(scene, o, matrix, caches, geometry = o.geometry) {
+  geometry = floatNormals(geometry)
   const mats = [].concat(o.material)
   const groups = geometry.groups
   if (groups.length && ((caches.perGroup && mats.length > 1) || mats.some(m => m?.visible === false))) {
