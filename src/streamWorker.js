@@ -13,6 +13,7 @@ let sharedAtlas = null
 let cfg = null
 let types = null
 let atlasReqSeq = 0
+const REGION_CACHE = 64 * 1048576
 const atlasWaiters = new Map()
 const blockCache = new Map()
 const shippedDoorStates = new Set()
@@ -128,7 +129,7 @@ self.onmessage = async e => {
   const m = e.data
   try {
     if (m.type === "init") {
-      world = await read(m.file, { region: regionCoords(m.file.name), dimension: m.dimension || undefined })
+      world = await read(m.file, { region: regionCoords(m.file.name), dimension: m.dimension || undefined, cacheSize: REGION_CACHE })
       range = { yMin: m.yMin, yMax: m.yMax }
       chunkMap = new Map(world.chunks.map(c => [c.cx + "," + c.cz, c]))
       self.postMessage({ type: "ready", id: m.id })
