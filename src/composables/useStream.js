@@ -266,7 +266,7 @@ async function buildTileWorker(tx, tz, gen) {
     // integration frame instead of stacking it on the revive frame
     await integrateSlot()
     if (gen !== queueGen) { revived.dispose(); return }
-    tile.dyn = await attachTileDynamics({ lib, assets, blocks: msg.dynamics, lightMat, sharedAtlas, lighting: lightingSpec() })
+    tile.dyn = await attachTileDynamics({ lib, assets, blocks: msg.dynamics, light: revived.light, sharedAtlas, lighting: lightingSpec() })
     if (gen !== queueGen) { tile.dyn?.dispose(); revived.dispose(); return }
     if (tile.dyn) {
       bindDaytime(tile.dyn.group)
@@ -398,7 +398,7 @@ async function buildTileMain(tx, tz, gen) {
     tile.doors = await attachTileDoors({ lib, assets, doors, group: handle.group, lightMat, onToggle: () => onTilesChanged?.() })
   }
   if (at.dynamics.length) {
-    tile.dyn = await attachTileDynamics({ lib, assets, blocks: at.dynamics, lightMat, sharedAtlas, lighting: lightingSpec() })
+    tile.dyn = await attachTileDynamics({ lib, assets, blocks: at.dynamics, light: handle.light, sharedAtlas, lighting: lightingSpec() })
     if (gen !== queueGen) { tile.dyn?.dispose(); try { handle.dispose?.() } catch {} return }
     if (tile.dyn) {
       bindDaytime(tile.dyn.group)

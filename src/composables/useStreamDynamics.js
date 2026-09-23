@@ -2,20 +2,16 @@ import * as THREE from "three"
 import { templateBoxes } from "../streamShared.js"
 
 const _wp = new THREE.Vector3()
-const LIGHT_UNIFORMS = ["lightVol", "lightAo", "lightAoMask", "lightVolOrigin", "lightVolSize", "lightVolTex", "lightVolCols"]
 
 // dynamic-model blocks (chests, banners, bells, enchanting tables...) carry
 // live part rigs and pose methods the packed tile format can't ship, so each
 // tile builds them on the main thread as a small live createScene of their
 // own. The group sits outside the frozen tile subtree so poses keep animating,
-// and its materials bind the tile's light volume through a light shim
-export async function attachTileDynamics({ lib, assets, blocks, lightMat, sharedAtlas, lighting }) {
+// and its materials bind the tile's light volume
+export async function attachTileDynamics({ lib, assets, blocks, light, sharedAtlas, lighting }) {
   if (!blocks?.length) return null
-  const u = lightMat?.uniforms
   const world = typeof lighting === "object"
-  const lightShim = world && lighting.light !== false && u?.lightVol ? {
-    uniforms: Object.fromEntries(LIGHT_UNIFORMS.filter(k => u[k]).map(k => [k, u[k]]))
-  } : false
+  const tileLight = world && lighting.light !== false && light ? light : false
   const input = blocks.map(d => {
     const e = { id: d.id, pos: d.pos }
     if (d.properties) e.properties = d.properties
@@ -23,7 +19,7 @@ export async function attachTileDynamics({ lib, assets, blocks, lightMat, shared
     return e
   })
   const handle = await lib.createScene(assets, input, {
-    lighting: world ? { ...lighting, light: lightShim } : lighting,
+    lighting: world ? { ...lighting, light: tileLight } : lighting,
     keepTemplates: true,
     ignoreAtlases: true,
     technical: false,

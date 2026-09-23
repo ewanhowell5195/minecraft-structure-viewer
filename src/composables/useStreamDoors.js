@@ -271,18 +271,10 @@ export function importDoorTemplates(pack, baseMat) {
   }
 }
 
-const SHARED_UNIFORMS = ["daytime", "lightVol", "lightAo", "lightAoMask", "lightVolOrigin", "lightVolSize", "lightVolTex", "lightVolCols",
-  "fogStart", "fogEnd", "fogNear", "fogFar", "fogBase", "skyBase", "fogSkyMix", "fogCenter", "fogFromCamera", "fogSunrise", "fogGlow"]
-
-function cloneMaterialFor(mat, lightMat) {
+function cloneMaterialFor(lib, mat, lightMat) {
   const out = (Array.isArray(mat) ? mat : [mat]).map(m => {
     const c = cloneShaderShared(m)
-    if (c.uniforms && lightMat?.uniforms) {
-      for (const k of SHARED_UNIFORMS) {
-        if (lightMat.uniforms[k]) c.uniforms[k] = lightMat.uniforms[k]
-      }
-      if (lightMat.defines?.LIGHT_VOLUME !== undefined) c.defines = { ...c.defines, LIGHT_VOLUME: "" }
-    }
+    if (lightMat) lib.rebindUniforms(c, lightMat)
     return c
   })
   return Array.isArray(mat) ? out : out[0]
@@ -327,7 +319,7 @@ export async function attachTileDoors({ lib, assets, doors, group, lightMat, onT
     const parts = canonParts.get(key)
     if (!parts) continue
     for (const p of parts) {
-      const im = new THREE.InstancedMesh(p.geometry, cloneMaterialFor(p.material, lightMat), s.count)
+      const im = new THREE.InstancedMesh(p.geometry, cloneMaterialFor(lib, p.material, lightMat), s.count)
       im.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
       im.frustumCulled = false
       for (let i = 0; i < s.count; i++) im.setMatrixAt(i, _dzero)
