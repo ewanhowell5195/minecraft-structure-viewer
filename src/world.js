@@ -1,5 +1,6 @@
 import { read, REAL_AIR, chunkBiomes } from "minecraft-block-reader"
 import { attachBlocks, RawBuilder } from "./blocklist.js"
+import { biomeWindow } from "./biomes.js"
 export { read }
 
 export function regionCoords(name) {
@@ -304,14 +305,59 @@ export async function buildSelection(world, selected, { yMin = -Infinity, yMax =
     if (mem) return mem.usedJSHeapSize > mem.jsHeapSizeLimit * 0.85
     return rb.count * 120 > budget
   }
+  const chunkMap = new Map(chunks.map(c => [c.cx + "," + c.cz, c]))
+  const nbtCache = new Map()
+  const processed = new Set()
+  const chunkNbt = key => {
+    if (processed.has(key)) return world.chunk(chunkMap.get(key))
+    let p = nbtCache.get(key)
+    if (!p) nbtCache.set(key, p = world.chunk(chunkMap.get(key)))
+    return p
+  }
+  const bioCache = new Map()
+  async function bioFor(key) {
+    let b = bioCache.get(key)
+    if (b !== undefined) {
+      bioCache.delete(key)
+      bioCache.set(key, b)
+      return b
+    }
+    b = chunkMap.has(key) ? chunkBiomes(await chunkNbt(key), { yMin: y0, yMax: yTop }) : null
+    bioCache.set(key, b)
+    if (bioCache.size > 256) bioCache.delete(bioCache.keys().next().value)
+    return b
+  }
+  async function neighbourhood(c) {
+    const bios = new Map()
+    const ids = new Set()
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dz = -1; dz <= 1; dz++) {
+        const key = (c.cx + dx) + "," + (c.cz + dz)
+        const b = await bioFor(key)
+        bios.set(key, b)
+        for (const id of b?.palette ?? []) ids.add(id)
+      }
+    }
+    const biomeAt = (wx, wy, wz) => {
+      const b = bios.get((wx >> 4) + "," + (wz >> 4))
+      if (!b) return null
+      const cell = b.grid[(wy - y0) * 256 + (wz & 15) * 16 + (wx & 15)]
+      return cell ? b.palette[cell - 1] : null
+    }
+    return { biomeAt, blend: ids.size ? await tints(ids) : null }
+  }
   let loaded = 0, truncated = false, capped = false
   for (const c of chunks) {
     if (onProgress?.(done++, total) === false) throw new Error("cancelled")
     if (rb.count > cap) { capped = true; break }
     if ((loaded & 15) === 15 && over()) { truncated = true; break }
     loaded++
-    const nbt = await world.chunk(c)
-    const [csx, csz] = chunkShift.get(c.cx + "," + c.cz) ?? [0, 0]
+    const key = c.cx + "," + c.cz
+    const nbt = await chunkNbt(key)
+    const biomes = tints && types ? await neighbourhood(c) : null
+    nbtCache.delete(key)
+    processed.add(key)
+    const [csx, csz] = chunkShift.get(key) ?? [0, 0]
     for (const e of nbt?.Entities ?? []) {
       const p = e.Pos
       // the user's y range, not the terrain's: flying entities sit above the
@@ -326,8 +372,6 @@ export async function buildSelection(world, selected, { yMin = -Infinity, yMax =
       beMap.set(`${x - x0 - csx},${y - y0},${z - z0 - csz}`, plain(rest))
     }
     const bx = c.cx * 16 - x0 - csx, bz = c.cz * 16 - z0 - csz
-    const bio = tints && types ? chunkBiomes(nbt, { yMin: y0, yMax: yTop }) : null
-    const tintMap = bio?.palette.length ? await tints(bio.palette) : null
     for (const s of nbt.sections ?? []) {
       if (s.Y < minSec || s.Y > maxSec || !inRange(s)) continue
       const bs = s.block_states
@@ -335,7 +379,7 @@ export async function buildSelection(world, selected, { yMin = -Infinity, yMax =
       if (!pal) continue
       const sy = s.Y * 16 - y0
       const map = pal.map(e => REAL_AIR.test(e.id) ? -1 : stateFor(e))
-      const tintType = tintMap ? pal.map(e => types(e)) : null
+      const tintType = biomes?.blend ? pal.map(e => types(e)) : null
       const hasBE = beMap.size > 0
       const put = (i, v) => {
         const y = sy + (i >> 8)
@@ -343,8 +387,8 @@ export async function buildSelection(world, selected, { yMin = -Infinity, yMax =
         let st = map[v]
         if (st === -1 || st === undefined) return
         if (tintType?.[v]) {
-          const cell = bio.grid[y * 256 + (i & 255)]
-          const tint = cell ? tintMap.get(bio.palette[cell - 1] + "\0" + tintType[v]) : null
+          const counts = biomeWindow(biomes.biomeAt, c.cx * 16 + (i & 15), y + y0, c.cz * 16 + ((i >> 4) & 15))
+          const tint = counts ? biomes.blend(counts, tintType[v]) : null
           if (tint) st = stateFor(pal[v], tint)
         }
         const px = bx + (i & 15), pz = bz + ((i >> 4) & 15)
@@ -496,11 +540,16 @@ export function assembleTile({ chunkGrids, maps, globalPalette, solidArr, doorAr
     for (const be of cg.beList) beMap.set(be.x + "," + be.y + "," + be.z, be.nbt)
   }
   const tintType = globalPalette.map(e => tints && types ? types(e) : null)
-  const biomeTint = (lx, wy, lz, type) => {
+  const biomeAt = (lx, wy, lz) => {
+    if (lx < 0 || lz < 0 || lx >= W || lz >= W) return null
     const bg = cgAt[(lz >> 4) * chunksAcross + (lx >> 4)]?.biomes
     if (!bg?.grid) return null
     const cell = bg.grid[(wy - yMin) * 256 + (lz & 15) * 16 + (lx & 15)]
-    return cell ? tints.get(bg.palette[cell - 1] + "\0" + type) ?? null : null
+    return cell ? bg.palette[cell - 1] : null
+  }
+  const biomeTint = (lx, wy, lz, type) => {
+    const counts = biomeWindow(biomeAt, lx, wy, lz)
+    return counts ? tints(counts, type) : null
   }
   const wx0 = gcx0 * 16, wz0 = gcz0 * 16
   const own = [], ctx = [], doors = [], dynamics = [], nbts = []
