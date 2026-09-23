@@ -44,7 +44,8 @@ async function apply() {
       daytime: build.state.daytime,
       // no terrain here to hide them the way the game does
       horizonFade: true,
-      version: packs.state.baseId || undefined
+      version: packs.state.baseId || undefined,
+      fog: stream.fog.value ?? undefined
     })
   } catch {
     return
@@ -55,7 +56,7 @@ async function apply() {
   scene.setSky(next.group)
 }
 
-watch([active, () => packs.assets.value, skyDim], apply, { immediate: true })
+watch([active, () => packs.assets.value, skyDim, stream.fog], apply, { immediate: true })
 watch(() => build.state.daytime, v => {
   if (handle) handle.daytime.value = v
 })

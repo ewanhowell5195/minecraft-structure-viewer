@@ -271,11 +271,14 @@ export function importDoorTemplates(pack, baseMat) {
   }
 }
 
+const SHARED_UNIFORMS = ["daytime", "lightVol", "lightVolOrigin", "lightVolSize", "lightVolTex", "lightVolCols",
+  "fogStart", "fogEnd", "fogNear", "fogFar", "fogBase", "skyBase", "fogSkyMix", "fogCenter", "fogFromCamera", "fogSunrise"]
+
 function cloneMaterialFor(mat, lightMat) {
   const out = (Array.isArray(mat) ? mat : [mat]).map(m => {
     const c = cloneShaderShared(m)
     if (c.uniforms && lightMat?.uniforms) {
-      for (const k of ["daytime", "lightVol", "lightVolOrigin", "lightVolSize", "lightVolTex", "lightVolCols"]) {
+      for (const k of SHARED_UNIFORMS) {
         if (lightMat.uniforms[k]) c.uniforms[k] = lightMat.uniforms[k]
       }
       if (lightMat.defines?.LIGHT_VOLUME !== undefined) c.defines = { ...c.defines, LIGHT_VOLUME: "" }

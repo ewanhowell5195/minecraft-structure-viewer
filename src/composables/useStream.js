@@ -1,4 +1,4 @@
-import { reactive, readonly } from "vue"
+import { reactive, readonly, shallowRef } from "vue"
 import * as THREE from "three"
 import { useScene } from "./useScene.js"
 import { useBuild, DEFAULT_DAYTIME } from "./useBuild.js"
@@ -17,8 +17,11 @@ import { isInspectable } from "../loot.js"
 if (import.meta.hot) import.meta.hot.decline()
 
 const TILE = 2
-const RENDER_DIST = 3
-const DISPOSE_DIST = RENDER_DIST + 1
+const RENDER_CHUNKS = 8
+const LOAD_BLOCKS = RENDER_CHUNKS * 16
+const RENDER_DIST = Math.ceil(RENDER_CHUNKS / TILE)
+const DISPOSE_BLOCKS = LOAD_BLOCKS + TILE * 16
+const REPUMP_BLOCKS = 8
 
 // resolved lazily: instantiating these at module init closes an import cycle
 let _scene = null, _build = null, _packs = null
@@ -42,7 +45,19 @@ let daytime = DEFAULT_DAYTIME
 let dayU = null
 let lightOff = false
 let lightMode = "world"
-const lightingSpec = () => lightMode !== "world" ? lightMode : lightOff ? { dimension, daytime, light: false } : { dimension, daytime }
+let fog = null
+const fogRef = shallowRef(null)
+function lightingSpec(forWorker = false) {
+  if (lightMode !== "world") return lightMode
+  const spec = { dimension, daytime, fog: forWorker ? RENDER_CHUNKS : fog }
+  if (lightOff) spec.light = false
+  return spec
+}
+
+function makeFog(anchor = null) {
+  fog = lib.createFog({ distance: RENDER_CHUNKS, anchor }, dimension)
+  fogRef.value = fog
+}
 let chunkMap = null
 let tileSet = null
 let buildWorkers = []
@@ -55,6 +70,8 @@ let building = false
 let rebuilding = false
 const live = () => state.on || rebuilding
 let playerTile = null
+let playerPos = null
+let pumpedAt = null
 let onTilesChanged = null
 
 const EMPTY = { size: [1, 1, 1], palette: [], blocks: [], entities: [] }
@@ -98,7 +115,7 @@ function startBuildWorkers(file, dim, count = Math.min(3, Math.max(1, Math.floor
           version: packs2().state.baseId || undefined,
           occl: occlSeed,
           layout: atlasLayout,
-          cfg: { origin, tile: TILE, dimension, daytime, lighting: lightingSpec() }
+          cfg: { origin, tile: TILE, dimension, daytime, lighting: lightingSpec(true) }
         })
         return
       }
@@ -196,7 +213,10 @@ const integrateSlot = () => new Promise(res => { integrateQueue.push(res); pumpI
 function bindDaytime(group) {
   group.traverse(o => {
     if (!o.isMesh) return
-    for (const m of [].concat(o.material)) if (m?.uniforms?.daytime) m.uniforms.daytime = dayU
+    for (const m of [].concat(o.material)) {
+      if (m?.uniforms?.daytime) m.uniforms.daytime = dayU
+      if (fog && m?.uniforms?.fogFar) for (const k in fog.uniforms) m.uniforms[k] = fog.uniforms[k]
+    }
   })
 }
 
@@ -416,6 +436,18 @@ function disposeTile(k) {
 const _frustum = new THREE.Frustum()
 const _frustumM = new THREE.Matrix4()
 const _tileBox = new THREE.Box3()
+// distance in blocks from the player to a tile's footprint
+function tileGap(tx, tz, wx, wz) {
+  const span = TILE * 16
+  const ex = Math.max(tx * span - wx, 0, wx - (tx + 1) * span)
+  const ez = Math.max(tz * span - wz, 0, wz - (tz + 1) * span)
+  return Math.hypot(ex, ez)
+}
+
+const playerAt = () => playerPos ?? [(playerTile[0] + 0.5) * TILE * 16, (playerTile[1] + 0.5) * TILE * 16]
+
+// tiles load by block distance from the player, not by tile index, so the
+// loaded edge is a circle at the fog distance in every direction
 function desired(tx, tz) {
   const cam = sceneApi2().perspCam
   let fr = null
@@ -424,10 +456,12 @@ function desired(tx, tz) {
     _frustum.setFromProjectionMatrix(_frustumM.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse))
     fr = _frustum
   }
+  const [wx, wz] = playerAt()
   const out = []
-  for (let dx = -RENDER_DIST; dx <= RENDER_DIST; dx++) {
-    for (let dz = -RENDER_DIST; dz <= RENDER_DIST; dz++) {
-      if (dx * dx + dz * dz > (RENDER_DIST + 0.5) ** 2) continue
+  for (let dx = -RENDER_DIST - 1; dx <= RENDER_DIST + 1; dx++) {
+    for (let dz = -RENDER_DIST - 1; dz <= RENDER_DIST + 1; dz++) {
+      const gap = tileGap(tx + dx, tz + dz, wx, wz)
+      if (gap > LOAD_BLOCKS) continue
       const k = ckey(tx + dx, tz + dz)
       if (!tileSet.has(k) || tiles.has(k)) continue
       let vis = 0
@@ -438,7 +472,7 @@ function desired(tx, tz) {
         _tileBox.max.set(bx + TILE * 256, (yRange.yMax + 1) * 16, bz + TILE * 256)
         vis = fr.intersectsBox(_tileBox) ? 0 : 1
       }
-      out.push([tx + dx, tz + dz, vis * 1000 + dx * dx + dz * dz])
+      out.push([tx + dx, tz + dz, vis * 1000 + gap])
     }
   }
   out.sort((a, b) => a[2] - b[2])
@@ -456,10 +490,10 @@ async function pump() {
       // disposals free GPU resources, so they pace through the same per-frame
       // slot as integrations: a burst of tiles crossing the dispose radius at
       // flight speed must not dump a dozen deletions into a choked GPU queue
+      const [wx, wz] = playerAt()
       for (const k of Array.from(tiles.keys())) {
         const [ttx, ttz] = k.split(",").map(Number)
-        const dx = ttx - playerTile[0], dz = ttz - playerTile[1]
-        if (dx * dx + dz * dz > (DISPOSE_DIST + 0.5) ** 2) {
+        if (tileGap(ttx, ttz, wx, wz) > DISPOSE_BLOCKS) {
           await integrateSlot()
           if (!live() || gen !== queueGen) break
           disposeTile(k)
@@ -719,6 +753,7 @@ function restyle() {
   queueGen++
   for (const k of Array.from(tiles.keys())) disposeTile(k)
   applyLighting()
+  makeFog(fog?.anchor ?? null)
   stopWorkers()
   const w = useWorld()
   const wfile = w.getWorldFile()
@@ -734,6 +769,7 @@ async function enter(spawn) {
       c.rotation.set(resumeCam.pitch, resumeCam.yaw, 0, "YXZ")
       c.updateMatrixWorld(true)
     }
+    if (fog) fog.anchor = null
     state.on = true
     pump()
     return true
@@ -778,6 +814,7 @@ async function enter(spawn) {
     // frame time while the world spins up
     await buildApi2().build({ ...EMPTY, dimension: worldDim }, false, false, true)
     applyLighting()
+    makeFog()
     sceneApi2().setGrids([])
 
     // animate: true makes the lib tick the atlas's animated regions at 20Hz
@@ -830,8 +867,11 @@ function tick(pos) {
   const gx = Math.round(pos.x / 16), gz = Math.round(pos.z / 16)
   const [cx, cz] = chunkOf(gx + origin[0], gz + origin[2])
   const tx = Math.floor(cx / TILE), tz = Math.floor(cz / TILE)
-  if (!playerTile || playerTile[0] !== tx || playerTile[1] !== tz) {
+  playerPos = [pos.x / 16 + origin[0], pos.z / 16 + origin[2]]
+  const moved = !pumpedAt || Math.hypot(playerPos[0] - pumpedAt[0], playerPos[1] - pumpedAt[1]) >= REPUMP_BLOCKS
+  if (!playerTile || playerTile[0] !== tx || playerTile[1] !== tz || moved) {
     playerTile = [tx, tz]
+    pumpedAt = playerPos
     pump()
   }
 }
@@ -844,6 +884,7 @@ function exit(cam) {
   if (!state.on) return
   state.on = false
   resumeCam = cam ?? null
+  if (fog) fog.anchor = resumeCam ? [resumeCam.x, resumeCam.y, resumeCam.z] : null
 }
 
 function shutdown() {
@@ -851,6 +892,8 @@ function shutdown() {
   state.session = false
   queueGen++
   playerTile = null
+  playerPos = null
+  pumpedAt = null
   stopWorkers()
   sharedAtlas?.dispose()
   sharedAtlas = null
@@ -862,10 +905,14 @@ function shutdown() {
   root = null
   occlSeed = null
   resumeCam = null
+  fog = null
+  fogRef.value = null
 }
 
 export function useStream() {
   return {
+    fog: fogRef,
+    exitPosition: () => resumeCam,
     state: readonly(state),
     provider,
     enter, exit, shutdown, tick, restyle,
