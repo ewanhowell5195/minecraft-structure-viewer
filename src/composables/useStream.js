@@ -6,7 +6,8 @@ import { useWorld } from "./useWorld.js"
 import { usePacks } from "./usePacks.js"
 import { useLock } from "./useLock.js"
 import { loadLibrary } from "../lib.js"
-import { chunkGrid, mergeTilePalettes, assembleTile } from "../world.js"
+import { chunkGrid, mergeTilePalettes, assembleTile, biomeIds } from "../world.js"
+import { biomeTints, colormapTypes } from "../biomes.js"
 import { attachTileDoors, importDoorTemplates, doorShape, rayBoxT, OPENABLE } from "./useStreamDoors.js"
 import { softFor, solidFor, templateBoxes, bellRingDir, DYNAMIC_BLOCKS } from "../streamShared.js"
 import { attachTileDynamics } from "./useStreamDynamics.js"
@@ -321,10 +322,13 @@ async function buildTileMain(tx, tz, gen) {
     solidArr[i + 1] = (await solidFor(lib, assets, e.id, e.properties)) ? 1 : 0
   }
   if (gen !== queueGen) return
+  const tints = await biomeTints(lib, assets, biomeIds(chunkGrids))
+  if (gen !== queueGen) return
   const at = assembleTile({
     chunkGrids, maps, globalPalette, solidArr, doorArr, dynArr, gcx0: x0 - 1, gcz0: z0 - 1,
     chunksAcross: TILE + 2, yMin: yRange.yMin, yMax: yRange.yMax, origin,
-    ownTest: (lx, lz) => lx >= 16 && lz >= 16 && lx < (TILE + 1) * 16 && lz < (TILE + 1) * 16
+    ownTest: (lx, lz) => lx >= 16 && lz >= 16 && lx < (TILE + 1) * 16 && lz < (TILE + 1) * 16,
+    tints, types: colormapTypes(lib)
   })
   const input = at.input, tileCount = at.tileCount, doors = at.doors
   if (!tileCount) {

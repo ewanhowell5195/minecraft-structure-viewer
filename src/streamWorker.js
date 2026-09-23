@@ -1,5 +1,6 @@
-import { read, regionCoords, chunkGrid, mergeTilePalettes, assembleTile } from "./world.js"
+import { read, regionCoords, chunkGrid, mergeTilePalettes, assembleTile, biomeIds } from "./world.js"
 import { loadLibrary } from "./lib.js"
+import { biomeTints, colormapTypes } from "./biomes.js"
 import { OPENABLE, packDoorTemplates } from "./composables/useStreamDoors.js"
 import { softFor, solidFor, templateBoxes, DYNAMIC_BLOCKS } from "./streamShared.js"
 
@@ -10,6 +11,7 @@ let lib = null
 let assets = null
 let sharedAtlas = null
 let cfg = null
+let types = null
 let atlasReqSeq = 0
 const atlasWaiters = new Map()
 const blockCache = new Map()
@@ -52,10 +54,13 @@ async function buildTile(m) {
     dynArr[i + 1] = DYNAMIC_BLOCKS.test(e.id) ? 1 : 0
     solidArr[i + 1] = (await solidFor(lib, assets, e.id, e.properties)) ? 1 : 0
   }
+  types ??= colormapTypes(lib)
+  const tints = await biomeTints(lib, assets, biomeIds(chunkGrids))
   const at = assembleTile({
     chunkGrids, maps, globalPalette, solidArr, doorArr, dynArr, gcx0, gcz0,
     chunksAcross: TILE + 2, yMin: range.yMin, yMax: range.yMax, origin,
-    ownTest: (lx, lz) => lx >= 16 && lz >= 16 && lx < (TILE + 1) * 16 && lz < (TILE + 1) * 16
+    ownTest: (lx, lz) => lx >= 16 && lz >= 16 && lx < (TILE + 1) * 16 && lz < (TILE + 1) * 16,
+    tints, types
   })
   const input = at.input
   const tileCount = at.tileCount

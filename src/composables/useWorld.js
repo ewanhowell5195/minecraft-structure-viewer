@@ -9,6 +9,16 @@ import { useStructures } from "./useStructures.js"
 import { cacheFile, uncache } from "../userCache.js"
 import { setParams } from "../params.js"
 import { debounce } from "../yield.js"
+import { loadLibrary } from "../lib.js"
+import { usePacks } from "./usePacks.js"
+import { biomeTints, colormapTypes } from "../biomes.js"
+
+async function biomeOptions() {
+  const assets = usePacks().assets.value
+  if (!assets) return {}
+  const lib = await loadLibrary()
+  return { tints: ids => biomeTints(lib, assets, ids), types: colormapTypes(lib) }
+}
 
 let lastSelection = null
 let worldFile = null
@@ -359,7 +369,7 @@ async function restoreLoad(wy, wsel, wdim) {
   if (!selected.size) return
   state.focusRev++
   let probe
-  try { probe = await buildSelection(world, selected, { yMin: state.yMin, yMax: state.yMax, cap: 24000 }) } catch (err) {
+  try { probe = await buildSelection(world, selected, { yMin: state.yMin, yMax: state.yMax, cap: 24000, ...await biomeOptions() }) } catch (err) {
     if (err?.oldChunks) state.oldWorld = true
     return
   }
@@ -392,7 +402,7 @@ async function loadSelected(force = false) {
   sApi.setReading({ done: 0, total: 0, label: "reading chunks" })
   try {
     lastSelection = null
-    const s = await buildSelection(world, selected, { yMin: state.yMin, yMax: state.yMax, budget: ios ? 0.6e9 : 1.6e9 },
+    const s = await buildSelection(world, selected, { yMin: state.yMin, yMax: state.yMax, budget: ios ? 0.6e9 : 1.6e9, ...await biomeOptions() },
       (done, total) => {
         sApi.setReading({ done, total, label: "reading chunks" })
         return !sApi.readCancelled()

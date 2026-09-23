@@ -1,4 +1,4 @@
-import { read, REAL_AIR } from "minecraft-block-reader"
+import { read, REAL_AIR, chunkBiomes } from "minecraft-block-reader"
 import { attachBlocks, RawBuilder } from "./blocklist.js"
 export { read }
 
@@ -209,7 +209,7 @@ function axisCollapse(intervals, gap) {
   }
 }
 
-export async function buildSelection(world, selected, { yMin = -Infinity, yMax = Infinity, budget = Infinity, cap = Infinity } = {}, onProgress) {
+export async function buildSelection(world, selected, { yMin = -Infinity, yMax = Infinity, budget = Infinity, cap = Infinity, tints = null, types = null } = {}, onProgress) {
   const chunks = world.chunks.filter(c => selected.has(c.cx + "," + c.cz))
   if (!chunks.length) throw new Error("no chunks selected")
 
@@ -279,12 +279,14 @@ export async function buildSelection(world, selected, { yMin = -Infinity, yMax =
   const yTop = Math.min(maxSec * 16 + 15, Math.floor(yMax))
 
   const palette = [], palIdx = new Map()
-  const stateFor = e => {
-    const k = e.id + "|" + JSON.stringify(e.properties ?? null)
+  const stateFor = (e, tint) => {
+    const k = e.id + "|" + JSON.stringify(e.properties ?? null) + (tint ? "|" + tint.tint : "")
     let i = palIdx.get(k)
     if (i === undefined) {
       i = palette.length
-      palette.push(e.properties ? { id: e.id, properties: e.properties } : { id: e.id })
+      const entry = e.properties ? { id: e.id, properties: e.properties } : { id: e.id }
+      if (tint) entry.__biome = tint
+      palette.push(entry)
       palIdx.set(k, i)
     }
     return i
@@ -324,6 +326,8 @@ export async function buildSelection(world, selected, { yMin = -Infinity, yMax =
       beMap.set(`${x - x0 - csx},${y - y0},${z - z0 - csz}`, plain(rest))
     }
     const bx = c.cx * 16 - x0 - csx, bz = c.cz * 16 - z0 - csz
+    const bio = tints && types ? chunkBiomes(nbt, { yMin: y0, yMax: yTop }) : null
+    const tintMap = bio?.palette.length ? await tints(bio.palette) : null
     for (const s of nbt.sections ?? []) {
       if (s.Y < minSec || s.Y > maxSec || !inRange(s)) continue
       const bs = s.block_states
@@ -331,16 +335,24 @@ export async function buildSelection(world, selected, { yMin = -Infinity, yMax =
       if (!pal) continue
       const sy = s.Y * 16 - y0
       const map = pal.map(e => REAL_AIR.test(e.id) ? -1 : stateFor(e))
+      const tintType = tintMap ? pal.map(e => types(e)) : null
       const hasBE = beMap.size > 0
-      const put = (i, st) => {
+      const put = (i, v) => {
         const y = sy + (i >> 8)
         if (y < 0 || y > relTop) return
+        let st = map[v]
+        if (st === -1 || st === undefined) return
+        if (tintType?.[v]) {
+          const cell = bio.grid[y * 256 + (i & 255)]
+          const tint = cell ? tintMap.get(bio.palette[cell - 1] + "\0" + tintType[v]) : null
+          if (tint) st = stateFor(pal[v], tint)
+        }
         const px = bx + (i & 15), pz = bz + ((i >> 4) & 15)
         rb.push(st, px, y, pz, hasBE ? beMap.get(px + "," + y + "," + pz) : undefined)
       }
       if (pal.length === 1) {
         if (map[0] === -1) continue
-        for (let i = 0; i < 4096; i++) put(i, map[0])
+        for (let i = 0; i < 4096; i++) put(i, 0)
         continue
       }
       // indices are bit-packed low-to-high, spanning long boundaries before
@@ -355,8 +367,7 @@ export async function buildSelection(world, selected, { yMin = -Infinity, yMax =
           if (off + bits > 32) v |= data[w + 1] << (32 - off)
           off += bits
           if (off >= 32) { w += off >>> 5; off &= 31 }
-          const st = map[v & maskN]
-          if (st !== -1 && st !== undefined) put(i, st)
+          put(i, v & maskN)
         }
         continue
       }
@@ -371,8 +382,7 @@ export async function buildSelection(world, selected, { yMin = -Infinity, yMax =
           if (off + bits <= 32) v = (lo >>> off) & maskN
           else if (off >= 32) v = (hi >>> (off - 32)) & maskN
           else v = ((lo >>> off) | (hi << (32 - off))) & maskN
-          const st = map[v]
-          if (st !== -1 && st !== undefined) put(i, st)
+          put(i, v)
         }
       }
     }
@@ -409,7 +419,7 @@ export async function buildSelection(world, selected, { yMin = -Infinity, yMax =
 }
 
 export async function chunkGrid(world, c, { yMin, yMax }) {
-  const { palette, grid, blockEntities, empty } = await world.chunkGrid(c, { yMin, yMax })
+  const { palette, grid, blockEntities, empty, biomes } = await world.chunkGrid(c, { yMin, yMax })
   return {
     cx: c.cx,
     cz: c.cz,
@@ -418,9 +428,17 @@ export async function chunkGrid(world, c, { yMin, yMax }) {
     h: yMax - yMin + 1,
     yMin,
     beList: blockEntities.map(b => ({ x: b.x, y: b.y, z: b.z, nbt: plain(b.nbt) })),
+    biomes,
     empty
   }
 }
+
+export function biomeIds(chunkGrids) {
+  const ids = new Set()
+  for (const cg of chunkGrids) for (const id of cg.biomes?.palette ?? []) ids.add(id)
+  return ids
+}
+
 
 export function mergeTilePalettes(chunkGrids) {
   const globalPalette = []
@@ -444,13 +462,15 @@ export function mergeTilePalettes(chunkGrids) {
 }
 
 // solidArr/doorArr/dynArr are per global-palette-index (+1) flags
-export function assembleTile({ chunkGrids, maps, globalPalette, solidArr, doorArr, dynArr, gcx0, gcz0, chunksAcross, yMin, yMax, origin, ownTest }) {
+export function assembleTile({ chunkGrids, maps, globalPalette, solidArr, doorArr, dynArr, gcx0, gcz0, chunksAcross, yMin, yMax, origin, ownTest, tints, types }) {
   const W = chunksAcross * 16
   const H = yMax - yMin + 1
   const tile = new Uint16Array(W * H * W)
+  const cgAt = new Array(chunksAcross * chunksAcross).fill(null)
   for (let n = 0; n < chunkGrids.length; n++) {
     const cg = chunkGrids[n]
     if (cg.empty) continue
+    cgAt[(cg.cz - gcz0) * chunksAcross + (cg.cx - gcx0)] = cg
     const m = maps[n]
     const bx = (cg.cx - gcx0) * 16, bz = (cg.cz - gcz0) * 16
     for (let ly = 0; ly < H; ly++) {
@@ -474,6 +494,13 @@ export function assembleTile({ chunkGrids, maps, globalPalette, solidArr, doorAr
   const beMap = new Map()
   for (const cg of chunkGrids) {
     for (const be of cg.beList) beMap.set(be.x + "," + be.y + "," + be.z, be.nbt)
+  }
+  const tintType = globalPalette.map(e => tints && types ? types(e) : null)
+  const biomeTint = (lx, wy, lz, type) => {
+    const bg = cgAt[(lz >> 4) * chunksAcross + (lx >> 4)]?.biomes
+    if (!bg?.grid) return null
+    const cell = bg.grid[(wy - yMin) * 256 + (lz & 15) * 16 + (lx & 15)]
+    return cell ? tints.get(bg.palette[cell - 1] + "\0" + type) ?? null : null
   }
   const wx0 = gcx0 * 16, wz0 = gcz0 * 16
   const own = [], ctx = [], doors = [], dynamics = [], nbts = []
@@ -501,6 +528,10 @@ export function assembleTile({ chunkGrids, maps, globalPalette, solidArr, doorAr
         }
         const entry = { id: e.id, pos }
         if (e.properties) entry.properties = e.properties
+        if (tintType[gi - 1]) {
+          const tint = biomeTint(lx, wy, lz, tintType[gi - 1])
+          if (tint) entry.biome = tint
+        }
         if (isOwn) {
           if (nb) entry.nbt = nb
           own.push(entry)
