@@ -232,7 +232,7 @@ async function buildTileWorker(tx, tz, gen) {
   }
   await integrateSlot()
   if (gen !== queueGen) return
-  const revived = lib.reviveScene(msg.payload, { atlas: sharedAtlas, releaseArrays: true })
+  const revived = lib.reviveScene(msg.payload, { atlas: sharedAtlas, release: true })
   bindDaytime(revived.group)
   const ox = tx * TILE * 16 - origin[0], oz = tz * TILE * 16 - origin[2]
   const oy = yRange.yMin, gh = yRange.yMax - yRange.yMin + 1
