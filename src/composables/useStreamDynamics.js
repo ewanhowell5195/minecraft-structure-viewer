@@ -2,6 +2,7 @@ import * as THREE from "three"
 import { templateBoxes } from "../streamShared.js"
 
 const _wp = new THREE.Vector3()
+const LIGHT_UNIFORMS = ["lightVol", "lightAo", "lightAoMask", "lightVolOrigin", "lightVolSize", "lightVolTex", "lightVolCols"]
 
 // dynamic-model blocks (chests, banners, bells, enchanting tables...) carry
 // live part rigs and pose methods the packed tile format can't ship, so each
@@ -13,10 +14,7 @@ export async function attachTileDynamics({ lib, assets, blocks, lightMat, shared
   const u = lightMat?.uniforms
   const world = typeof lighting === "object"
   const lightShim = world && lighting.light !== false && u?.lightVol ? {
-    uniforms: {
-      lightVol: u.lightVol, lightVolOrigin: u.lightVolOrigin, lightVolSize: u.lightVolSize,
-      lightVolTex: u.lightVolTex, lightVolCols: u.lightVolCols
-    }
+    uniforms: Object.fromEntries(LIGHT_UNIFORMS.filter(k => u[k]).map(k => [k, u[k]]))
   } : false
   const input = blocks.map(d => {
     const e = { id: d.id, pos: d.pos }

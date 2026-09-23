@@ -271,7 +271,7 @@ export function importDoorTemplates(pack, baseMat) {
   }
 }
 
-const SHARED_UNIFORMS = ["daytime", "lightVol", "lightVolOrigin", "lightVolSize", "lightVolTex", "lightVolCols",
+const SHARED_UNIFORMS = ["daytime", "lightVol", "lightAo", "lightAoMask", "lightVolOrigin", "lightVolSize", "lightVolTex", "lightVolCols",
   "fogStart", "fogEnd", "fogNear", "fogFar", "fogBase", "skyBase", "fogSkyMix", "fogCenter", "fogFromCamera", "fogSunrise"]
 
 function cloneMaterialFor(mat, lightMat) {
