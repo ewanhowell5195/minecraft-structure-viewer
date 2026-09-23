@@ -344,6 +344,7 @@ async function buildTileMain(tx, tz, gen) {
     sliceMs: 8,
     sharedAtlas,
     externalOcclusion: at.occludes,
+    release: true,
     shouldCancel: () => gen !== queueGen
   })
   if (!handle || gen !== queueGen) {
