@@ -76,6 +76,7 @@ async function buildTile(m) {
     sliceMs: 10000,
     batchDynamics: false,
     sharedAtlas,
+    randomOffset: { origin: [origin[0], origin[2]] },
     externalOcclusion: at.occludes
   })
   if (!handle) { self.postMessage({ type: "tile", id: m.id, empty: true }); return }

@@ -344,6 +344,7 @@ async function buildTileMain(tx, tz, gen) {
     sliceMs: 8,
     sharedAtlas,
     externalOcclusion: at.occludes,
+    randomOffset: { origin: [origin[0], origin[2]] },
     release: true,
     shouldCancel: () => gen !== queueGen
   })

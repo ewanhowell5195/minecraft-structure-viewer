@@ -1856,6 +1856,7 @@ async function build(structure = source, refit = true, slice = false, fresh = fa
       ignoreAtlases: true,
       technical: true,
       animate: false,
+      randomOffset: { origin: structure.worldOrigin ? [structure.worldOrigin[0], structure.worldOrigin[2]] : [0, 0] },
       externalOcclusion: buriedOcclusion,
       onProgress: (stage, done, tot) => {
         if (stage.name === "optimize") {
