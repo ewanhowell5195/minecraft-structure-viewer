@@ -29,8 +29,10 @@ a standalone Vue 3 + Vite app.
   dawn to midnight, alt+scroll scrubs it, and F11 puts the viewport fullscreen.
 - World mode: open a world save, browse its map, and build any chunk selection;
   Explore World streams the open world around you in walk mode (tiles build in
-  workers as you move, docs/STREAMING.md), and exiting leaves you orbiting the
-  loaded chunks with the session resumable where you left off.
+  workers as you move, docs/STREAMING.md) with the game's fog at the streaming
+  distance, and exiting leaves you orbiting the loaded chunks with the session
+  resumable where you left off; the fog and clouds stay anchored where you
+  stepped out.
 - Compare mode: with one structure loaded, right-click another in the tree to
   swipe between the two. Both are built and drawn under the one camera, split by
   a divider you drag, so the halves line up block for block. Walking, the blocks
@@ -64,7 +66,8 @@ a standalone Vue 3 + Vite app.
   own sun and moon (fading out below the horizon, since there's no terrain here
   to hide them), the star field and the sunrise glow, all following the Daytime
   setting. Always on in walk mode, and on by default when orbiting, where
-  the View toggle turns it off.
+  the View toggle turns it off. Clouds are a separate toggle, off by default:
+  the pack's cloud texture at the game's height, drifting like in game.
 - Interactions: containers open their loot modal in orbit and walk mode alike
   (chest lids pose, decorated pots wobble and show their held item or roll their
   loot table), enchanting books track you, and bells ring where you whack them.

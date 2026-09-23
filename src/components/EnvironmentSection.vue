@@ -3,10 +3,12 @@ import { computed, ref } from "vue"
 import { useBuild, DEFAULT_DAYTIME } from "../composables/useBuild.js"
 import { useLock } from "../composables/useLock.js"
 import { useSky } from "../composables/useSky.js"
+import { useClouds } from "../composables/useClouds.js"
 
 const { state: buildState } = useBuild()
 const { locked } = useLock()
 const { enabled: sky, dimension: skyDimension, lightDim } = useSky()
+const { enabled: clouds } = useClouds()
 const collapsed = ref(false)
 
 const lighting = computed({
@@ -39,6 +41,10 @@ function setDaytime(input) {
       <label class="check" title="The game's sky, sun, moon and stars. Always on while walking">
         <input type="checkbox" v-model="sky">
         Sky
+      </label>
+      <label class="check" title="The game's clouds, drifting at their in-game height">
+        <input type="checkbox" v-model="clouds">
+        Clouds
       </label>
       <label v-if="sky" class="check dim" title="Auto follows the structure's own dimension">
         Dimension

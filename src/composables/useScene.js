@@ -45,6 +45,7 @@ const wireMat = new THREE.MeshBasicMaterial({ wireframe: true, color: 0x9fd0ff }
 wireMat.clippingPlanes = SLICE_PLANES
 
 let skyGroup = null
+let cloudsGroup = null
 // ortho has no horizon, so the sky borrows a perspective camera framed to the
 // same angle: switching cameras leaves it in place, and zoom acts like a lens
 const skyCam = new THREE.PerspectiveCamera(FOV, 1, 2, 5000)
@@ -67,6 +68,12 @@ function setSky(group) {
   skyGroup?.removeFromParent()
   skyGroup = group ?? null
   if (skyGroup) skyScene.add(skyGroup)
+}
+
+function setClouds(group) {
+  cloudsGroup?.removeFromParent()
+  cloudsGroup = group ?? null
+  if (cloudsGroup) scene.add(cloudsGroup)
 }
 
 let compare = null
@@ -364,9 +371,11 @@ function sceneBounds() {
 }
 
 const sceneSphere = new THREE.Sphere(new THREE.Vector3(), 300)
+const CLOUD_FADE = 2048 * 16 + 1000
 const refreshSphere = () => sceneBounds().getBoundingSphere(sceneSphere)
 function updateClips() {
-  const far = Math.max((camera.position.distanceTo(sceneSphere.center) + sceneSphere.radius) * 1.2, 5000)
+  const cloudFar = cloudsGroup?.visible ? camera.position.distanceTo(cloudsGroup.children[0].position) + CLOUD_FADE : 0
+  const far = Math.max((camera.position.distanceTo(sceneSphere.center) + sceneSphere.radius) * 1.2, 5000, cloudFar)
   if (Math.abs(camera.far - far) > far * 0.01) {
     camera.far = far
     camera.updateProjectionMatrix()
@@ -512,6 +521,8 @@ function renderShot({ size = 1920, aa = false, angle = "current", crop = false, 
   const savedQuat = camera.quaternion.clone()
   const savedSky = skyGroup
   if (!sky) skyGroup = null
+  const cloudsShown = cloudsGroup?.visible ?? false
+  if (!sky && cloudsGroup) cloudsGroup.visible = false
   shooting = true
   const hidden = []
   scene.traverse(o => {
@@ -553,6 +564,7 @@ function renderShot({ size = 1920, aa = false, angle = "current", crop = false, 
   for (const o of hidden) o.visible = true
   shooting = false
   skyGroup = savedSky
+  if (cloudsGroup) cloudsGroup.visible = cloudsShown
   if (dir) {
     camera.position.copy(savedPos)
     camera.quaternion.copy(savedQuat)
@@ -724,7 +736,7 @@ function setOrthoManual(on) {
 
 export function useScene() {
   return {
-    view, scene, overlayScene, init, fit, setGrids, sceneBounds, setOrtho, setOrthoManual, setSky, setCompare,
+    view, scene, overlayScene, init, fit, setGrids, sceneBounds, setOrtho, setOrthoManual, setSky, setClouds, setCompare,
     takeGrid, disposeGrid, setGridOffset, renderShot, maxShotSize, refreshBounds: refreshSphere,
     makeHighlight,
     makeOutline,
