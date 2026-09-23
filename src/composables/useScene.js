@@ -725,7 +725,7 @@ function setOrthoManual(on) {
 export function useScene() {
   return {
     view, scene, overlayScene, init, fit, setGrids, sceneBounds, setOrtho, setOrthoManual, setSky, setCompare,
-    takeGrid, disposeGrid, setGridOffset, renderShot, maxShotSize,
+    takeGrid, disposeGrid, setGridOffset, renderShot, maxShotSize, refreshBounds: refreshSphere,
     makeHighlight,
     makeOutline,
     getGridRects: () => gridRects,

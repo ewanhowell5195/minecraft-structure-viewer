@@ -256,6 +256,7 @@ async function buildTileWorker(tx, tz, gen) {
   try { await sceneApi2().renderer.compileAsync(revived.group, sceneApi2().perspCam, sceneApi2().scene) } catch {}
   if (gen !== queueGen) { revived.dispose(); return }
   root.add(revived.group)
+  sceneApi2().refreshBounds()
   // tiles never move, so drop their subtree from three's per-frame matrix walk
   revived.group.updateWorldMatrix(true, true)
   revived.group.matrixWorldAutoUpdate = false
@@ -383,6 +384,7 @@ async function buildTileMain(tx, tz, gen) {
   try { await sceneApi2().renderer.compileAsync(handle.group, sceneApi2().perspCam, sceneApi2().scene) } catch {}
   if (gen !== queueGen) { try { handle.dispose?.() } catch {} return }
   root.add(handle.group)
+  sceneApi2().refreshBounds()
   handle.group.updateWorldMatrix(true, true)
   handle.group.matrixWorldAutoUpdate = false
   tiles.set(ckey(tx, tz), tile)
@@ -402,6 +404,7 @@ function disposeTile(k) {
   if (t.handle) {
     t.group?.removeFromParent()
     try { t.handle.dispose?.() } catch {}
+    sceneApi2().refreshBounds()
   }
   state.tiles = tiles.size
   onTilesChanged?.()
