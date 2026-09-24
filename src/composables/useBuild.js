@@ -171,13 +171,13 @@ async function remapLoaderStates(structure, lib, assets) {
     const e = structure.palette[state]
     const bx = raw[i + 1], by = raw[i + 2], bz = raw[i + 3]
     const nbt = structure.blockNbt.get(bi) ?? null
-    const neighbors = {}
-    for (const [dir, dx, dy, dz] of [["north", 0, 0, -1], ["south", 0, 0, 1], ["west", -1, 0, 0], ["east", 1, 0, 0], ["up", 0, 1, 0], ["down", 0, -1, 0]]) {
+    function neighborAt([dx, dy, dz]) {
       const nb = byPos.get((bx + dx) + "," + (by + dy) + "," + (bz + dz))
       const ne = nb !== undefined && structure.palette[raw[nb << 2]]
-      if (ne?.id) neighbors[dir] = { id: ne.id, ...(ne.properties ?? {}) }
+      return ne?.id ? { id: ne.id, ...(ne.properties ?? {}) } : null
     }
-    const block = { id: e.id, properties: e.properties ?? {}, neighbors, nbt }
+    const neighbors = q => Array.isArray(q[0]) ? q.map(neighborAt) : neighborAt(q)
+    const block = { id: e.id, properties: e.properties ?? {}, pos: [bx, by, bz], neighbors, nbt }
     const variant = datas.map(d => lib.ModelLoader.variantKey(d, block) ?? "").join("/")
     const key = `${state}|${variant}|${JSON.stringify(nbt)}`
     let idx = byKey.get(key)
