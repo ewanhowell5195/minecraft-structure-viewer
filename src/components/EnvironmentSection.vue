@@ -7,7 +7,7 @@ import { useClouds } from "../composables/useClouds.js"
 
 const { state: buildState } = useBuild()
 const { locked } = useLock()
-const { enabled: sky, dimension: skyDimension, lightDim } = useSky()
+const { enabled: sky, dimension: skyDimension, skyDim, lightDim } = useSky()
 const { enabled: clouds } = useClouds()
 const collapsed = ref(false)
 
@@ -42,7 +42,7 @@ function setDaytime(input) {
         <input type="checkbox" v-model="sky">
         Sky
       </label>
-      <label class="check" title="The game's clouds, drifting at their in-game height">
+      <label v-if="sky && skyDim === 'overworld'" class="check" title="The game's clouds, drifting at their in-game height">
         <input type="checkbox" v-model="clouds">
         Clouds
       </label>

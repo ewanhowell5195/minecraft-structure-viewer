@@ -17,7 +17,7 @@ const world = useWorld()
 const stream = useStream()
 const walk = useWalk()
 
-const enabled = ref(false)
+const enabled = ref(sky.enabled.value)
 
 let handle = null
 let token = 0
@@ -64,6 +64,9 @@ async function apply() {
   scene.setClouds(handle.group)
 }
 
+watch(sky.enabled, on => {
+  if (!on) enabled.value = false
+})
 watch([enabled, () => packs.assets.value], apply, { immediate: true })
 watch(() => build.state.daytime, v => {
   if (handle) handle.daytime.value = v
