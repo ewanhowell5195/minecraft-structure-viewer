@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "minecraft-asset-loader": "^1.5.4",
-    "minecraft-block-reader": "^2.0.0",
+    "minecraft-block-reader": "^2.1.0",
     "three": "0.162.0",
     "vue": "^3.5.13"
   },
