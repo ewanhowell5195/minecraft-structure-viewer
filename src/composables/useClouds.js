@@ -17,10 +17,22 @@ const world = useWorld()
 const stream = useStream()
 const walk = useWalk()
 
+const ALPHA = 0.8
+const FADE_FROM = 20
+const FADE_TO = 5
+
 const enabled = ref(sky.enabled.value)
 
 let handle = null
 let token = 0
+
+scene.animators.add({
+  update() {
+    if (!handle) return
+    const below = handle.height - handle.origin[1] - 0.5 - scene.camera.position.y / 16
+    handle.alpha = ALPHA * Math.min(1, Math.max(0, (below - FADE_TO) / (FADE_FROM - FADE_TO)))
+  }
+})
 
 function worldOrigin() {
   const o = stream.state.session ? stream.origin() : null
