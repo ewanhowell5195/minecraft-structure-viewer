@@ -245,7 +245,7 @@ async function buildTileWorker(tx, tz, gen) {
     grid[(ly * gw + lz) * gw + lx] = (i / 5) + 1
   }
   const boxes = new Map(Object.entries(msg.boxes).map(([ti, arr]) => [Number(ti), arr]))
-  const tile = { handle: revived, group: revived.group, cellData: cd, grid, ox, oy, oz, gw, gh, palette: msg.palette, softs: msg.softs, boxes, buried: msg.buried ?? null }
+  const tile = { handle: revived, group: revived.group, cellData: cd, offsets: msg.offsets ?? null, grid, ox, oy, oz, gw, gh, palette: msg.palette, softs: msg.softs, boxes, buried: msg.buried ?? null }
   if (msg.nbts?.length) tile.nbtMap = new Map(msg.nbts.map(n => [n.pos.join(","), n.nbt]))
   let lightMat = null, baseMat = null
   if (msg.doors?.length || msg.dynamics?.length) {
@@ -266,7 +266,7 @@ async function buildTileWorker(tx, tz, gen) {
     // integration frame instead of stacking it on the revive frame
     await integrateSlot()
     if (gen !== queueGen) { revived.dispose(); return }
-    tile.dyn = await attachTileDynamics({ lib, assets, blocks: msg.dynamics, light: revived.light, sharedAtlas, lighting: lightingSpec() })
+    tile.dyn = await attachTileDynamics({ lib, assets, blocks: msg.dynamics, light: revived.light, sharedAtlas, lighting: lightingSpec(), origin })
     if (gen !== queueGen) { tile.dyn?.dispose(); revived.dispose(); return }
     if (tile.dyn) {
       bindDaytime(tile.dyn.group)
@@ -344,7 +344,8 @@ async function buildTileMain(tx, tz, gen) {
     sliceMs: 8,
     sharedAtlas,
     externalOcclusion: at.occludes,
-    randomOffset: { origin: [origin[0], origin[2]] },
+    origin,
+    randomOffset: true,
     release: true,
     shouldCancel: () => gen !== queueGen
   })
@@ -355,6 +356,7 @@ async function buildTileMain(tx, tz, gen) {
   const gw = TILE * 16, gh = at.H, W = at.W
   const ox = x0 * 16 - origin[0], oy = yRange.yMin, oz = z0 * 16 - origin[2]
   const cellData = new Int32Array(tileCount * 5)
+  const offsets = handle.blockOffset ? new Float32Array(tileCount * 3) : null
   let cn = 0
   const softs = {}
   for (let i = 0; i < tileCount; i++) {
@@ -362,6 +364,7 @@ async function buildTileMain(tx, tz, gen) {
     if (ti === 0xFFFFFFFF) continue
     const b = input[i]
     const pi = handle.blockPalette[i]
+    if (offsets) offsets.set(handle.blockOffset.subarray(i * 3, i * 3 + 3), cn / 5 * 3)
     cellData[cn++] = b.pos[0]
     cellData[cn++] = b.pos[1]
     cellData[cn++] = b.pos[2]
@@ -386,7 +389,7 @@ async function buildTileMain(tx, tz, gen) {
   }
   bindDaytime(handle.group)
   const palette = handle.palette.map(p => ({ id: p.id, properties: p.properties ?? null }))
-  const tile = { handle, group: handle.group, cellData: cd, grid, ox, oy, oz, gw, gh, palette, softs, boxes: new Map(), buried }
+  const tile = { handle, group: handle.group, cellData: cd, offsets: offsets ? offsets.slice(0, cn / 5 * 3) : null, grid, ox, oy, oz, gw, gh, palette, softs, boxes: new Map(), buried }
   if (at.nbts.length) tile.nbtMap = new Map(at.nbts.map(n => [n.pos.join(","), n.nbt]))
   let lightMat = null
   if (doors.length || at.dynamics.length) {
@@ -399,7 +402,7 @@ async function buildTileMain(tx, tz, gen) {
     tile.doors = await attachTileDoors({ lib, assets, doors, group: handle.group, lightMat, onToggle: () => onTilesChanged?.() })
   }
   if (at.dynamics.length) {
-    tile.dyn = await attachTileDynamics({ lib, assets, blocks: at.dynamics, light: handle.light, sharedAtlas, lighting: lightingSpec() })
+    tile.dyn = await attachTileDynamics({ lib, assets, blocks: at.dynamics, light: handle.light, sharedAtlas, lighting: lightingSpec(), origin })
     if (gen !== queueGen) { tile.dyn?.dispose(); try { handle.dispose?.() } catch {} return }
     if (tile.dyn) {
       bindDaytime(tile.dyn.group)
@@ -545,7 +548,9 @@ function cellAt(t, gx, gy, gz) {
   const i = (idx - 1) * 5
   const cd = t.cellData
   const p = t.palette[cd[i + 4]]
-  return { pos: [cd[i], cd[i + 1], cd[i + 2]], ti: cd[i + 3], pi: cd[i + 4], entry: { id: p.id, properties: p.properties ?? undefined } }
+  const j = (idx - 1) * 3
+  const off = t.offsets ? [t.offsets[j], t.offsets[j + 1], t.offsets[j + 2]] : null
+  return { pos: [cd[i], cd[i + 1], cd[i + 2]], off, ti: cd[i + 3], pi: cd[i + 4], entry: { id: p.id, properties: p.properties ?? undefined } }
 }
 
 const provider = {
@@ -607,7 +612,8 @@ const provider = {
       boxes = tmpl?.group ? templateBoxes(tmpl.group) : []
       tile.boxes.set(cell.ti, boxes)
     }
-    const ox = cell.pos[0] * 16, oy = cell.pos[1] * 16, oz = cell.pos[2] * 16
+    const off = cell.off ?? [0, 0, 0]
+    const ox = (cell.pos[0] + off[0]) * 16, oy = (cell.pos[1] + off[1]) * 16, oz = (cell.pos[2] + off[2]) * 16
     for (const l of boxes) out.push({ nx: l[0] + ox, ny: l[1] + oy, nz: l[2] + oz, px: l[3] + ox, py: l[4] + oy, pz: l[5] + oz })
     return out
   },

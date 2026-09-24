@@ -10,7 +10,7 @@ export const DYNAMIC_BLOCKS = /(^|:)([a-z_]+_)?(banner|bell|chest|shulker_box|de
 // vanilla collision overrides the all-planes rule gets wrong: torches are 3D
 // but walkable, chains are crossed planes but block you
 export const SOFT_BLOCKS = /(^|[:_])torch$/
-export const HARD_BLOCKS = /(^|[:_])chain$/
+export const HARD_BLOCKS = /(^|[:_])(chain|pointed_dripstone|sulfur_spike)$/
 
 // state key -> Promise<bool>: true when every element is an axis plane, so
 // walk treats the block as soft (no collision)

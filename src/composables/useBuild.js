@@ -1169,6 +1169,18 @@ function templateBoxes(tmpl, arr, skipFluid = false) {
   })
   return arr
 }
+function shiftBoxes(arr, off) {
+  if (!off) return arr
+  for (const b of arr) {
+    b[0] += off[0] * 16
+    b[3] += off[0] * 16
+    b[1] += off[1] * 16
+    b[4] += off[1] * 16
+    b[2] += off[2] * 16
+    b[5] += off[2] * 16
+  }
+  return arr
+}
 function templateFor(i, stateIdx) {
   if (sceneHandle && inputIdxOf) {
     const ii = i != null ? inputIdxOf[i] : -1
@@ -1176,7 +1188,9 @@ function templateFor(i, stateIdx) {
       const ti = sceneHandle.blockTemplate[ii]
       if (ti !== 0xFFFFFFFF) {
         const t = sceneHandle.templates[ti]
-        return { key: "t" + ti, tmpl: t.group, soft: nonSolidPalette.has(t.palette) }
+        const bo = sceneHandle.blockOffset
+        const off = bo && (bo[ii * 3] || bo[ii * 3 + 1] || bo[ii * 3 + 2]) ? [bo[ii * 3], bo[ii * 3 + 1], bo[ii * 3 + 2]] : null
+        return { key: "t" + ti + (off ? "@" + off.join(",") : ""), tmpl: t.group, soft: nonSolidPalette.has(t.palette), off }
       }
     }
   }
@@ -1190,7 +1204,7 @@ function collisionBoxesFor(i, stateIdx) {
   let arr = collBoxCache.get(t.key)
   if (arr) return arr
   arr = []
-  if (!t.soft) templateBoxes(t.tmpl, arr, true)
+  if (!t.soft) shiftBoxes(templateBoxes(t.tmpl, arr, true), t.off)
   collBoxCache.set(t.key, arr)
   return arr
 }
@@ -1203,7 +1217,7 @@ function aimBoxesFor(i, stateIdx) {
   let arr = aimBoxCache.get(t.key)
   if (arr) return arr
   arr = []
-  templateBoxes(t.tmpl, arr)
+  shiftBoxes(templateBoxes(t.tmpl, arr), t.off)
   aimBoxCache.set(t.key, arr)
   return arr
 }
@@ -1856,7 +1870,8 @@ async function build(structure = source, refit = true, slice = false, fresh = fa
       ignoreAtlases: true,
       technical: true,
       animate: false,
-      randomOffset: { origin: structure.worldOrigin ? [structure.worldOrigin[0], structure.worldOrigin[2]] : [0, 0] },
+      origin: structure.worldOrigin ?? [0, 0, 0],
+      randomOffset: true,
       externalOcclusion: buriedOcclusion,
       onProgress: (stage, done, tot) => {
         if (stage.name === "optimize") {

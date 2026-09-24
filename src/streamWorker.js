@@ -76,11 +76,13 @@ async function buildTile(m) {
     sliceMs: 10000,
     batchDynamics: false,
     sharedAtlas,
-    randomOffset: { origin: [origin[0], origin[2]] },
+    origin,
+    randomOffset: true,
     externalOcclusion: at.occludes
   })
   if (!handle) { self.postMessage({ type: "tile", id: m.id, empty: true }); return }
   const cellData = new Int32Array(tileCount * 5)
+  const offsets = handle.blockOffset ? new Float32Array(tileCount * 3) : null
   let cn = 0
   const softs = {}
   const boxes = {}
@@ -89,6 +91,7 @@ async function buildTile(m) {
     if (ti === 0xFFFFFFFF) continue
     const b = input[i]
     const pi = handle.blockPalette[i]
+    if (offsets) offsets.set(handle.blockOffset.subarray(i * 3, i * 3 + 3), cn / 5 * 3)
     cellData[cn++] = b.pos[0]
     cellData[cn++] = b.pos[1]
     cellData[cn++] = b.pos[2]
@@ -102,6 +105,7 @@ async function buildTile(m) {
   }
   for (const ti of Object.keys(softs)) softs[ti] = await softs[ti]
   const cells = cellData.slice(0, cn)
+  const cellOffsets = offsets ? offsets.slice(0, cn / 5 * 3) : null
   const palette = handle.palette.map(p => ({ id: p.id, properties: p.properties ?? null }))
   const gw = TILE * 16, gh = at.H, W = at.W
   const buried = new Uint8Array(Math.ceil(gw * gw * gh / 8))
@@ -121,8 +125,8 @@ async function buildTile(m) {
     } catch {}
   }
   self.postMessage(
-    { type: "tile", id: m.id, payload: packed.payload, cells, palette, softs, boxes, buried, doors, doorPack, dynamics: at.dynamics, nbts: at.nbts },
-    [cells.buffer, ...(buried ? [buried.buffer] : []), ...packed.transfers, ...doorTransfers]
+    { type: "tile", id: m.id, payload: packed.payload, cells, offsets: cellOffsets, palette, softs, boxes, buried, doors, doorPack, dynamics: at.dynamics, nbts: at.nbts },
+    [cells.buffer, ...(cellOffsets ? [cellOffsets.buffer] : []), ...(buried ? [buried.buffer] : []), ...packed.transfers, ...doorTransfers]
   )
 }
 

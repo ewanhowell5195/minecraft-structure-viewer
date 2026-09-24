@@ -9,8 +9,6 @@ import { useStream } from "./useStream.js"
 import { useWalk } from "./useWalk.js"
 import { THREE } from "../lib.js"
 
-const CLOUD_HEIGHT = 192.33
-
 const packs = usePacks()
 const build = useBuild()
 const scene = useScene()
@@ -27,15 +25,14 @@ let token = 0
 function worldOrigin() {
   const o = stream.state.session ? stream.origin() : null
   if (o) return [o[0], 0, o[2]]
-  return world.getLastSelection()?.worldOrigin ?? [0, 0, 0]
+  const w = world.getLastSelection()?.worldOrigin ?? [0, 0, 0]
+  const r = build.getRoot()?.position
+  return r ? [w[0] - r.x / 16, w[1] - r.y / 16, w[2] - r.z / 16] : w
 }
 
-// blocks are centred on their cell, so scene position p is world block p / 16 + 0.5 + origin
 function place() {
   if (!handle) return
-  const o = worldOrigin()
-  handle.offset = [o[0] + 0.5, o[2] + 0.5]
-  handle.height = CLOUD_HEIGHT - o[1] - 0.5
+  handle.origin = worldOrigin()
   handle.group.visible = sky.skyDim.value === "overworld"
   const left = stream.state.session && !stream.state.on ? stream.exitPosition() : null
   handle.anchor = walk.state.on || stream.state.on ? null : left ? [left.x, left.y, left.z] : stream.state.session ? null : scene.sceneBounds().getCenter(new THREE.Vector3())
