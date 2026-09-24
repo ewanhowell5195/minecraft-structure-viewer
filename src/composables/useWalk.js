@@ -324,7 +324,7 @@ function tickSim() {
   bob.distO = bob.dist
   bob.valO = bob.val
   fovMod.old = fovMod.cur
-  if (streamApi.state.on && !streamApi.provider.hasTileAt(walk.pos.x, walk.pos.z)) return
+  if (streamApi.state.on && streamApi.provider.loadingAt(walk.pos.x, walk.pos.z)) return
 
   const sneakKey = keys.has("ShiftLeft") || keys.has("ShiftRight")
   const fwdKey = keys.has("KeyW")

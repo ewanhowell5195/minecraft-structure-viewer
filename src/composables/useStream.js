@@ -555,7 +555,10 @@ function cellAt(t, gx, gy, gz) {
 
 const provider = {
   getRoot: () => root,
-  hasTileAt: (wx, wz) => tiles.has(tkeyAt(Math.round(wx / 16), Math.round(wz / 16))),
+  loadingAt(wx, wz) {
+    const k = tkeyAt(Math.round(wx / 16), Math.round(wz / 16))
+    return !!tileSet?.has(k) && !tiles.has(k)
+  },
   blockAt(wx, wy, wz) {
     const gx = Math.round(wx / 16), gy = Math.round(wy / 16), gz = Math.round(wz / 16)
     const t = tiles.get(tkeyAt(gx, gz))
