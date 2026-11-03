@@ -1,4 +1,4 @@
-import { reactive, ref, watch } from "vue"
+import { reactive, watch } from "vue"
 import * as THREE from "three"
 import { OrbitControls } from "three/addons/controls/OrbitControls.js"
 import { debounce } from "../yield.js"
@@ -59,6 +59,8 @@ function skyCamera() {
   skyCam.far = camera.far
   skyCam.position.copy(camera.position)
   skyCam.quaternion.copy(camera.quaternion)
+  if (camera.view?.enabled) skyCam.setViewOffset(camera.view.fullWidth, camera.view.fullHeight, camera.view.offsetX, camera.view.offsetY, camera.view.width, camera.view.height)
+  else skyCam.clearViewOffset()
   skyCam.updateProjectionMatrix()
   skyCam.updateMatrixWorld()
   return skyCam
@@ -491,9 +493,9 @@ function max2DCanvas() {
   return canvas2DMax
 }
 
-// aa renders double, so the gl canvas caps the deliverable size at half its max
-const glMax = ref(0)
-const maxShotSize = aa => Math.min(max2DCanvas(), Math.floor((glMax.value || 16384) / (aa ? 2 : 1)))
+// aa renders double, so the raw 2d canvas caps the deliverable size at half its max
+const maxShotSize = aa => Math.floor(max2DCanvas() / (aa ? 2 : 1))
+const SHOT_TILE = 4096
 
 function alphaBounds(image) {
   const d = image.data, w = image.width, h = image.height
@@ -539,20 +541,58 @@ function renderShot({ size = 1920, aa = false, angle = "current", crop = false, 
   }
   camera.updateMatrixWorld(true)
   const factor = aa ? 2 : 1
-  let ratio = size / Math.max(sizeW, sizeH, 1) * factor
-  ratio = Math.min(ratio, (renderer.capabilities.maxTextureSize || 16384) / Math.max(sizeW, sizeH, 1))
-  renderer.setPixelRatio(ratio)
-  renderer.setSize(sizeW, sizeH, false)
-  drawScene()
-  let out = document.createElement("canvas")
-  out.width = Math.max(1, Math.round(sizeW * ratio / factor))
-  out.height = Math.max(1, Math.round(sizeH * ratio / factor))
-  const ctx = out.getContext("2d")
-  ctx.imageSmoothingEnabled = true
-  ctx.imageSmoothingQuality = "high"
-  ctx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, out.width, out.height)
-  if (crop && !skyGroup) {
-    const rect = alphaBounds(ctx.getImageData(0, 0, out.width, out.height))
+  const scale = size / Math.max(sizeW, sizeH, 1) * factor
+  const fullW = Math.max(1, Math.round(sizeW * scale))
+  const fullH = Math.max(1, Math.round(sizeH * scale))
+  const raw = document.createElement("canvas")
+  raw.width = fullW
+  raw.height = fullH
+  const rawCtx = raw.getContext("2d")
+  let out = raw
+  const trim = crop && !skyGroup
+  try {
+    rawCtx.fillRect(fullW - 1, fullH - 1, 1, 1)
+    if (rawCtx.getImageData(fullW - 1, fullH - 1, 1, 1).data[3] !== 255) throw new Error(`the browser can't make a ${fullW}x${fullH} image`)
+    rawCtx.clearRect(fullW - 1, fullH - 1, 1, 1)
+    renderer.setPixelRatio(1)
+    renderer.setSize(fullW, fullH, false)
+    const gl = renderer.getContext()
+    // webgl caps the drawing buffer's area as well as its sides, and shrinks it silently
+    const tile = gl.drawingBufferWidth === fullW && gl.drawingBufferHeight === fullH ? Math.max(fullW, fullH) : SHOT_TILE
+    for (let y = 0; y < fullH; y += tile) {
+      for (let x = 0; x < fullW; x += tile) {
+        const width = Math.min(tile, fullW - x), height = Math.min(tile, fullH - y)
+        renderer.setSize(width, height, false)
+        if (gl.drawingBufferWidth !== width || gl.drawingBufferHeight !== height) throw new Error(`the browser only allowed a ${gl.drawingBufferWidth}x${gl.drawingBufferHeight} tile of ${width}x${height}`)
+        camera.setViewOffset(fullW, fullH, x, y, width, height)
+        drawScene({ x, width, height, scale })
+        rawCtx.drawImage(canvas, 0, 0, width, height, x, y, width, height)
+      }
+    }
+    if (aa) {
+      out = document.createElement("canvas")
+      out.width = Math.max(1, Math.round(fullW / factor))
+      out.height = Math.max(1, Math.round(fullH / factor))
+      const ctx = out.getContext("2d")
+      ctx.imageSmoothingEnabled = true
+      ctx.imageSmoothingQuality = "high"
+      ctx.drawImage(raw, 0, 0, fullW, fullH, 0, 0, out.width, out.height)
+    }
+  } finally {
+    camera.clearViewOffset()
+    for (const o of hidden) o.visible = true
+    shooting = false
+    skyGroup = savedSky
+    if (cloudsGroup) cloudsGroup.visible = cloudsShown
+    if (dir) {
+      camera.position.copy(savedPos)
+      camera.quaternion.copy(savedQuat)
+      camera.updateMatrixWorld(true)
+    }
+    needResize = true
+  }
+  if (trim) {
+    const rect = alphaBounds(out.getContext("2d").getImageData(0, 0, out.width, out.height))
     if (rect && (rect.minX || rect.minY || rect.maxX < out.width - 1 || rect.maxY < out.height - 1)) {
       const trimmed = document.createElement("canvas")
       trimmed.width = rect.maxX - rect.minX + 1
@@ -561,16 +601,6 @@ function renderShot({ size = 1920, aa = false, angle = "current", crop = false, 
       out = trimmed
     }
   }
-  for (const o of hidden) o.visible = true
-  shooting = false
-  skyGroup = savedSky
-  if (cloudsGroup) cloudsGroup.visible = cloudsShown
-  if (dir) {
-    camera.position.copy(savedPos)
-    camera.quaternion.copy(savedQuat)
-    camera.updateMatrixWorld(true)
-  }
-  needResize = true
   return new Promise(resolve => out.toBlob(resolve, "image/png"))
 }
 
@@ -620,7 +650,6 @@ function init(canvasEl) {
   canvas = canvasEl
   renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: false })
   renderer.debug.checkShaderErrors = false
-  glMax.value = renderer.capabilities.maxTextureSize || 16384
   // three re-asks for WEBGL_multi_draw on every BatchedMesh draw and warns when
   // it's missing, so Firefox logs once per door batch per frame
   const ext = renderer.extensions
@@ -688,13 +717,13 @@ function drawPass() {
   if (overlayScene.children.length && !shooting) renderer.render(overlayScene, camera)
 }
 
-function drawScene() {
+function drawScene(frame = { x: 0, width: sizeW, height: sizeH, scale: 1 }) {
   renderer.autoClear = false
   renderer.clear()
   if (skyGroup) renderer.render(skyScene, skyCamera())
   if (compare) {
     const left = compare.left(), right = compare.right(), leftGrid = compare.leftGrid()
-    const x = Math.round(sizeW * compare.split())
+    const x = Math.min(Math.max(Math.round(sizeW * compare.split() * frame.scale) - frame.x, 0), frame.width)
     const grid = gridVisible() && !shooting
     const view = compare.view?.() ?? "slide"
     const show = isLeft => {
@@ -708,10 +737,10 @@ function drawScene() {
       drawPass()
     } else {
       renderer.setScissorTest(true)
-      for (const [side, from, width] of [["left", 0, x], ["right", x, sizeW - x]]) {
+      for (const [side, from, width] of [["left", 0, x], ["right", x, frame.width - x]]) {
         if (width <= 0) continue
         show(side === "left")
-        renderer.setScissor(from, 0, width, sizeH)
+        renderer.setScissor(from, 0, width, frame.height)
         drawPass()
       }
       renderer.setScissorTest(false)
