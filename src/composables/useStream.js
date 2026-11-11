@@ -62,6 +62,8 @@ function makeFog(anchor = null) {
 let chunkMap = null
 let tileSet = null
 let buildWorkers = []
+let cacheShared = false
+let warming = null
 let buildSeq = 0
 const buildJobs = new Map()
 const gridCache = new Map()
@@ -91,6 +93,7 @@ function tkeyAt(gx, gz) {
 function stopWorkers() {
   for (const b of buildWorkers) b.worker.terminate()
   buildWorkers = []
+  cacheShared = false
   regionOwner.clear()
   for (const job of buildJobs.values()) job.resolve(null)
   buildJobs.clear()
@@ -129,10 +132,21 @@ function startBuildWorkers(file, dim, count = Math.min(3, Math.max(1, Math.floor
         })
         return
       }
+      if (m.type === "cache") {
+        lib.importCache(assets, m.cache).catch(() => {})
+        for (const other of buildWorkers) {
+          if (other !== slot) other.worker.postMessage({ type: "importCache", cache: m.cache })
+        }
+        return
+      }
       const job = buildJobs.get(m.id)
       if (!job) {
         if (m.type === "error") console.error("stream worker:", m.error)
         return
+      }
+      if (m.type === "tile" && !cacheShared) {
+        cacheShared = true
+        w.postMessage({ type: "exportCache" })
       }
       buildJobs.delete(m.id)
       slot.inflight--
@@ -844,6 +858,7 @@ async function enter(spawn) {
       onProgress: (n, total) => { state.prepMsg = `Building texture atlas… ${Math.round(n / total * 100)}%` }
     })
     atlasLayout = sharedAtlas.exportLayout()
+    warming = lib.warmShaders(assets, sceneApi2().renderer, { scene: sceneApi2().scene, camera: sceneApi2().perspCam, sharedAtlas, lighting: lightingSpec() }).catch(() => null)
 
     state.prepMsg = "Building spawn area…"
     occlSeed = await lib.exportCache(assets).then(cache => cache.occlusion, () => null)
@@ -909,6 +924,8 @@ function shutdown() {
   playerPos = null
   pumpedAt = null
   stopWorkers()
+  warming?.then(warmed => warmed?.dispose())
+  warming = null
   sharedAtlas?.dispose()
   sharedAtlas = null
   atlasLayout = null

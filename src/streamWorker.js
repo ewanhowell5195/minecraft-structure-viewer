@@ -174,6 +174,10 @@ self.onmessage = async e => {
     } else if (m.type === "atlasSpace") {
       atlasWaiters.get(m.id)?.({ rects: m.rects, pages: m.pages })
       atlasWaiters.delete(m.id)
+    } else if (m.type === "exportCache") {
+      self.postMessage({ type: "cache", cache: await lib.exportCache(assets) })
+    } else if (m.type === "importCache") {
+      await lib.importCache(assets, m.cache)
     }
   } catch (err) {
     self.postMessage({ type: "error", id: m.id, error: String(err?.message ?? err) })
