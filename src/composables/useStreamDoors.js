@@ -76,7 +76,7 @@ const _cb = new THREE.Box3()
 const _dzero = new THREE.Matrix4().makeScale(0, 0, 0)
 
 async function canonOf(lib, assets, id, props) {
-  const models = await lib.parseBlockstate(assets, id, { data: props ?? {}, ignoreAtlases: true })
+  const models = await lib.parseBlockstate(assets, id, { properties: props ?? {} })
   const m = models.length === 1 ? models[0] : null
   if (m && !(m.uvlock && (m.x || m.y || m.z))) {
     const rot = new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(
@@ -92,7 +92,7 @@ async function buildCanonGroup(lib, assets, modelList) {
   const g = new THREE.Group()
   for (const model of modelList) {
     const data = await lib.resolveModelData(assets, model)
-    await lib.loadModel(g, assets, data, { display: {}, lighting: "world", animate: false })
+    await lib.loadModel(assets, data, { parent: g, display: {}, lighting: "world", animate: false })
   }
   return g.children.length ? g : null
 }

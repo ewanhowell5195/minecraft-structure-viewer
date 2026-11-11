@@ -185,7 +185,7 @@ async function loadPoolEntries(poolId) {
   try {
     const lib = await loadLibrary()
     const [ns, path] = poolId.includes(":") ? poolId.split(":") : ["minecraft", poolId]
-    const buf = await lib.readFile(`data/${ns}/worldgen/template_pool/${path}.json`, packs.assets.value)
+    const buf = await lib.readFile(packs.assets.value, `data/${ns}/worldgen/template_pool/${path}.json`)
     if (!buf) return
     const json = JSON.parse(new TextDecoder().decode(buf))
     const out = []

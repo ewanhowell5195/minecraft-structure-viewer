@@ -21,7 +21,6 @@ export async function attachTileDynamics({ lib, assets, blocks, light, sharedAtl
   const handle = await lib.createScene(assets, input, {
     lighting: world ? { ...lighting, light: tileLight } : lighting,
     keepTemplates: true,
-    ignoreAtlases: true,
     technical: false,
     animate: false,
     sliceMs: 8,

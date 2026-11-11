@@ -31,7 +31,7 @@ const AIRISH = /(^|:)(cave_)?air$/
 export async function readMasks(name) {
   const packs = usePacks()
   const lib = await loadLibrary()
-  const buf = await lib.readFile(`data/minecraft/structure/${name}.rand.json`, packs.assets.value)
+  const buf = await lib.readFile(packs.assets.value, `data/minecraft/structure/${name}.rand.json`)
   return buf ? JSON.parse(new TextDecoder().decode(buf)) : null
 }
 

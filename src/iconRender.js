@@ -12,20 +12,19 @@ export async function renderIcon(lib, assets, spec, extra) {
   const args = { assets, width: size, height: size, ...extra }
   if (spec.kind === "block") {
     const [ns, name] = spec.id.includes(":") ? spec.id.split(":") : ["minecraft", spec.id]
-    if (await lib.readFile(`assets/${ns}/items/${name}.json`, assets) || await lib.readFile(`assets/${ns}/models/item/${name}.json`, assets)) {
-      return lib.renderItem({ ...args, id: spec.id, ignoreAtlases: true })
+    if (await lib.readFile(assets, `assets/${ns}/items/${name}.json`) || await lib.readFile(assets, `assets/${ns}/models/item/${name}.json`)) {
+      return lib.renderItem({ ...args, id: spec.id })
     }
     return lib.renderBlock({
       ...args,
       id: spec.id,
-      blockstates: spec.blockstates ?? {},
-      ignoreAtlases: true,
+      properties: spec.blockstates ?? {},
       display: { type: "fallback", rotateFlat: true, ...lib.DISPLAYS.block }
     })
   }
   if (spec.kind === "entity") {
     for (const item of spec.candidates) {
-      if (!await lib.readFile(`assets/minecraft/items/${item}.json`, assets)) continue
+      if (!await lib.readFile(assets, `assets/minecraft/items/${item}.json`)) continue
       return lib.renderItem({ ...args, id: item })
     }
     // pre-1.21.4 assets have no item definitions: eggs render from the
@@ -36,16 +35,16 @@ export async function renderIcon(lib, assets, spec, extra) {
         const egg = renderSpawnEgg(lib, assets, m[1], args)
         if (egg) return egg
       }
-      if (!await lib.readFile(`assets/minecraft/models/item/${item}.json`, assets)) continue
+      if (!await lib.readFile(assets, `assets/minecraft/models/item/${item}.json`)) continue
       return lib.renderItem({ ...args, id: item })
     }
     return null
   }
   let id = spec.id
   const [ns, name] = id.includes(":") ? id.split(":") : ["minecraft", id]
-  if (!await lib.readFile(`assets/${ns}/items/${name}.json`, assets) && !await lib.readFile(`assets/${ns}/models/item/${name}.json`, assets)) {
+  if (!await lib.readFile(assets, `assets/${ns}/items/${name}.json`) && !await lib.readFile(assets, `assets/${ns}/models/item/${name}.json`)) {
     const alias = legacyAssetAlias(name)
-    if (alias && await lib.readFile(`assets/${ns}/models/item/${alias}.json`, assets)) id = `${ns}:${alias}`
+    if (alias && await lib.readFile(assets, `assets/${ns}/models/item/${alias}.json`)) id = `${ns}:${alias}`
   }
   return lib.renderItem({
     ...args,

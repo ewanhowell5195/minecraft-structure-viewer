@@ -72,7 +72,7 @@ async function loadRaw(rel) {
   const zp = structures.zipPathOf(rel)
   if (!zp) return null
   const lib = await loadLibrary()
-  const buf = await lib.readFile(zp, packs.assets.value)
+  const buf = await lib.readFile(packs.assets.value, zp)
   return buf ? read(buf) : null
 }
 
@@ -91,7 +91,7 @@ async function loadStruct(ref) {
 async function loadPool(ref) {
   const [ns, path] = nsSplit(ref)
   const lib = await loadLibrary()
-  const buf = await lib.readFile(`data/${ns}/worldgen/template_pool/${path}.json`, packs.assets.value)
+  const buf = await lib.readFile(packs.assets.value, `data/${ns}/worldgen/template_pool/${path}.json`)
   return buf ? JSON.parse(new TextDecoder().decode(buf)) : null
 }
 

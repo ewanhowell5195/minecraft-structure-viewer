@@ -23,7 +23,7 @@ function table(assets) {
 function definition(lib, assets, t, id) {
   if (!t.defs.has(id)) {
     const [ns, path] = id.includes(":") ? id.split(":") : ["minecraft", id]
-    t.defs.set(id, lib.readFile(`data/${ns}/worldgen/biome/${path}.json`, assets).then(buf => buf ? JSON.parse(new TextDecoder().decode(buf)) : null).catch(() => null))
+    t.defs.set(id, lib.readFile(assets, `data/${ns}/worldgen/biome/${path}.json`).then(buf => buf ? JSON.parse(new TextDecoder().decode(buf)) : null).catch(() => null))
   }
   return t.defs.get(id)
 }

@@ -158,7 +158,7 @@ async function loadHl() {
   const lib = await loadLibrary()
   const old = hlImgs
   const onChange = () => { if (hoverSlot.value >= 0) drawHl() }
-  const load = name => lib.readTexture(`assets/minecraft/textures/gui/sprites/container/${name}.png`, assets, { onChange })
+  const load = name => lib.readTexture(assets, `assets/minecraft/textures/gui/sprites/container/${name}.png`, { onChange })
   hlImgs = { back: await load("slot_highlight_back"), front: await load("slot_highlight_front") }
   hlAssets = assets
   old?.back?.stop?.()
@@ -258,7 +258,7 @@ async function drawBg() {
   const lib = await loadLibrary()
   const assets = sideAssets()
   const [bgBuf, font] = await Promise.all([
-    lib.readFile(`assets/minecraft/textures/gui/container/${K.tex}.png`, assets),
+    lib.readFile(assets, `assets/minecraft/textures/gui/container/${K.tex}.png`),
     getFont()
   ])
   if (seq !== bgSeq || !bgBuf) return

@@ -11,7 +11,7 @@ export async function getFont() {
   fontVersion = v
   return fontPromise = (async () => {
     const lib = await loadLibrary()
-    const buf = await lib.readFile("assets/minecraft/textures/font/ascii.png", packs.assets.value)
+    const buf = await lib.readFile(packs.assets.value, "assets/minecraft/textures/font/ascii.png")
     const img = await createImageBitmap(new Blob([buf], { type: "image/png" }))
     const c = document.createElement("canvas")
     c.width = img.width

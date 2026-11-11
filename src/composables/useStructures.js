@@ -46,7 +46,7 @@ function computeProcessors() {
     if (!assets) return
     const td = new TextDecoder()
     const readJson = async p => {
-      try { const b = await lib.readFile(p, assets); return b ? normStatesDeep(JSON.parse(td.decode(b))) : null } catch { return null }
+      try { const b = await lib.readFile(assets, p); return b ? normStatesDeep(JSON.parse(td.decode(b))) : null } catch { return null }
     }
     procIndex = await buildProcessorIndex(Array.from(await allZipKeys()), readJson, Array.from(structPath.keys()))
   })()
@@ -103,7 +103,7 @@ function computeWorldgen() {
     if (!assets) return
     const td = new TextDecoder()
     async function readJson(p) {
-      try { const b = await lib.readFile(p, assets); return b ? normStatesDeep(JSON.parse(td.decode(b))) : null } catch { return null }
+      try { const b = await lib.readFile(assets, p); return b ? normStatesDeep(JSON.parse(td.decode(b))) : null } catch { return null }
     }
     const SR = /^data\/([^/]+)\/worldgen\/structure\/(.+)\.json$/
     const PR = /^data\/([^/]+)\/worldgen\/template_pool\/(.+)\.json$/
@@ -205,7 +205,7 @@ async function computeAdvIndex() {
     for (const [name, zp] of structPath) {
       if (++n % 20 === 0) await yieldTask()
       let s
-      try { s = await read(await lib.readFile(zp, assets)) } catch { continue }
+      try { s = await read(await lib.readFile(assets, zp)) } catch { continue }
       for (const e of s.palette) if (e?.id) add(bIdx, strip(e.id), name)
       for (const e of s.entities) if (typeof e.nbt?.id === "string") add(eIdx, strip(e.nbt.id), name)
       // items and spawn data only ever live on a block with nbt
@@ -284,7 +284,7 @@ async function structureBytes(name) {
   const zp = structPath.get(name)
   if (!zp) return null
   const lib = await loadLibrary()
-  return lib.readFile(zp, packs.assets.value)
+  return lib.readFile(packs.assets.value, zp)
 }
 
 const getStructDepth = name => structDepth?.get(name)

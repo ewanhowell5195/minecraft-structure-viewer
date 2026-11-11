@@ -37,7 +37,7 @@ function loadSprites() {
     const assets = packs.assets.value
     const notify = () => { for (const cb of frameListeners) cb() }
     const load = async name => {
-      const anim = await lib.readTexture(`assets/minecraft/textures/gui/sprites/tooltip/${name}.png`, assets, { onChange: notify })
+      const anim = await lib.readTexture(assets, `assets/minecraft/textures/gui/sprites/tooltip/${name}.png`, { onChange: notify })
       return anim && { anim, scaling: anim.meta?.gui?.scaling ?? null }
     }
     return { background: await load("background"), frame: await load("frame") }

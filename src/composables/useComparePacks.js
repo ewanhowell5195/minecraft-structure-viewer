@@ -46,7 +46,7 @@ async function rebuild() {
   const lib = await loadLibrary()
   const sources = allSources()
   const prev = assets.value
-  assets.value = sources.length ? await lib.prepareAssets(sources, { cache: true, defaults: "game", version: state.baseId || undefined }) : null
+  assets.value = sources.length ? await lib.prepareAssets(sources, { cache: true, defaults: "game", ignoreAtlases: true, version: state.baseId || undefined }) : null
   structPath = new Map()
   for (const src of Array.from(sources).reverse()) {
     if (!(src instanceof Uint8Array)) continue
@@ -229,7 +229,7 @@ async function readStructureBytes(rel) {
   const zp = structPath.get(rel)
   if (!zp || !assets.value) return null
   const lib = await loadLibrary()
-  return lib.readFile(zp, assets.value)
+  return lib.readFile(assets.value, zp)
 }
 
 export function useComparePacks() {

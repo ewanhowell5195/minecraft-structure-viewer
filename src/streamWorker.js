@@ -70,7 +70,6 @@ async function buildTile(m) {
   const handle = await lib.createScene(assets, input, {
     lighting: cfg.lighting,
     keepTemplates: true,
-    ignoreAtlases: true,
     technical: false,
     animate: false,
     sliceMs: 10000,
@@ -140,12 +139,12 @@ self.onmessage = async e => {
       self.postMessage({ type: "ready", id: m.id })
     } else if (m.type === "initBuild") {
       lib = await loadLibrary()
-      assets = await lib.prepareAssets(m.sources, { cache: true, defaults: "game", version: m.version })
-      if (m.occl) await lib.importOcclusionCache?.(assets, m.occl).catch(() => {})
+      assets = await lib.prepareAssets(m.sources, { cache: true, defaults: "game", ignoreAtlases: true, version: m.version })
+      if (m.occl) await lib.importCache(assets, { occlusion: m.occl }).catch(() => {})
       // the layout is always stitched before workers start; adopting a missing
       // one must fail loudly (tiles fall back to main-thread builds), never
       // silently pack against pages the main thread doesn't have
-      sharedAtlas = lib.adoptSharedAtlasLayout(lib.createSharedAtlas(), m.layout)
+      sharedAtlas = lib.createSharedAtlas().adoptLayout(m.layout)
       // runtime textures (sign text, banners...) aren't in the prestitched
       // layout; batch-request atlas space from the main thread, shipping the
       // pixels along so main can stitch them and reply with the coordinates

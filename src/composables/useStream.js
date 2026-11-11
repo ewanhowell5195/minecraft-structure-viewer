@@ -124,7 +124,7 @@ function startBuildWorkers(file, dim, count = Math.min(3, Math.max(1, Math.floor
       if (m.type === "atlasRequest") {
         // stitch the worker's runtime textures into the live atlas and reply
         // with the coordinates; duplicate content across workers shares rects
-        Promise.resolve(lib.insertSharedTextures?.(sharedAtlas, m.items)).catch(() => null).then(res => {
+        Promise.resolve(sharedAtlas.insert(m.items)).catch(() => null).then(res => {
           w.postMessage({ type: "atlasSpace", id: m.id, rects: res?.rects ?? [], pages: res?.pages ?? 0 })
         })
         return
@@ -232,7 +232,7 @@ async function buildTileWorker(tx, tz, gen) {
   }
   await integrateSlot()
   if (gen !== queueGen) return
-  const revived = lib.reviveScene(msg.payload, { atlas: sharedAtlas, release: true })
+  const revived = lib.reviveScene(msg.payload, { sharedAtlas, release: true })
   bindDaytime(revived.group)
   const ox = tx * TILE * 16 - origin[0], oz = tz * TILE * 16 - origin[2]
   const oy = yRange.yMin, gh = yRange.yMax - yRange.yMin + 1
@@ -338,7 +338,6 @@ async function buildTileMain(tx, tz, gen) {
   const handle = await lib.createScene(assets, input, {
     lighting: lightingSpec(),
     keepTemplates: true,
-    ignoreAtlases: true,
     technical: false,
     animate: false,
     sliceMs: 8,
@@ -841,13 +840,13 @@ async function enter(spawn) {
     // succeed before workers start: a failure aborts the enter instead of
     // falling back to a degraded pipeline
     state.prepMsg = "Building texture atlas…"
-    await lib.stitchSharedAtlas(sharedAtlas, assets, {
+    await sharedAtlas.stitch(assets, {
       onProgress: (n, total) => { state.prepMsg = `Building texture atlas… ${Math.round(n / total * 100)}%` }
     })
-    atlasLayout = lib.exportSharedAtlasLayout(sharedAtlas)
+    atlasLayout = sharedAtlas.exportLayout()
 
     state.prepMsg = "Building spawn area…"
-    occlSeed = await lib.exportOcclusionCache?.(assets).catch(() => null) ?? null
+    occlSeed = await lib.exportCache(assets).then(cache => cache.occlusion, () => null)
     const wfile = w.getWorldFile()
     if (wfile) startBuildWorkers(wfile, ws.dimension)
     root = new THREE.Group()

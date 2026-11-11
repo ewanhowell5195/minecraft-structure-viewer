@@ -49,7 +49,7 @@ async function resolveLegacyNames(structure, lib, assets) {
     const stripped = raw.replace("minecraft:", "")
     const renamed = LEGACY_RENAMES[stripped]
     if (!renamed) continue
-    legacyNames.set(raw, await lib.readFile(`assets/minecraft/blockstates/${stripped}.json`, assets) ? raw : renamed)
+    legacyNames.set(raw, await lib.readFile(assets, `assets/minecraft/blockstates/${stripped}.json`) ? raw : renamed)
   }
 }
 
@@ -153,7 +153,7 @@ async function remapLoaderStates(structure, lib, assets) {
     const e = structure.palette[stateIdx]
     if (e?.id && !e.__fluidKey) {
       try {
-        const models = await lib.parseBlockstate(assets, e.id, { data: e.properties ?? {}, ignoreAtlases: true })
+        const models = await lib.parseBlockstate(assets, e.id, { properties: e.properties ?? {} })
         const datas = []
         for (const m of models) datas.push(await lib.resolveModelData(assets, m))
         if (datas.some(d => loaders.some(l => l.match?.(d)))) result = datas
@@ -607,7 +607,7 @@ async function entityMarkerCanvas(lib, assets, name, item) {
   }
   if (!drawn && name === "mannequin") {
     try {
-      const buf = await lib.readFile("assets/minecraft/textures/entity/player/wide/steve.png", assets)
+      const buf = await lib.readFile(assets, "assets/minecraft/textures/entity/player/wide/steve.png")
       if (buf) {
         const bmp = await createImageBitmap(new Blob([buf]))
         const ctx = c.getContext("2d")
@@ -621,7 +621,7 @@ async function entityMarkerCanvas(lib, assets, name, item) {
   const fallbacks = STAND_INS[name] ? [STAND_INS[name]] : [name + "_spawn_egg", (EGG_ALIASES[name] ?? name) + "_spawn_egg", name]
   if (!drawn) for (const item of fallbacks) {
     try {
-      if (!await lib.readFile(`assets/minecraft/items/${item}.json`, assets)) continue
+      if (!await lib.readFile(assets, `assets/minecraft/items/${item}.json`)) continue
       await lib.renderItem({ id: item, assets, width: 64, height: 64, canvas: c })
       drawn = true
       break
@@ -714,9 +714,9 @@ async function updateClocks() {
     try {
       const tmp = new THREE.Group()
       tmp.userData.daytime = daytimeUniform
-      for (const m of await lib.parseItemDefinition(assets, cf.item, { data: { ...cf.components, "minecraft:time": v }, display: disp, ignoreAtlases: true })) {
+      for (const m of await lib.parseItemDefinition(assets, cf.item, { components: { ...cf.components, "minecraft:time": v }, display: disp })) {
         const resolved = await lib.resolveModelData(assets, m)
-        await lib.loadModel(tmp, assets, resolved, { display: disp, lighting: lightingOpt(sceneLight), animate: false, ...(cf.glow ? { emission: 15 } : null) })
+        await lib.loadModel(assets, resolved, { parent: tmp, display: disp, lighting: lightingOpt(sceneLight), animate: false, ...(cf.glow ? { emission: 15 } : null) })
       }
       collapseGroupDraws(tmp)
       cf.holder.clear()
@@ -812,18 +812,18 @@ async function attachEntities(structure, lib, assets) {
       template = null
       try {
         let blockId = null
-        if (await lib.readFile(`assets/${ns}/blockstates/${name}.json`, assets)) blockId = id
+        if (await lib.readFile(assets, `assets/${ns}/blockstates/${name}.json`)) blockId = id
         else {
           const coloured = `${typeof data.color === "string" ? data.color : "white"}_${name}`
-          if (await lib.readFile(`assets/${ns}/blockstates/${coloured}.json`, assets)) blockId = `${ns}:${coloured}`
+          if (await lib.readFile(assets, `assets/${ns}/blockstates/${coloured}.json`)) blockId = `${ns}:${coloured}`
         }
         if (blockId) {
           const g = new THREE.Group()
           g.userData.daytime = daytimeUniform
           if (!frame) {
-            for (const model of await lib.parseBlockstate(assets, blockId, { data, ignoreAtlases: true })) {
+            for (const model of await lib.parseBlockstate(assets, blockId, { properties: data })) {
               const data = await lib.resolveModelData(assets, model)
-              await lib.loadModel(g, assets, data, { display: {}, lighting: lightingOpt(sceneLight), animate: false })
+              await lib.loadModel(assets, data, { parent: g, display: {}, lighting: lightingOpt(sceneLight), animate: false })
             }
           }
           if (frame && typeof frameItem === "string" && !frameMap && LIVE_ITEM.test(frameItem)) {
@@ -834,9 +834,9 @@ async function attachEntities(structure, lib, assets) {
               const itemData = { ...(e.nbt.Item.components ?? {}) }
               if (/(^|:)compass$/.test(frameItem)) itemData["minecraft:compass"] = compassValue(facing, Number(e.nbt.ItemRotation ?? 0))
               if (/(^|:)clock$/.test(frameItem)) itemData["minecraft:time"] = clockValue(state.daytime)
-              for (const m of await lib.parseItemDefinition(assets, frameItem, { data: itemData, display: disp, ignoreAtlases: true })) {
+              for (const m of await lib.parseItemDefinition(assets, frameItem, { components: itemData, display: disp })) {
                 const resolved = await lib.resolveModelData(assets, m)
-                await lib.loadModel(itemGroup, assets, resolved, { display: disp, lighting: lightingOpt(sceneLight), animate: false, ...(glow ? { emission: 15 } : null) })
+                await lib.loadModel(assets, resolved, { parent: itemGroup, display: disp, lighting: lightingOpt(sceneLight), animate: false, ...(glow ? { emission: 15 } : null) })
               }
               if (itemGroup.children.length) {
                 itemGroup.name = "frameItem"
@@ -1047,9 +1047,9 @@ async function attachShelves(structure, lib, assets) {
           const itemData = { ...(it.components ?? {}) }
           if (compass) itemData["minecraft:compass"] = compassValue(facing, 0)
           if (clock) itemData["minecraft:time"] = clockValue(state.daytime)
-          for (const m of await lib.parseItemDefinition(assets, it.id, { data: itemData, display: SHELF_DISPLAY, ignoreAtlases: true })) {
+          for (const m of await lib.parseItemDefinition(assets, it.id, { components: itemData, display: SHELF_DISPLAY })) {
             const resolved = await lib.resolveModelData(assets, m)
-            await lib.loadModel(inner, assets, resolved, { display: SHELF_DISPLAY, lighting: lightingOpt(sceneLight), animate: false })
+            await lib.loadModel(assets, resolved, { parent: inner, display: SHELF_DISPLAY, lighting: lightingOpt(sceneLight), animate: false })
           }
           if (inner.children.length) template = { inner: collapseGroupDraws(inner), box: new THREE.Box3().setFromObject(inner) }
         } catch {}
@@ -1522,7 +1522,6 @@ function cancel() {
 // build, save back (debounced) when a build grew the cache
 const occState = new WeakMap()
 async function ensureOcclusionCache(lib, assets) {
-  if (!lib.importOcclusionCache) return
   let st = occState.get(assets)
   if (st) return st.ready
   st = {}
@@ -1533,7 +1532,7 @@ async function ensureOcclusionCache(lib, assets) {
       st.key = assets === packs.assets.value ? packs.sourcesIdentity() : null
       if (!st.key) return
       const entries = await loadStateCache(st.key)
-      if (entries) await lib.importOcclusionCache(assets, entries)
+      if (entries) await lib.importCache(assets, { occlusion: entries })
       st.saved = entries?.length ?? 0
     } catch {}
   })()
@@ -1542,11 +1541,11 @@ async function ensureOcclusionCache(lib, assets) {
 // debounced per stack, so a comparison build can't swallow the main one's save
 function scheduleOcclusionSave(lib, assets) {
   const st = occState.get(assets)
-  if (!st?.key || !lib.exportOcclusionCache) return
+  if (!st?.key) return
   st.save ??= debounce(async () => {
     try {
       if (packs.assets.value !== assets) return
-      const entries = await lib.exportOcclusionCache(assets)
+      const entries = (await lib.exportCache(assets)).occlusion
       if (entries.length > (st.saved ?? 0) + 8) {
         await saveStateCache(st.key, entries)
         st.saved = entries.length
@@ -1655,8 +1654,7 @@ async function build(structure = source, refit = true, slice = false, fresh = fa
       for (let i = 0; i < lraw.length && !lit; i += 4) lit = !!lightPalette[lraw[i]]
       if (lit) {
         state.status = "lighting…"
-        newLight = await lib.computeSceneLight({ palette: lightPalette, raw: lraw }, {
-          assets,
+        newLight = await lib.computeSceneLight(assets, { palette: lightPalette, raw: lraw }, {
           dimension: buildDim,
           onProgress: (done, total) => {
             if (state.progress?.phase !== "light" || done === total || done - state.progress.done > total / 50) state.progress = { phase: "light", done, total }
@@ -1687,9 +1685,9 @@ async function build(structure = source, refit = true, slice = false, fresh = fa
         const block = entry.__block ?? { id: name, properties: props ?? {} }
         const biome = entry.__biome ? { biome: entry.__biome } : null
         let any = false, allPlanes = true
-        for (const model of await lib.parseBlockstate(assets, name, { data: props ?? {}, ignoreAtlases: true, ...biome })) {
+        for (const model of await lib.parseBlockstate(assets, name, { properties: props ?? {}, ...biome })) {
           const data = await lib.resolveModelData(assets, model)
-          await lib.loadModel(g, assets, data, { display: {}, lighting: lightingOpt(newLight), animate: false, block, neighbors: block.neighbors })
+          await lib.loadModel(assets, data, { parent: g, display: {}, lighting: lightingOpt(newLight), animate: false, block, neighbors: block.neighbors })
           if (data?.fluid) continue
           for (const el of data?.elements ?? []) { any = true; if (!isPlane(el)) allPlanes = false }
         }
@@ -1867,7 +1865,6 @@ async function build(structure = source, refit = true, slice = false, fresh = fa
       },
       lighting: state.lighting === "world" ? { dimension: buildDim, light: newLight ?? false, daytime: state.daytime } : state.lighting,
       keepTemplates: true,
-      ignoreAtlases: true,
       technical: true,
       animate: false,
       origin: structure.worldOrigin ?? [0, 0, 0],
@@ -1950,7 +1947,7 @@ async function build(structure = source, refit = true, slice = false, fresh = fa
         try {
           const name = legacyNames.get(entry.id) ?? entry.id
           const props = fixLegacyProps(name.replace("minecraft:", ""), entry.properties)
-          const models = await lib.parseBlockstate(assets, name, { data: props ?? {}, ignoreAtlases: true })
+          const models = await lib.parseBlockstate(assets, name, { properties: props ?? {} })
           const m = models.length === 1 ? models[0] : null
           if (m && !(m.uvlock && (m.x || m.y || m.z))) {
             key = JSON.stringify({ ...m, x: 0, y: 0, z: 0 })
@@ -1963,7 +1960,7 @@ async function build(structure = source, refit = true, slice = false, fresh = fa
               const g = new THREE.Group()
               g.userData.daytime = daytimeUniform
               const data = await lib.resolveModelData(assets, { ...m, x: 0, y: 0, z: 0 })
-              await lib.loadModel(g, assets, data, { display: {}, lighting: lightingOpt(newLight), animate: false })
+              await lib.loadModel(assets, data, { parent: g, display: {}, lighting: lightingOpt(newLight), animate: false })
               canonDoorTmpl.set(key, g.children.length ? g : null)
             }
             if (!canonDoorTmpl.get(key)) key = null

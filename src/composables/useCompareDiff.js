@@ -45,7 +45,7 @@ async function computeChanged(lib, token, both) {
     const rel = both[i]
     try {
       const [a, b] = await Promise.all([
-        lib.readFile(structures.zipPathOf(rel), mainAssets),
+        lib.readFile(mainAssets, structures.zipPathOf(rel)),
         comparePacks.readStructureBytes(rel)
       ])
       if (!a || !b || bytesEqual(a, b)) continue

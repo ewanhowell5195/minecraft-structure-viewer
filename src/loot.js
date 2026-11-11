@@ -35,7 +35,7 @@ async function readLootTableRaw(id) {
   const assets = packs.assets.value
   const [ns, path] = id.includes(":") ? id.split(":") : ["minecraft", id]
   for (const dir of [`data/${ns}/loot_table`, `data/${ns}/loot_tables`, `assets/${ns}/loot_tables`]) {
-    const buf = await lib.readFile(`${dir}/${path}.json`, assets)
+    const buf = await lib.readFile(assets, `${dir}/${path}.json`)
     if (buf) return JSON.parse(new TextDecoder().decode(buf))
   }
   return null
@@ -49,7 +49,7 @@ export async function readTrialSpawnerConfig(ref) {
   const assets = packs.assets.value
   const [ns, path] = ref.includes(":") ? ref.split(":") : ["minecraft", ref]
   try {
-    const buf = await lib.readFile(`data/${ns}/trial_spawner/${path}.json`, assets)
+    const buf = await lib.readFile(assets, `data/${ns}/trial_spawner/${path}.json`)
     return buf ? JSON.parse(new TextDecoder().decode(buf)) : null
   } catch { return null }
 }

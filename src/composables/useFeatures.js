@@ -45,22 +45,22 @@ async function populate() {
   }
   // default seeds are tools/features' median-size picks (seed 0 often rolls
   // tiny); delisted selectors stay loadable so references still resolve
-  const dbuf = await lib.readFile("viewer/default_seeds.json", packs.assets.value)
+  const dbuf = await lib.readFile(packs.assets.value, "viewer/default_seeds.json")
   defaultSeeds = dbuf ? JSON.parse(textDecoder.decode(dbuf)) : {}
   // features whose 256-seed sample never changed shape: no Re-roll, no Field
-  const stbuf = await lib.readFile("viewer/static_features.json", packs.assets.value)
+  const stbuf = await lib.readFile(packs.assets.value, "viewer/static_features.json")
   staticSet = new Set(stbuf ? JSON.parse(textDecoder.decode(stbuf)) : [])
   // curated display folders (tools/features/folders.json); unmapped rels list at the root
-  const fbuf = await lib.readFile("viewer/feature_folders.json", packs.assets.value)
+  const fbuf = await lib.readFile(packs.assets.value, "viewer/feature_folders.json")
   folders = fbuf ? JSON.parse(textDecoder.decode(fbuf)) : {}
   // per-tree home biome for the grass pad, in the lib's biome-arg shape
-  const bbuf = await lib.readFile("viewer/feature_biomes.json", packs.assets.value)
+  const bbuf = await lib.readFile(packs.assets.value, "viewer/feature_biomes.json")
   biomes = bbuf ? JSON.parse(textDecoder.decode(bbuf)) : {}
   // these names stay in the zip so references resolve; the list keeps them
   // out of the tree (fully removed features never index: no jar source)
   const delisted = new Set()
   for (const f of ["viewer/redundant_selectors.json", "viewer/hidden_features.json"]) {
-    const buf = await lib.readFile(f, packs.assets.value)
+    const buf = await lib.readFile(packs.assets.value, f)
     if (buf) for (const rel of JSON.parse(textDecoder.decode(buf))) delisted.add(rel)
   }
   state.names = Array.from(featurePath.keys()).filter(rel => !delisted.has(rel)).sort(numeric)
@@ -86,7 +86,7 @@ async function loadStruct(ref) {
   const zp = structures.zipPathOf(path)
   if (!zp) return null
   const lib = await loadLibrary()
-  return read(await lib.readFile(zp, packs.assets.value))
+  return read(await lib.readFile(packs.assets.value, zp))
 }
 
 // scan every feature once, building block -> features; cached until assets
@@ -141,7 +141,7 @@ watch(() => packs.state.assetsVersion, refresh)
 
 async function readJson(zipPath) {
   const lib = await loadLibrary()
-  const buf = await lib.readFile(zipPath, packs.assets.value)
+  const buf = await lib.readFile(packs.assets.value, zipPath)
   return buf ? normStatesDeep(JSON.parse(textDecoder.decode(buf))) : null
 }
 

@@ -252,7 +252,7 @@ let followRaf = 0
 async function loadPlayerIcon() {
   try {
     const lib = await loadLibrary()
-    const spr = await lib.readTexture("assets/minecraft/textures/map/decorations/player.png", usePacks().assets.value)
+    const spr = await lib.readTexture(usePacks().assets.value, "assets/minecraft/textures/map/decorations/player.png")
     const c = playerIconEl.value
     if (!c || !spr?.current) return
     c.width = spr.current.width

@@ -78,7 +78,7 @@ async function rebuildAssets(swap) {
   let sources = state.packs.map(p => bytesById.get(p.id)).concat(baseBytes).filter(Boolean)
   if (sources.length) sources = sources.concat(builtinBytes ?? [], featureBytes ?? [], guiBytes ?? [])
   const prev = assets.value
-  assets.value = sources.length ? await lib.prepareAssets(sources, { cache: true, defaults: "game", version: state.baseId || undefined }) : null
+  assets.value = sources.length ? await lib.prepareAssets(sources, { cache: true, defaults: "game", ignoreAtlases: true, version: state.baseId || undefined }) : null
   state.assetsVersion++
   try {
     await (swap ?? swapHandler)?.(assets.value)

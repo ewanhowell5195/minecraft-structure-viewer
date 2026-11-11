@@ -492,7 +492,7 @@ async function readVanilla(rel) {
     return applyLegacyRenames((await gen(undefined, { seed: 0 })).structure, packs.state.baseId)
   }
   const lib = await loadLibrary()
-  const s = await processVanilla(rel, await read(await lib.readFile(zp, packs.assets.value)))
+  const s = await processVanilla(rel, await read(await lib.readFile(packs.assets.value, zp)))
   // randomised builtins load deterministically at seed 0; Re-roll picks a fresh seed
   return fixBuiltin(rel, s, 0)
 }
@@ -508,7 +508,7 @@ async function processVanilla(rel, s, version = packs.state.baseId) {
   const lib = await loadLibrary()
   return applyProcessors(s, pe, rnd(procs.seedOf(rel)), async orel => {
     const ozp = structures.zipPathOf(orel)
-    return ozp ? read(await lib.readFile(ozp, packs.assets.value)) : null
+    return ozp ? read(await lib.readFile(packs.assets.value, ozp)) : null
   })
 }
 
@@ -616,7 +616,7 @@ async function featureEntry(rel, seed) {
     const zp = structures.zipPathOf(path)
     if (!zp) return null
     const lib = await loadLibrary()
-    return read(await lib.readFile(zp, packs.assets.value))
+    return read(await lib.readFile(packs.assets.value, zp))
   }
   const s = await generateFeature(rel, json, rnd(useSeed), features.resolvePlaced, loadStruct, { grass: features.grassBiome(rel) }, features.loadProcessors)
   applyLegacyRenames(s, packs.state.baseId)
