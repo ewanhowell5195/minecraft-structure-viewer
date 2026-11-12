@@ -20,7 +20,7 @@ function surfaceCode(name) {
   if (n === "water" || n === "kelp" || n === "kelp_plant" || n.endsWith("seagrass")) return 2
   if (n === "grass_block" || n.startsWith("moss_")) return 3
   if (n === "lava" || n === "magma_block") return 11
-  if (n === "snow" || n === "snow_block" || n === "powder_snow") return 8
+  if (n === "snow" || n === "snow_block" || n === "powder_snow" || n.startsWith("snow_brick")) return 8
   if (n === "bedrock") return 15
   if (n === "netherrack") return 13
   if (n.startsWith("end_stone")) return 14
@@ -31,7 +31,7 @@ function surfaceCode(name) {
   if (n.includes("blackstone")) return 37
   if (n.includes("nether_brick")) return 38
   if (n.endsWith("gravel")) return 16
-  if (n.endsWith("ice")) return 9
+  if (n.endsWith("ice") || n.startsWith("packed_ice_brick") || n === "icicle" || n === "ice_crystal") return 9
   if (n.includes("red_sand")) return 56
   if (n.endsWith("sand") || n.endsWith("sandstone")) return 5
   if (n.includes("copper") && !n.endsWith("_ore")) {
