@@ -1,4 +1,5 @@
 import MinecraftAssets from "minecraft-asset-loader"
+import { setRelease } from "./release.js"
 
 export const assets = new MinecraftAssets()
 
@@ -15,6 +16,7 @@ export async function loadMojangJar(channel = "release", onProgress, version) {
   const id = version || (await assets.manifest.latest())[channel === "snapshot" ? "newest" : "release"]?.id
   const ver = id && await assets.manifest.version(id)
   if (!ver) throw new Error(`version not found: ${version || channel}`)
+  setRelease(ver.id, await assets.manifest.versions())
   await assets.loadJar({ version: ver.id, onProgress: (done, total) => onProgress?.(done, total ?? 0, ver.id) })
   return { id: ver.id, channel, type: ver.type, bytes: await assets.export({ version: ver.id }) }
 }

@@ -1,3 +1,5 @@
+import { releaseOf } from "./release.js"
+
 const RENAMES = {
   spawner: ["1.13", "mob_spawner"],
   cobweb: ["1.13", "web"],
@@ -31,7 +33,7 @@ for (const suffix of ["carpet", "wool", "stained_glass", "stained_glass_pane", "
 
 export function before(version, threshold) {
   const parse = v => String(v).split("-")[0].split(".").map(Number)
-  const a = parse(version), b = parse(threshold)
+  const a = parse(releaseOf(version)), b = parse(threshold)
   for (let i = 0; i < Math.max(a.length, b.length); i++) {
     const d = (a[i] ?? 0) - (b[i] ?? 0)
     if (d) return d < 0

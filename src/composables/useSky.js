@@ -44,7 +44,7 @@ async function apply() {
       daytime: build.state.daytime,
       // no terrain here to hide them the way the game does
       horizonFade: true,
-      version: packs.state.baseId || undefined,
+      version: packs.state.baseRelease || undefined,
       fog: stream.fog.value ?? undefined
     })
   } catch {

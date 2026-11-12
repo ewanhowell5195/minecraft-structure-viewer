@@ -116,7 +116,7 @@ function startBuildWorkers(file, dim, count = Math.min(3, Math.max(1, Math.floor
         w.postMessage({
           type: "initBuild", id: 0,
           sources: packs2().allSources(),
-          version: packs2().state.baseId || undefined,
+          version: packs2().state.baseRelease || undefined,
           occl: occlSeed,
           layout: atlasLayout,
           cfg: { origin, tile: TILE, dimension, daytime, lighting: lightingSpec(true) }

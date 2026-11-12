@@ -1,6 +1,7 @@
 import { reactive, shallowRef, readonly } from "vue"
 import { loadLibrary } from "../lib.js"
 import { loadMojangJar } from "../mojang.js"
+import { releaseOf } from "../release.js"
 import { cachePack, uncachePack, setPackOrder, restorePacks } from "../userCache.js"
 import { proxyFetch, remoteName } from "../remote.js"
 import { warmIcons } from "../icons.js"
@@ -45,6 +46,7 @@ const state = reactive({
   channel: new URLSearchParams(location.search).get("channel") === "snapshot" ? "snapshot" : "release",
   version: new URLSearchParams(location.search).get("version") || "",
   baseId: "",
+  get baseRelease() { return releaseOf(this.baseId) },
   baseType: "",
   baseStatus: "loading…",
   baseProgress: 0,
@@ -78,7 +80,7 @@ async function rebuildAssets(swap) {
   let sources = state.packs.map(p => bytesById.get(p.id)).concat(baseBytes).filter(Boolean)
   if (sources.length) sources = sources.concat(builtinBytes ?? [], featureBytes ?? [], guiBytes ?? [])
   const prev = assets.value
-  assets.value = sources.length ? await lib.prepareAssets(sources, { cache: true, defaults: "game", ignoreAtlases: true, version: state.baseId || undefined }) : null
+  assets.value = sources.length ? await lib.prepareAssets(sources, { cache: true, defaults: "game", ignoreAtlases: true, version: state.baseRelease || undefined }) : null
   state.assetsVersion++
   try {
     await (swap ?? swapHandler)?.(assets.value)
