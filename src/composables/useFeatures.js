@@ -8,6 +8,7 @@ import { inlineProviders } from "../features/providers.js"
 import { read } from "minecraft-block-reader"
 import { useStructures } from "./useStructures.js"
 import { yieldTask } from "../yield.js"
+import { before } from "../legacyRenames.js"
 
 const FEATURE_RE = /^data\/([^/]+)\/worldgen\/feature\/(.+)\.json$/
 
@@ -142,7 +143,17 @@ watch(() => packs.state.assetsVersion, refresh)
 async function readJson(zipPath) {
   const lib = await loadLibrary()
   const buf = await lib.readFile(packs.assets.value, zipPath)
-  return buf ? normStatesDeep(JSON.parse(textDecoder.decode(buf))) : null
+  if (!buf) return null
+  const json = normStatesDeep(JSON.parse(textDecoder.decode(buf)))
+  return before(packs.state.baseRelease || "26.4", "26.4") ? markLegacyCuboids(json) : json
+}
+
+// a 26.3 cuboid's sizes are one less than the blocks it spans
+function markLegacyCuboids(node) {
+  if (!node || typeof node !== "object") return node
+  if (typeof node.type === "string" && strip(node.type) === "cuboid" && node.xz_size !== undefined) node.legacy_size = true
+  for (const child of Object.values(node)) markLegacyCuboids(child)
+  return node
 }
 
 // pre-26.3 files nest the payload under config; the generators speak the

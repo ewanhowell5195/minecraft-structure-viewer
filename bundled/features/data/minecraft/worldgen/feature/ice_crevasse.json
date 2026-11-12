@@ -1,0 +1,41 @@
+{
+  "max_width": 4,
+  "max_length": 16,
+  "min_footprint": 10,
+  "cursor_surface_search_range": 8,
+  "column_surface_search_range": 8,
+  "twistiness": 4.0,
+  "tapering": 0.6,
+  "turn_factor": 0.05,
+  "carve_depth": {
+    "min_inclusive": 6,
+    "max_inclusive": 10,
+    "type": "minecraft:uniform"
+  },
+  "fill_depth": {
+    "min_inclusive": 4,
+    "max_inclusive": 6,
+    "type": "minecraft:uniform"
+  },
+  "surface_block": {
+    "properties": {
+      "age": "0"
+    },
+    "id": "minecraft:brittle_ice"
+  },
+  "fill_block": {
+    "properties": {
+      "level": "0"
+    },
+    "id": "minecraft:water"
+  },
+  "carvable_blocks": {
+    "tag": "minecraft:ice_crevasse_replaceables",
+    "type": "minecraft:matching_block_tag"
+  },
+  "acceptable_barrier": {
+    "tag": "minecraft:blocks_fluid_flow",
+    "type": "minecraft:matching_block_tag"
+  },
+  "type": "minecraft:crevasse"
+}

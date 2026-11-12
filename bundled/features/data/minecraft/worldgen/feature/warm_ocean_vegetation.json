@@ -97,13 +97,13 @@
         },
         {
           "xz_size": {
-            "min_inclusive": 3,
-            "max_inclusive": 5,
+            "min_inclusive": 4,
+            "max_inclusive": 6,
             "type": "minecraft:uniform"
           },
           "y_size": {
-            "min_inclusive": 3,
-            "max_inclusive": 5,
+            "min_inclusive": 4,
+            "max_inclusive": 6,
             "type": "minecraft:uniform"
           },
           "include_edges": false,
@@ -243,13 +243,13 @@
         },
         {
           "xz_size": {
-            "min_inclusive": 3,
-            "max_inclusive": 5,
+            "min_inclusive": 4,
+            "max_inclusive": 6,
             "type": "minecraft:uniform"
           },
           "y_size": {
-            "min_inclusive": 3,
-            "max_inclusive": 5,
+            "min_inclusive": 4,
+            "max_inclusive": 6,
             "type": "minecraft:uniform"
           },
           "include_edges": false,
@@ -389,13 +389,13 @@
         },
         {
           "xz_size": {
-            "min_inclusive": 3,
-            "max_inclusive": 5,
+            "min_inclusive": 4,
+            "max_inclusive": 6,
             "type": "minecraft:uniform"
           },
           "y_size": {
-            "min_inclusive": 3,
-            "max_inclusive": 5,
+            "min_inclusive": 4,
+            "max_inclusive": 6,
             "type": "minecraft:uniform"
           },
           "include_edges": false,
@@ -535,13 +535,13 @@
         },
         {
           "xz_size": {
-            "min_inclusive": 3,
-            "max_inclusive": 5,
+            "min_inclusive": 4,
+            "max_inclusive": 6,
             "type": "minecraft:uniform"
           },
           "y_size": {
-            "min_inclusive": 3,
-            "max_inclusive": 5,
+            "min_inclusive": 4,
+            "max_inclusive": 6,
             "type": "minecraft:uniform"
           },
           "include_edges": false,
@@ -681,13 +681,13 @@
         },
         {
           "xz_size": {
-            "min_inclusive": 3,
-            "max_inclusive": 5,
+            "min_inclusive": 4,
+            "max_inclusive": 6,
             "type": "minecraft:uniform"
           },
           "y_size": {
-            "min_inclusive": 3,
-            "max_inclusive": 5,
+            "min_inclusive": 4,
+            "max_inclusive": 6,
             "type": "minecraft:uniform"
           },
           "include_edges": false,

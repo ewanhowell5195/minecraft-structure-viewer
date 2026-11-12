@@ -1,6 +1,7 @@
 // ports of the game's placement code over an empty world: the viewer's floor grid is the ground
 import { nextInt, sampleFloat, sampleInt, sampleState, pickWeighted, intBounds, providerType } from "./providers.js"
 import { generateTree, generateFallenTree } from "./tree.js"
+import { crevasse } from "./crevasse.js"
 import { runEndSpike } from "../generators/endspikes.js"
 import { DIR, HORIZ, OPP, shuffle, statePicker } from "../transforms.js"
 import { applyProcessors } from "../processors.js"
@@ -159,12 +160,18 @@ const TYPES = {
   // lifted by the blob's own maximum extent so the body sits on the grid
   async ore(world, json, rand, resolvePlaced, ox, oy, oz) {
     const size = json.size ?? 9
-    const state = json.targets?.[0]?.state ?? sampleState(json.state_provider, rand)
+    const targets = json.targets ?? []
+    const state = targets[0]?.state ?? sampleState(json.state_provider, rand)
     if (!state) return
     const dir = rand() * Math.PI
     const spread = size / 8
     const maxRadius = Math.ceil((size / 16 * 2 + 1) / 2)
-    const lift = 2 + maxRadius
+    const origin = ox + "," + oy + "," + oz
+    const hosts = world.oreHosts ??= new Map()
+    const host = hosts.get(origin)
+    const hosted = !!host && targets.some(entry => matchRule(entry.target, host.state, () => 0))
+    const lift = hosted ? host.lift : 2 + maxRadius
+    if (!hosted) hosts.set(origin, { lift, state })
     const x0 = Math.sin(dir) * spread, x1 = -Math.sin(dir) * spread
     const z0 = Math.cos(dir) * spread, z1 = -Math.cos(dir) * spread
     const y0 = nextInt(rand, 3) - 2, y1 = nextInt(rand, 3) - 2
@@ -180,11 +187,14 @@ const TYPES = {
         const px = Math.floor(cx) + dx, py = Math.floor(cy) + dy, pz = Math.floor(cz) + dz
         const ddx = px + 0.5 - cx, ddy = py + 0.5 - cy, ddz = pz + 0.5 - cz
         if (ddx * ddx + ddy * ddy + ddz * ddz > radius * radius) continue
-        world.set(ox + px, oy + py + lift, oz + pz, state)
+        const cell = world.get(ox + px, oy + py + lift, oz + pz)
+        const next = hosted ? cell && targets.find(entry => matchRule(entry.target, cell, rand))?.state : state
+        if (!next) continue
+        world.set(ox + px, oy + py + lift, oz + pz, next)
         placed++
       }
     }
-    if (!placed) world.set(ox, oy, oz, state)
+    if (!placed && !hosted) world.set(ox, oy, oz, state)
   },
 
   async scattered_ore(world, json, rand, resolvePlaced, ox, oy, oz) {
@@ -750,11 +760,19 @@ Object.assign(TYPES, {
   async speleothem_cluster(world, json, rand, resolvePlaced, ox, oy, oz) {
     const gauss = () => Math.sqrt(-2 * Math.log(Math.max(rand(), 1e-9))) * Math.cos(2 * Math.PI * rand())
     const clampedMap = (v, a, b, from, to) => v <= a ? from : v >= b ? to : from + (to - from) * (v - a) / (b - a)
+    const options = json.placement_options ?? {}
+    const mode = options.placement_mode ?? "floor_and_ceiling"
+    const hasCeiling = mode !== "floor_only", hasFloor = mode !== "ceiling_only"
+    const setAttached = options.base_block_transformer === "set_attached"
+    const allowWater = options.allow_water_placement ?? true
+    const replaceable = [json.replaceable_blocks ?? []].flat().length > 0
+    const attachable = strip(json.pointed_block.id) === "icicle"
     const height = sampleInt(json.height, rand)
     const wetness = sampleFloat(json.wetness, rand)
     const density = sampleFloat(json.density, rand)
     const rx = sampleInt(json.radius, rand), rz = sampleInt(json.radius, rand)
     const ceilY = oy + 7 + nextInt(rand, 4)
+    const soloMax = Math.min(height, ceilY - oy)
     const speleoHeight = (dx, dz, maxH) => {
       if (rand() > density) return 0
       const mean = clampedMap(Math.abs(dx) + Math.abs(dz), 0, json.max_distance_from_center_affecting_height_bias, maxH / 2, 0)
@@ -769,19 +787,26 @@ Object.assign(TYPES, {
       }
       return !world.get(x, y - 1, z)
     }
-    const grow = (x, z, startY, dir, len, merged) => {
-      const states = []
-      if (len >= 3) {
-        states.push("base")
-        for (let i = 0; i < len - 3; i++) states.push("middle")
-      }
-      if (len >= 2) states.push("frustum")
-      if (len >= 1) states.push(merged ? "tip_merge" : "tip")
-      let y = startY
-      for (const thickness of states) {
-        const waterlogged = isWater(x, y, z) ? "true" : "false"
-        world.set(x, y, z, { id: json.pointed_block.id, properties: { ...(json.pointed_block.properties ?? {}), vertical_direction: dir === 1 ? "up" : "down", thickness, waterlogged } })
-        y += dir
+    function canPlace(x, y, z) {
+      const cell = world.get(x, y, z)
+      return cell ? allowWater && strip(cell.id) === "water" : y >= oy && y < ceilY
+    }
+    function available(x, z, startY, dir, want) {
+      let n = 0
+      while (n < want && canPlace(x, startY + n * dir, z)) n++
+      return n
+    }
+    function layer(x, z, startY, dir) {
+      const thick = sampleInt(json.speleothem_block_layer_thickness, rand)
+      if (!replaceable) return
+      for (let i = 0; i < thick && !world.get(x, startY + i * dir, z); i++) world.set(x, startY + i * dir, z, json.base_block)
+    }
+    function grow(x, z, startY, dir, len, merged) {
+      for (let left = len, y = startY; left > 0; left--, y += dir) {
+        const thickness = left === 2 ? "frustum" : left === 1 ? (merged ? "tip_merge" : "tip") : left === len ? "base" : "middle"
+        const properties = { vertical_direction: dir === 1 ? "up" : "down", thickness, waterlogged: isWater(x, y, z) ? "true" : "false" }
+        if (attachable) properties.attached = setAttached && left === len ? "true" : "false"
+        world.set(x, y, z, { id: json.pointed_block.id, properties })
       }
     }
     for (let dx = -rx; dx <= rx; dx++) {
@@ -790,44 +815,45 @@ Object.assign(TYPES, {
         const chance = clampedMap(Math.min(rx - Math.abs(dx), rz - Math.abs(dz)), 0,
           json.max_distance_from_edge_affecting_chance_of_speleothem, json.chance_of_speleothem_at_max_distance_from_center, 1)
         let floorY = oy - 1
-        if (rand() < wetness && poolOk(x, floorY, z)) {
+        const wantPool = rand() < wetness
+        if (wantPool && hasFloor && poolOk(x, floorY, z)) {
           world.set(x, floorY, z, { id: "minecraft:water", properties: { level: "0" } })
           floorY--
         }
         let stalac = 0
-        if (rand() < chance) {
-          const thick = sampleInt(json.speleothem_block_layer_thickness, rand)
-          for (let i = 0; i < thick && !world.get(x, ceilY + i, z); i++) {
-            world.set(x, ceilY + i, z, json.base_block)
-          }
-          stalac = speleoHeight(dx, dz, Math.min(height, ceilY - floorY))
+        const wantStalac = rand() < chance
+        if (wantStalac && hasCeiling) {
+          layer(x, z, ceilY, 1)
+          stalac = speleoHeight(dx, dz, hasFloor ? Math.min(height, ceilY - floorY) : soloMax)
         }
         let stalag = 0
-        if (rand() < chance) {
-          const thick = sampleInt(json.speleothem_block_layer_thickness, rand)
-          for (let i = 0; i < thick && !world.get(x, floorY - i, z); i++) {
-            world.set(x, floorY - i, z, json.base_block)
-          }
+        const wantStalag = rand() < chance
+        if (wantStalag && hasFloor) {
+          layer(x, z, floorY, -1)
           const d = json.max_stalagmite_stalactite_height_diff ?? 0
-          stalag = Math.max(0, stalac + nextInt(rand, 2 * d + 1) - d)
+          stalag = hasCeiling ? Math.max(0, stalac + nextInt(rand, 2 * d + 1) - d) : speleoHeight(dx, dz, soloMax)
         }
         let aStalac = stalac, aStalag = stalag
-        if (ceilY - stalac <= floorY + stalag) {
+        if (hasCeiling && hasFloor && ceilY - stalac <= floorY + stalag) {
           const low = Math.max(ceilY - stalac, floorY + 1)
           const high = Math.min(floorY + stalag, ceilY - 1)
           const bottom = low + nextInt(rand, high + 2 - low)
           aStalac = ceilY - bottom
           aStalag = bottom - 1 - floorY
         }
+        aStalac = available(x, z, ceilY - 1, -1, aStalac)
+        aStalag = available(x, z, floorY + 1, 1, aStalag)
         const coin = rand() < 0.5
         const merged = coin && aStalac > 0 && aStalag > 0 && aStalac + aStalag === ceilY - floorY - 1
+        if (aStalac > 0 && !replaceable && !world.get(x, ceilY, z)) world.set(x, ceilY, z, json.base_block)
         grow(x, z, ceilY - 1, -1, aStalac, merged)
         grow(x, z, floorY + 1, 1, aStalag, merged)
       }
     }
   },
 
-  async large_dripstone(world, json, rand, resolvePlaced, ox, oy, oz) {
+  async large_speleothem(world, json, rand, resolvePlaced, ox, oy, oz) {
+    const block = { id: json.base_block?.id ?? "minecraft:dripstone_block" }
     const caveHeight = 4 + nextInt(rand, 57)
     const floorY = oy, ceilY = oy + caveHeight - 1
     const originMin = Math.max(floorY, ceilY - 30), originMax = Math.min(ceilY, floorY + 30)
@@ -871,13 +897,21 @@ Object.assign(TYPES, {
             const y = rootY + i * s.dir
             if (y < floorY || y > ceilY) continue
             const [wx, wz] = windAt(y)
-            world.set(ox + dx + wx, y, oz + dz + wz, { id: "minecraft:dripstone_block" })
+            world.set(ox + dx + wx, y, oz + dz + wz, block)
           }
         }
       }
     }
     place(stalactite)
     place(stalagmite)
+  },
+
+  async large_dripstone(world, json, rand, resolvePlaced, ox, oy, oz) {
+    return TYPES.large_speleothem(world, json, rand, resolvePlaced, ox, oy, oz)
+  },
+
+  async crevasse(world, json, rand, resolvePlaced, ox, oy, oz) {
+    await crevasse(world, json, rand, resolvePlaced, ox, oy, oz, { testPredicate, contextualState })
   },
 
   async block_blob(world, json, rand, resolvePlaced, ox, oy, oz) {
@@ -1295,6 +1329,56 @@ function contextualState(world, p, rand, x, y, z) {
   return sampleState(p, rand)
 }
 
+const RULE_TAGS = {
+  stone_ore_replaceables: ["stone", "granite", "diorite", "andesite"],
+  deepslate_ore_replaceables: ["deepslate"],
+  height_specific_ore_replaceables: ["tuff"],
+  ice_cave_ore_replaceables: ["calcite", "packed_ice"],
+  base_stone_overworld: ["stone", "granite", "diorite", "andesite", "tuff", "deepslate"],
+  base_stone_nether: ["netherrack", "basalt", "blackstone"]
+}
+
+const sameState = (cell, s) => strip(cell.id) === strip(s?.id ?? s?.Name) && Object.entries(s?.properties ?? s?.Properties ?? {}).every(([k, v]) => String(cell.properties?.[k]) === String(v))
+
+function matchRule(rule, cell, rand) {
+  switch (strip(rule?.predicate_type)) {
+    case "all_of": return (rule.rules ?? []).every(r => matchRule(r, cell, rand))
+    case "any_of": return (rule.rules ?? []).some(r => matchRule(r, cell, rand))
+    case "not": return !matchRule(rule.rule, cell, rand)
+    case "block_match": return strip(cell.id) === strip(rule.block)
+    case "random_block_match": return strip(cell.id) === strip(rule.block) && rand() < rule.probability
+    case "blockstate_match": return sameState(cell, rule.block_state)
+    case "random_blockstate_match": return sameState(cell, rule.block_state) && rand() < rule.probability
+    case "tag_match": return RULE_TAGS[strip(rule.tag)]?.includes(strip(cell.id)) ?? true
+  }
+  return true
+}
+
+// a water or lava block's level is 0 for a source and 1 to 7 as it thins, where the fluid's own level runs 8 down to 1
+function fluidState(cell) {
+  if (!cell) return null
+  const id = strip(cell.id)
+  if (id !== "water" && id !== "lava") return cell.properties?.waterlogged === "true" ? { id: "water", source: true, level: 8 } : null
+  const level = Math.min(Number(cell.properties?.level ?? 0), 8)
+  return { id, source: level === 0, level: level % 8 === 0 ? 8 : 8 - level }
+}
+
+function fluidValue(name, raw) {
+  const text = String(raw)
+  if (name === "source") return text === "true" ? 1 : text === "false" ? 0 : NaN
+  if (name !== "level" || !/^[1-8]$/.test(text)) return NaN
+  return Number(text)
+}
+
+function matchFluidState(fluid, want) {
+  return Object.entries(want ?? {}).every(([name, value]) => {
+    const actual = fluidValue(name, fluid[name])
+    if (Number.isNaN(actual)) return false
+    if (value === null || typeof value !== "object") return actual === fluidValue(name, value)
+    return (value.min === undefined || actual >= fluidValue(name, value.min)) && (value.max === undefined || actual <= fluidValue(name, value.max))
+  })
+}
+
 function testPredicate(world, pred, x, y, z) {
   const [dx, dy, dz] = pred.offset ?? [0, 0, 0]
   const px = x + dx, py = y + dy, pz = z + dz
@@ -1311,11 +1395,11 @@ function testPredicate(world, pred, x, y, z) {
       return [pred.blocks].flat().map(strip).includes(name)
     }
     case "matching_fluids": {
-      const c = world.get(px, py, pz)
-      if (!c) return false
-      const fluids = [pred.fluids].flat().map(strip)
-      if (fluids.includes(strip(c.id).replace("flowing_", ""))) return true
-      return fluids.includes("water") && c.properties?.waterlogged === "true"
+      const fluid = fluidState(world.get(px, py, pz))
+      const fluids = [pred.fluids].flat().map(f => strip(f).replace("#", ""))
+      if (!fluid) return fluids.includes("empty") && !Object.keys(pred.state ?? {}).length
+      if (!fluids.includes(fluid.id) && (fluid.source || !fluids.includes("flowing_" + fluid.id))) return false
+      return matchFluidState(fluid, pred.state)
     }
     case "matching_block_tag": return strip(pred.tag) === "air" ? !world.get(px, py, pz) : false
     case "has_sturdy_face": {
@@ -1372,13 +1456,14 @@ function applyPlacement(world, mods, rand, x, y, z) {
           break
         }
         case "cuboid": {
-          const h = sampleInt(mod.y_size, rand)
-          const w = sampleInt(mod.xz_size, rand)
-          const l = sampleInt(mod.xz_size, rand)
+          const grow = mod.legacy_size ? 1 : 0
+          const h = sampleInt(mod.y_size, rand) + grow
+          const w = sampleInt(mod.xz_size, rand) + grow
+          const l = sampleInt(mod.xz_size, rand) + grow
           const edges = mod.include_edges !== false
           const interior = mod.include_interior !== false
-          for (let dx = 0; dx <= w; dx++) for (let dy = 0; dy <= h; dy++) for (let dz = 0; dz <= l; dz++) {
-            const bx = dx === 0 || dx === w, by = dy === 0 || dy === h, bz = dz === 0 || dz === l
+          for (let dx = 0; dx < w; dx++) for (let dy = 0; dy < h; dy++) for (let dz = 0; dz < l; dz++) {
+            const bx = dx === 0 || dx === w - 1, by = dy === 0 || dy === h - 1, bz = dz === 0 || dz === l - 1
             if (!edges && ((bx && by) || (bz && by) || (bx && bz))) continue
             if (!interior && !(bx || by || bz)) continue
             next.push([px + dx, py + dy, pz + dz])

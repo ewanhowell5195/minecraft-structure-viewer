@@ -72,17 +72,22 @@ function offsetTreeCtx(ctx, dy) {
 const attach = (x, y, z, radiusOffset, opts = {}) => ({
   x, y, z, radiusOffset,
   heightOffset: opts.heightOffset ?? 0,
-  sizeX: opts.double ? 2 : 1,
-  sizeZ: opts.double ? 2 : 1
+  sizeX: opts.size ?? (opts.double ? 2 : 1),
+  sizeZ: opts.size ?? (opts.double ? 2 : 1)
 })
 const isDouble = a => a.sizeX === 2 && a.sizeZ === 2
 
 
 const TRUNKS = {
   straight_trunk_placer(ctx, p, height, rand) {
-    ctx.placeBelowTrunk(0, -1, 0)
-    for (let y = 0; y < height; y++) ctx.placeLog(0, y, 0)
-    return [attach(0, height, 0, 0)]
+    const width = sampleInt(p.trunk_width ?? 1, rand)
+    const nw = 0 - Math.trunc((width - 1) / 2)
+    const se = Math.trunc(width / 2)
+    for (let z = nw; z <= se; z++) for (let x = nw; x <= se; x++) ctx.placeBelowTrunk(x, -1, z)
+    for (let y = 0; y < height; y++) {
+      for (let z = nw; z <= se; z++) for (let x = nw; x <= se; x++) ctx.placeLog(x, y, z)
+    }
+    return [attach(nw, height, nw, 0, { size: width })]
   },
 
   forking_trunk_placer(ctx, p, height, rand) {

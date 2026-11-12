@@ -1,7 +1,8 @@
 {
   "state": {
     "properties": {
-      "falling": "true"
+      "source": "true",
+      "level": "8"
     },
     "id": "minecraft:lava"
   },
