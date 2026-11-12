@@ -19,6 +19,16 @@ function makeWorld() {
   }
 }
 
+const DOUBLE_PLANTS = /^(tall_grass|large_fern|tall_seagrass|sunflower|lilac|rose_bush|peony|pitcher_plant|small_dripleaf)$/
+const GROUND_PLANTS = /^(short_grass|fern|dead_bush|bush|firefly_bush|sweet_berry_bush|short_dry_grass|tall_dry_grass|dandelion|poppy|blue_orchid|allium|azure_bluet|oxeye_daisy|cornflower|lily_of_the_valley|wither_rose|torchflower|open_eyeblossom|closed_eyeblossom|wildflowers|pink_petals|leaf_litter|cactus_flower|[a-z_]+_tulip|[a-z_]+_sapling)$/
+
+// the grid is the ground: a plant survives on it or on a block the feature placed, never in mid-air
+function canSurvive(world, x, y, z) {
+  if (y === 0) return true
+  const below = strip(world.get(x, y - 1, z)?.id ?? "")
+  return !!below && !/^(water|lava)$/.test(below) && !DOUBLE_PLANTS.test(below) && !GROUND_PLANTS.test(below)
+}
+
 async function generate(world, json, rand, resolvePlaced, ox = 0, oy = 0, oz = 0) {
   const type = strip(json.type)
   const gen = TYPES[type]
@@ -52,7 +62,8 @@ const TYPES = {
     const state = sampleState(json.to_place, rand)
     if (!state) return
     const name = strip(state.id)
-    if (/^(tall_grass|large_fern|tall_seagrass|sunflower|lilac|rose_bush|peony|pitcher_plant|small_dripleaf)$/.test(name)) {
+    if ((DOUBLE_PLANTS.test(name) || GROUND_PLANTS.test(name)) && !canSurvive(world, ox, oy, oz)) return
+    if (DOUBLE_PLANTS.test(name)) {
       world.set(ox, oy, oz, { id: state.id, properties: { ...(state.properties ?? {}), half: "lower" } })
       if (!world.get(ox, oy + 1, oz)) world.set(ox, oy + 1, oz, { id: state.id, properties: { ...(state.properties ?? {}), half: "upper" } })
     } else {
