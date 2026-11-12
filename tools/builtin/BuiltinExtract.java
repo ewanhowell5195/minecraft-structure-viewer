@@ -47,7 +47,7 @@ import net.minecraft.world.level.levelgen.feature.VoidStartPlatformFeature;
 import net.minecraft.world.level.levelgen.structure.BoundingBox;
 import net.minecraft.world.level.levelgen.structure.ScatteredFeaturePiece;
 import net.minecraft.world.level.levelgen.structure.StructurePiece;
-import net.minecraft.world.level.levelgen.structure.StructurePieceAccessor;
+import net.minecraft.world.level.levelgen.structure.pieces.StructurePiecesBuilder;
 import net.minecraft.world.level.levelgen.structure.structures.BuriedTreasurePieces;
 import net.minecraft.world.level.levelgen.structure.structures.NetherFortressPieces;
 import net.minecraft.world.level.levelgen.structure.structures.DesertPyramidPiece;
@@ -100,7 +100,7 @@ public class BuiltinExtract {
   static class DummyChunk extends ChunkAccess {
     DummyChunk() {
       super(new ChunkPos(0, 0), UpgradeData.EMPTY, LevelHeightAccessor.create(0, 0),
-        new PalettedContainerFactory(null, null, null, null, null, null), 0L, null, null);
+        new PalettedContainerFactory(null, null, null, null, null, null, null, null), 0L, null, null);
     }
     @Override public void markPosForPostProcessing(BlockPos pos) {}
     public BlockState setBlockState(BlockPos pos, BlockState state, int flags) { return null; }
@@ -542,7 +542,7 @@ public class BuiltinExtract {
 
   // ---------------------------------------------------------- nether fortress
 
-  static final StructurePieceAccessor NO_COLLISION = new StructurePieceAccessor() {
+  static final StructurePiecesBuilder NO_COLLISION = new StructurePiecesBuilder() {
     public void addPiece(StructurePiece piece) {}
     public StructurePiece findCollisionPiece(BoundingBox box) { return null; }
   };
@@ -662,7 +662,7 @@ public class BuiltinExtract {
     strongholdPiece("library", new int[]{ 0 }, r -> net.minecraft.world.level.levelgen.structure.structures.StrongholdPieces.Library.createPiece(acc, r, 0, 64, 0, N, 1));
     // the short library exists when the tall box does not fit: fake a
     // collision for 11-high boxes so createPiece takes the shrink path
-    StructurePieceAccessor shortAcc = new StructurePieceAccessor() {
+    StructurePiecesBuilder shortAcc = new StructurePiecesBuilder() {
       public void addPiece(StructurePiece piece) {}
       public StructurePiece findCollisionPiece(BoundingBox box) {
         return box.getYSpan() > 6 ? new BuriedTreasurePieces.BuriedTreasurePiece(new BlockPos(9999, 9999, 9999)) : null;
