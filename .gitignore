@@ -1,4 +1,5 @@
 node_modules
 dist
 tools/builtin/.cache
+tools/shots/.cache
 docs

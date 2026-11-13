@@ -1,0 +1,18 @@
+{
+  "world": {
+    "save": "Ewan's World",
+    "dimension": "overworld",
+    "params": "wy=45%2C200&wsel=JZRBDoQwDAM_tEhN7EAR___XytOLDzTxgJPS9buerxsVanTQG33Qjb5RLZTe2r_r_uqN9kILbVSo0UFv9EHpbXpFr-gt_a75yuigN_qgG32jIQ7EgTgQB-JAHIgDcSAOxIE4EOer_l2Ga7iGa7iGa7iGa7iGa7iGa7iGa7iGa7iGa7iGe4iCKIiCIiiCIiiCIiiCIiiCIiiCIiiCIiinq-lqupqupqvparqarqbrnBanxWlxWpzyfOXxytOVhysdHFBPOdWVAzhgoACBwWvz1rw078wHkRqhkRmR-RO7KnZV7KrYNLFpYtPEJohNEJsgZiRmJGYkZiRmJGYkEhYJi4RFwiJhkXBqmpqmpqlpapqapqaoKWqKmqKmqKlPpKqTaic_RRyZyB15IslZydnJ2cnZ6XA6nA7T0T-gMEFCBAgPXMWl4lJxqbhUXHgNvowP47v4LL6qY9Ax6Bh0DDoGHYOOAd9NfKRHeGRHdIqBYqAYKAaKgWKgGBAuM2JETIgBMR_HwDFwDBwDx8AxcAzOPb25s-f_U2x-sfnF5hebXzldOVw5WzlaOWGFF38DoecP09zBxrO5mw1LsM4NPc6bW7O5NZtbs7k1m1uz2Y3Nbmx24zx5efLy5IV4_sCbzXnQG50Muz5nsM6EnAk5UTtRO5n5PiFNQpqENAlpEhIGk5JJycUuXCzDxTZcrMOF_VV_&wloaded=1&wdim=overworld",
+    "camera": {
+      "position": [184.455, 72.479, -64.419],
+      "target": [194.423, 71.298, -62.23]
+    },
+    "daytime": 23380,
+    "viewport": [1600, 900],
+    "clip": [0, 0, 1300, 900],
+    "scale": 2,
+    "width": 2400,
+    "quality": 86,
+    "out": "public/home/world/viewer.webp"
+  }
+}
