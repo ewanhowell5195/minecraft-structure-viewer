@@ -32,10 +32,12 @@ export function sampleInt(p, rand) {
     case "clamped_normal": return Math.min(p.max_inclusive, Math.max(p.min_inclusive, Math.round(gaussian(rand) * p.deviation + p.mean)))
     case "weighted_list": return sampleInt(pickWeighted(p.distribution, rand).data, rand)
     case "trapezoid": {
-      const min = p.min ?? p.min_inclusive, max = p.max ?? p.max_inclusive
-      const range = max - min - (p.plateau ?? 0)
-      const a = rand() * range, b = rand() * range
-      return min + Math.floor((p.plateau ?? 0) / 2 + Math.min(a, b) + Math.abs(a - b) / 2)
+      const min = p.min ?? p.min_inclusive, max = p.max ?? p.max_inclusive, plateau = p.plateau ?? 0
+      if (plateau === 0 && max === -min) return nextInt(rand, max + 1) - nextInt(rand, max + 1)
+      const range = max - min
+      if (plateau === range) return min + nextInt(rand, range + 1)
+      const start = Math.floor((range - plateau) / 2)
+      return min + nextInt(rand, range - start + 1) + nextInt(rand, start + 1)
     }
   }
   return typeof p.value === "number" ? p.value : 0
@@ -64,9 +66,9 @@ export function sampleFloat(p, rand) {
     case "uniform": return p.min_inclusive + rand() * (p.max_exclusive - p.min_inclusive)
     case "clamped_normal": return Math.min(p.max, Math.max(p.min, gaussian(rand) * p.deviation + p.mean))
     case "trapezoid": {
-      const range = p.max - p.min - (p.plateau ?? 0)
-      const a = rand() * range, b = rand() * range
-      return p.min + (p.plateau ?? 0) / 2 + Math.min(a, b) + Math.abs(a - b) / 2
+      const range = p.max - p.min
+      const start = (range - (p.plateau ?? 0)) / 2
+      return p.min + rand() * (range - start) + rand() * start
     }
   }
   return typeof p.value === "number" ? p.value : 0

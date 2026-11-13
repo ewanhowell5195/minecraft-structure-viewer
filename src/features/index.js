@@ -73,15 +73,29 @@ const TYPES = {
 
   async block_column(world, json, rand, resolvePlaced, ox, oy, oz) {
     const dir = strip(json.direction) === "down" ? -1 : 1
+    const heights = json.layers.map(layer => sampleInt(layer.height, rand))
+    const total = heights.reduce((sum, h) => sum + h, 0)
+    if (!total) return
+    const allowed = json.allowed_placement ?? { type: "matching_block_tag", tag: "air" }
+    for (let i = 0; i < total; i++) {
+      if (testPredicate(world, allowed, ox, oy + (i + 1) * dir, oz)) continue
+      let remove = total - i
+      const order = Array.from(heights.keys())
+      if (!json.prioritize_tip) order.reverse()
+      for (const k of order) {
+        const cut = Math.min(heights[k], remove)
+        heights[k] -= cut
+        remove -= cut
+      }
+      break
+    }
     let y = oy
-    for (const layer of json.layers) {
-      const height = sampleInt(layer.height, rand)
-      for (let i = 0; i < height; i++) {
-        if (world.get(ox, y, oz)) return
+    json.layers.forEach((layer, k) => {
+      for (let i = 0; i < heights[k]; i++) {
         world.set(ox, y, oz, sampleState(layer.provider, rand))
         y += dir
       }
-    }
+    })
   },
 
   async bamboo(world, json, rand, resolvePlaced, ox, oy, oz) {
@@ -1235,7 +1249,7 @@ Object.assign(TYPES, {
   },
 
   async random_neighbor_spread(world, json, rand, resolvePlaced, ox, oy, oz) {
-    const accepted = strip(typeof json.accepted_neighbors === "string" ? json.accepted_neighbors : json.accepted_neighbors?.[0] ?? "")
+    const accepted = new Set([json.accepted_neighbors ?? []].flat().map(strip))
     world.set(ox, oy, oz, sampleState(json.block, rand))
     const attempts = sampleInt(json.attempts, rand)
     for (let i = 0; i < attempts; i++) {
@@ -1245,7 +1259,7 @@ Object.assign(TYPES, {
       if (world.get(px, py, pz)) continue
       let neighbours = 0
       for (const [dx, dy, dz] of Object.values(DIR)) {
-        if (strip(world.get(px + dx, py + dy, pz + dz)?.id ?? "") === accepted) neighbours++
+        if (accepted.has(strip(world.get(px + dx, py + dy, pz + dz)?.id ?? ""))) neighbours++
         if (neighbours > 1) break
       }
       if (neighbours === 1) world.set(px, py, pz, sampleState(json.block, rand))
