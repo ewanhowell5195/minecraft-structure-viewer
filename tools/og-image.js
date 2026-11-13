@@ -363,7 +363,7 @@ const overlay = Buffer.from(`<svg width="1200" height="630" xmlns="http://www.w3
   </filter>
   <g filter="url(#shadow)" text-anchor="end" font-family="Gabarito">
     <text x="1152" y="538" font-size="84" font-weight="700" fill="#f2f2f5">Structure Viewer</text>
-    <text x="1152" y="588" font-size="36" fill="#d6d6de">Minecraft structures &amp; worldgen in 3D</text>
+    <text x="1152" y="588" font-size="36" fill="#d6d6de">Minecraft structures &amp; features in 3D</text>
   </g>
 </svg>`)
 await sharp(render).resize(1200, 630).composite([{ input: overlay }]).png().toFile(path.join(root, "public/cover.png"))
