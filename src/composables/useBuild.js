@@ -671,6 +671,30 @@ async function attachEntityTag(nbt, wx, topY, wz) {
 }
 
 const FRAME = /(^|:)(glow_)?item_frame$/
+const CUSHION = /^(minecraft:)?cushion$/
+const CUSHION_UVS = { north: [4, 4, 8, 5], east: [0, 4, 4, 5], south: [12, 4, 16, 5], west: [8, 4, 12, 5], up: [8, 4, 4, 0], down: [12, 0, 8, 4] }
+const CUSHION_Y = { north: 0, east: 90, south: 180, west: 270 }
+
+function cushionModel(color, facing) {
+  const faces = Object.fromEntries(Object.entries(CUSHION_UVS).map(([face, uv]) => [face, { uv, texture: "#cushion" }]))
+  return {
+    model: {
+      ignore_atlas_restrictions: true,
+      texture_size: [64, 64],
+      textures: { cushion: `entity/cushion/${typeof color === "string" ? color : "white"}_cushion` },
+      elements: [{ from: [0.005, 0.005, 0.005], to: [15.995, 3.995, 15.995], faces }]
+    },
+    y: CUSHION_Y[facing] ?? 0
+  }
+}
+
+function yawFacing(yaw) {
+  return ["south", "west", "north", "east"][((Math.floor(yaw / 90 + 0.5) % 4) + 4) % 4]
+}
+
+export function cushionOf(entity) {
+  return CUSHION.test(entity.nbt?.id ?? "") ? cushionModel(entity.nbt.color, yawFacing(Number(entity.nbt.Rotation?.[0] ?? 0))) : null
+}
 const FACING6 = ["down", "up", "north", "south", "west", "east"]
 const FRAME_ROT = { south: [0, Math.PI], west: [0, Math.PI / 2], east: [0, -Math.PI / 2], up: [-Math.PI / 2, Math.PI], down: [Math.PI / 2, Math.PI] }
 const LIVE_ITEM = /(^|:)(compass|clock)$/
@@ -797,8 +821,7 @@ async function attachEntities(structure, lib, assets) {
     const [ns, name] = id.includes(":") ? id.split(":") : ["minecraft", id]
     const frame = FRAME.test(id)
     const glow = frame && id.includes("glow")
-    const yaw = Number(e.nbt.Rotation?.[0] ?? 0)
-    let facing = ["south", "west", "north", "east"][((Math.floor(yaw / 90 + 0.5) % 4) + 4) % 4]
+    let facing = yawFacing(Number(e.nbt.Rotation?.[0] ?? 0))
     if (frame) facing = FACING6[Number(e.nbt.Facing ?? 3)] ?? facing
     const data = { facing }
     for (const [k, v] of Object.entries(e.nbt)) if (typeof v === "string" && k !== "id") data[k] = v
@@ -811,17 +834,13 @@ async function attachEntities(structure, lib, assets) {
     if (template === undefined) {
       template = null
       try {
-        let blockId = null
-        if (await lib.readFile(assets, `assets/${ns}/blockstates/${name}.json`)) blockId = id
-        else {
-          const coloured = `${typeof data.color === "string" ? data.color : "white"}_${name}`
-          if (await lib.readFile(assets, `assets/${ns}/blockstates/${coloured}.json`)) blockId = `${ns}:${coloured}`
-        }
-        if (blockId) {
+        const cushion = CUSHION.test(id)
+        const blockId = !cushion && await lib.readFile(assets, `assets/${ns}/blockstates/${name}.json`) ? id : null
+        if (blockId || cushion) {
           const g = new THREE.Group()
           g.userData.daytime = daytimeUniform
           if (!frame) {
-            for (const model of await lib.parseBlockstate(assets, blockId, { properties: data })) {
+            for (const model of cushion ? [cushionModel(data.color, facing)] : await lib.parseBlockstate(assets, blockId, { properties: data })) {
               const data = await lib.resolveModelData(assets, model)
               await lib.loadModel(assets, data, { parent: g, display: {}, lighting: lightingOpt(sceneLight), animate: false })
             }
