@@ -2,6 +2,7 @@ import { reactive, watch } from "vue"
 import * as THREE from "three"
 import { OrbitControls } from "three/addons/controls/OrbitControls.js"
 import { debounce } from "../yield.js"
+import { FXAA_FRAGMENT, FXAA_VERTEX } from "../fxaa.js"
 
 // owns the render loop; hot-updating this module would start a second one
 if (import.meta.hot) import.meta.hot.decline()
@@ -439,7 +440,7 @@ function syncAspect() {
 let sizeW = 0, sizeH = 0, needResize = true
 function resize() {
   const w = canvas.clientWidth, h = canvas.clientHeight
-  const ratio = Math.min(window.devicePixelRatio * 2, 4)
+  const ratio = Math.min(window.devicePixelRatio, 2)
   if (w !== sizeW || h !== sizeH || renderer.getPixelRatio() !== ratio || canvas.width !== Math.floor(w * ratio)) {
     sizeW = w
     sizeH = h
@@ -452,7 +453,7 @@ function resize() {
 // clientWidth reads force layout, so the per-frame path avoids them: the
 // observer flags real size changes and the buffer check runs on cached sizes
 function resizeIfNeeded() {
-  const ratio = Math.min(window.devicePixelRatio * 2, 4)
+  const ratio = Math.min(window.devicePixelRatio, 2)
   if (needResize || renderer.getPixelRatio() !== ratio || canvas.width !== Math.floor(sizeW * ratio)) {
     needResize = false
     resize()
@@ -657,8 +658,9 @@ function init(canvasEl) {
     const get = ext.get.bind(ext)
     ext.get = name => name === "WEBGL_multi_draw" ? null : get(name)
   }
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio * 2, 4))
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
   renderer.localClippingEnabled = true
+  smooth = createSmoothing()
   controls = new OrbitControls(camera, canvas)
   controls.enableDamping = true
   controls.addEventListener("start", () => { if (camera === orthoCam && !orthoManual) setOrtho(false) })
@@ -699,7 +701,46 @@ function init(canvasEl) {
     updateGridLabels()
     for (const a of animators) a.update()
     drawScene()
+    smooth()
   })
+}
+
+let smooth = null
+
+function createSmoothing() {
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array([-1, -1, 3, -1, -1, 3]), 2))
+  geometry.boundingSphere = new THREE.Sphere()
+  const material = new THREE.RawShaderMaterial({ vertexShader: FXAA_VERTEX, fragmentShader: FXAA_FRAGMENT, uniforms: { scene: { value: null }, pixel: { value: new THREE.Vector2() } }, blending: THREE.NoBlending, depthTest: false, depthWrite: false })
+  const pass = new THREE.Mesh(geometry, material)
+  pass.frustumCulled = false
+  const passScene = new THREE.Scene()
+  passScene.add(pass)
+  const passCamera = new THREE.Camera()
+  const origin = new THREE.Vector2()
+  let texture = null
+  function draw() {
+    const gl = renderer.getContext()
+    const width = gl.drawingBufferWidth, height = gl.drawingBufferHeight
+    if (texture?.image.width !== width || texture?.image.height !== height) {
+      texture?.dispose()
+      texture = new THREE.FramebufferTexture(width, height)
+      texture.magFilter = THREE.LinearFilter
+      texture.minFilter = THREE.LinearFilter
+      material.uniforms.scene.value = texture
+      material.uniforms.pixel.value.set(1 / width, 1 / height)
+    }
+    renderer.copyFramebufferToTexture(origin, texture)
+    renderer.autoClear = false
+    renderer.render(passScene, passCamera)
+    renderer.autoClear = true
+  }
+  draw.dispose = () => {
+    texture?.dispose()
+    geometry.dispose()
+    material.dispose()
+  }
+  return draw
 }
 
 function drawPass() {

@@ -847,7 +847,7 @@ async function enter(spawn) {
 
     // animate: true makes the lib tick the atlas's animated regions at 20Hz
     // itself; setAnimationRenderer gives it the GL renderer for subimage uploads
-    sharedAtlas = lib.createSharedAtlas({ renderer: sceneApi2().renderer, animate: true })
+    sharedAtlas = lib.createSharedAtlas({ renderer: sceneApi2().renderer, mipmaps: 4, animate: true })
     lib.setAnimationRenderer?.(sceneApi2().renderer)
     // one game-style stitch of every pack texture up front; workers adopt the
     // layout so all tiles bake UVs against the same fixed atlas. This must

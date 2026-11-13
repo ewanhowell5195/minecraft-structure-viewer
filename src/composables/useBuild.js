@@ -1885,6 +1885,7 @@ async function build(structure = source, refit = true, slice = false, fresh = fa
       lighting: state.lighting === "world" ? { dimension: buildDim, light: newLight ?? false, daytime: state.daytime } : state.lighting,
       keepTemplates: true,
       technical: true,
+      mipmaps: 4,
       animate: false,
       origin: structure.worldOrigin ?? [0, 0, 0],
       randomOffset: true,
