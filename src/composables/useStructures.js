@@ -11,6 +11,7 @@ import { buildProcessorIndex } from "../processors.js"
 import { yieldTask } from "../yield.js"
 import { readZip } from "minecraft-asset-loader"
 import { isLooseZip, normZipKey, LOOSE_RE } from "../loosezip.js"
+import { onSession } from "../session.js"
 
 // structures? also matches the legacy/mod plural folder; pre-1.13 jars keep
 // theirs under assets
@@ -18,16 +19,11 @@ export const STRUCT_RE = /^(?:data|assets)\/([^/]+)\/structures?\/(.+)\.nbt$/
 
 const packs = usePacks()
 
-const state = reactive({
-  names: [],
-  filterText: "",
-  filterMode: "all",
-  advQuery: "",
-  selected: [],
-  indexing: false,
-  worldgenReady: false,
-  advReady: false
-})
+function defaults() {
+  return { names: [], filterText: "", filterMode: "all", advQuery: "", selected: [], indexing: false, worldgenReady: false, advReady: false }
+}
+
+const state = reactive(defaults())
 
 let structPath = new Map()
 let looseSrc = new Map()
@@ -255,7 +251,6 @@ async function refresh() {
   }
 }
 
-watch(() => packs.state.assetsVersion, refresh)
 
 const ADV_MODES = new Set(["block", "item", "entity"])
 const advIndexFor = mode => mode === "item" ? itemIndex : mode === "entity" ? entityIndex : blockIndex
@@ -299,3 +294,18 @@ const advVocab = () => state.filterMode === "item" ? itemVocab : state.filterMod
 export function useStructures() {
   return { state: readonly(state), stateMut: state, refresh, computeWorldgen, computeAdvIndex, computeProcessors, processorEntry, advVocab, filteredNames, visibleNames, zipPathOf, looseBytesOf, hasBytes, structureBytes, has, getStructDepth, getStructRadius, getStructExpansion, setWorldStructures }
 }
+
+onSession(() => {
+  Object.assign(state, defaults())
+  structPath = new Map()
+  looseSrc = new Map()
+  starterSet = standaloneSet = structDepth = structRadius = structExpansion = null
+  worldgenPromise = advPromise = null
+  blockIndex = itemIndex = entityIndex = null
+  blockVocab = []
+  itemVocab = []
+  entityVocab = []
+  worldNames = []
+  procIndex = procPromise = null
+  watch(() => packs.state.assetsVersion, refresh)
+})

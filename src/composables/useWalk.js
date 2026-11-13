@@ -7,6 +7,7 @@ import { useBooks } from "./useBooks.js"
 import { useLock } from "./useLock.js"
 import { useStream } from "./useStream.js"
 import { useFullscreen } from "./useFullscreen.js"
+import { onSession } from "../session.js"
 
 // stateful singleton with document listeners and live loops: a hot update
 // re-executing this module would stack them (walking speeds up per reload),
@@ -35,7 +36,7 @@ const H_STAND = 28.8, H_SNEAK = 24, EYE_STAND = 25.92, EYE_SNEAK = 20.32
 const STEP = 9                                    // auto step-up (~half a block)
 const WALK_FOV = 78
 const DOUBLE_TAP = 350                            // minecraft's 7-tick window for double-tap sprint/fly
-const NOLOCK = new URLSearchParams(location.search).has("nolock")
+let nolock = false
 
 // vanilla movement constants, per tick (velocities are units/tick)
 const TICK = 1 / 20
@@ -547,12 +548,13 @@ function updateWalk(dt) {
 // the shortcut, so a leave-confirmation prompt is the only available guard. The
 // pointer must be released or the dialog can't be clicked; if the user cancels,
 // the page keeps running and the retry relocks (or the next canvas click does)
+let unloadTimer = null, relockTimer = null
 const unloadGuard = e => {
   e.preventDefault()
   e.returnValue = ""
   if (document.pointerLockElement === sceneApi.canvas) {
     suspend()
-    setTimeout(() => resume(), 250)
+    unloadTimer = setTimeout(() => resume(), 250)
   }
 }
 
@@ -618,7 +620,7 @@ function enter() {
     walk.yaw = Math.atan2(-(c.x - perspCam.position.x), -(c.z - perspCam.position.z))
   }
   addEventListener("beforeunload", unloadGuard)
-  if (!NOLOCK) lockPointer()
+  if (!nolock) lockPointer()
 }
 
 // raw deltas always: with os pointer acceleration in play, a fresh lock warms
@@ -637,7 +639,7 @@ function lockPointer() {
 // prepare (stream enter) resolves, the gesture is stale and a lock request
 // would be denied, forcing an extra click
 function prelock() {
-  if (!NOLOCK) lockPointer()
+  if (!nolock) lockPointer()
 }
 
 function suspend() {
@@ -653,7 +655,7 @@ function suspend() {
 // user gesture (Esc closing the modal), and the next canvas click retries
 function resume() {
   if (!state.on || !state.suspended) return
-  if (NOLOCK) { state.suspended = false; return }
+  if (nolock) { state.suspended = false; return }
   lockPointer()
 }
 
@@ -705,7 +707,7 @@ sceneApi.setWalkUpdate(dt => {
 })
 
 let lockAt = 0
-document.addEventListener("pointerlockchange", () => {
+function onLockChange() {
   if (!state.on) return
   if (document.pointerLockElement === sceneApi.canvas) {
     state.suspended = false
@@ -722,12 +724,12 @@ document.addEventListener("pointerlockchange", () => {
       sprintW = false
     } else exit()
   }
-})
+}
 // the transition drops the lock; it relocks itself once the browser settles
-document.addEventListener("fullscreenchange", () => {
+function onFullscreenChange() {
   if (!state.on) return
-  setTimeout(() => { if (state.on && state.suspended) resume() }, 100)
-})
+  relockTimer = setTimeout(() => { if (state.on && state.suspended) resume() }, 100)
+}
 
 // chrome under pointer lock occasionally emits one giant bogus movement delta
 // when the hidden cursor resyncs (classically once the unclipped position
@@ -736,7 +738,7 @@ document.addEventListener("fullscreenchange", () => {
 // events, so an isolated delta far beyond its neighbour is dropped
 let prevMX = 0, prevMY = 0
 const spike = (v, prev) => Math.abs(v) > 200 && Math.abs(v) > 8 * (Math.abs(prev) + 4)
-document.addEventListener("mousemove", e => {
+function onMouseMove(e) {
   if (!state.on || document.pointerLockElement !== sceneApi.canvas) return
   const dx = e.movementX, dy = e.movementY
   const drop = spike(dx, prevMX) || spike(dy, prevMY)
@@ -745,8 +747,8 @@ document.addEventListener("mousemove", e => {
   if (drop) return
   walk.yaw -= dx * 0.0024
   walk.pitch = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, walk.pitch - dy * 0.0024))
-})
-addEventListener("keydown", e => {
+}
+function onKeyDown(e) {
   if (!state.on) return
   if (state.suspended) {
     if (containerApi.state.open) return
@@ -802,17 +804,17 @@ addEventListener("keydown", e => {
     }
   }
   keys.add(e.code)
-}, { passive: false })
-addEventListener("keyup", e => {
+}
+function onKeyUp(e) {
   if (!state.on) return
   if (e.code === "KeyW") sprintW = false
   keys.delete(e.code)
   pendingKeys.delete(e.code)
   if (!state.suspended) e.preventDefault()
-}, { passive: false })
+}
 // fly speed scroll, exactly spectator mode's: 0.005 a notch, clamped 0..0.2
-addEventListener("wheel", e => {
-  if (!state.on || state.suspended || (!NOLOCK && document.pointerLockElement !== sceneApi.canvas)) return
+function onWheel(e) {
+  if (!state.on || state.suspended || (!nolock && document.pointerLockElement !== sceneApi.canvas)) return
   // line-mode wheels (firefox) report ~3 a notch where pixel mode reports ~100
   if (e.altKey) {
     e.preventDefault()
@@ -823,11 +825,8 @@ addEventListener("wheel", e => {
   if (!fly.on && !noclip) return
   e.preventDefault()
   fly.speed = Math.min(Math.max(fly.speed + Math.sign(-e.deltaY) * 0.005, 0), 0.2)
-}, { passive: false })
-addEventListener("contextmenu", e => {
-  if (state.on) e.preventDefault()
-})
-addEventListener("mousedown", e => {
+}
+function onMouseDown(e) {
   if (!state.on) return
   // suspended with the modal closed (Esc denied the relock): a click on the
   // viewport retries, a click anywhere else leaves walk mode
@@ -837,7 +836,7 @@ addEventListener("mousedown", e => {
     else exit()
     return
   }
-  if (!NOLOCK && document.pointerLockElement !== sceneApi.canvas) {
+  if (!nolock && document.pointerLockElement !== sceneApi.canvas) {
     if (e.target === sceneApi.canvas) lockPointer()
     return
   }
@@ -854,7 +853,7 @@ addEventListener("mousedown", e => {
     suspend()
     containerApi.open(r)
   }
-})
+}
 
 export function useWalk() {
   return {
@@ -863,3 +862,46 @@ export function useWalk() {
     toggle: () => state.on ? exit() : enter()
   }
 }
+
+function reset() {
+  Object.assign(state, { on: false, suspended: false })
+  walk.pos.set(0, 0, 0)
+  walk.prev.set(0, 0, 0)
+  walk.vel.set(0, 0, 0)
+  Object.assign(walk, { yaw: 0, pitch: 0, onGround: false, crouched: false, h: H_STAND, eye: EYE_STAND, eyeO: EYE_STAND })
+  Object.assign(fly, { on: false, speed: FLY_SPEED_DEFAULT, lastSpace: -1e9 })
+  Object.assign(bob, { dist: 0, distO: 0, val: 0, valO: 0 })
+  Object.assign(fovMod, { cur: 1, old: 1 })
+  noclip = false
+  sprintW = false
+  lastW = -1e9
+  jumpDelay = 0
+  stepSmooth = 0
+  acc = 0
+  keys.clear()
+  pendingKeys.clear()
+  collCells = new Map()
+  floorY = 0
+  lockAt = 0
+  prevMX = 0
+  prevMY = 0
+}
+
+onSession(signal => {
+  reset()
+  nolock = new URLSearchParams(location.search).has("nolock")
+  document.addEventListener("pointerlockchange", onLockChange, { signal })
+  document.addEventListener("fullscreenchange", onFullscreenChange, { signal })
+  document.addEventListener("mousemove", onMouseMove, { signal })
+  addEventListener("keydown", onKeyDown, { passive: false, signal })
+  addEventListener("keyup", onKeyUp, { passive: false, signal })
+  addEventListener("wheel", onWheel, { passive: false, signal })
+  addEventListener("contextmenu", e => { if (state.on) e.preventDefault() }, { signal })
+  addEventListener("mousedown", onMouseDown, { signal })
+  return () => {
+    exit()
+    clearTimeout(unloadTimer)
+    clearTimeout(relockTimer)
+    unloadTimer = relockTimer = null
+  }
+})

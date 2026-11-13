@@ -12,6 +12,7 @@ import { legacyItemId } from "../legacyItems.js"
 import { parseState } from "../transforms.js"
 import { useBooks } from "./useBooks.js"
 import { useStream } from "./useStream.js"
+import { onSession, sessionSignal } from "../session.js"
 
 const sceneApi = useScene()
 const buildApi = useBuild()
@@ -62,7 +63,7 @@ function kindOf(name) {
   return KINDS.generic
 }
 
-const state = reactive({
+const defaults = () => ({
   open: false,
   pick: null,
   aim: null,
@@ -91,6 +92,7 @@ const state = reactive({
   poolStack: [],
   compareSide: ""
 })
+const state = reactive(defaults())
 
 let openSeq = 0 // stale async work from a previous open is discarded
 
@@ -645,7 +647,7 @@ async function open(block, keepPair = false) {
   pile = []
   lootParts = []
   fixedStacks = []
-  openSeq++
+  const seq = ++openSeq
   state.open = true
   try {
     const shelf = /(^|_)shelf$/.test(bare)
@@ -656,6 +658,7 @@ async function open(block, keepPair = false) {
     for (const part of parts) {
       if (part.nbt?.LootTable) {
         const table = await readLootTable(part.nbt.LootTable)
+        if (seq !== openSeq) return
         if (!table) {
           state.error = "loot table not found: " + stripNs(part.nbt.LootTable)
           return
@@ -800,8 +803,10 @@ function close() {
 }
 
 let lastX = -1, lastY = -1, pickCanvas = null
+let refreshFrame = 0, moveFrame = 0
 function refreshHover() {
-  requestAnimationFrame(() => {
+  cancelAnimationFrame(refreshFrame)
+  refreshFrame = requestAnimationFrame(() => {
     if (!pickCanvas || state.open) return
     if (document.elementFromPoint(lastX, lastY) !== pickCanvas) return
     hoverCheck({ clientX: lastX, clientY: lastY, buttons: 0 }, pickCanvas)
@@ -896,18 +901,19 @@ function hoverCheck(e, canvas) {
 }
 
 function initPicking(canvas) {
+  const signal = sessionSignal()
   pickCanvas = canvas
   addEventListener("pointermove", e => {
     lastX = e.clientX
     lastY = e.clientY
-  })
-  canvas.addEventListener("contextmenu", e => e.preventDefault())
+  }, { signal })
+  canvas.addEventListener("contextmenu", e => e.preventDefault(), { signal })
   canvas.addEventListener("pointerdown", e => {
     downX = e.clientX
     downY = e.clientY
     downT = performance.now()
     downId = e.pointerId
-  })
+  }, { signal })
   canvas.addEventListener("pointerup", e => {
     const pressed = downId === e.pointerId
     downId = null
@@ -921,20 +927,42 @@ function initPicking(canvas) {
       if (comparePick?.state?.on) openPicked(u, compareSideLeft(e, canvas))
       else u.marker ? openEntityMarker(u.marker) : open(u.block)
     } else ringBellUnder(e, canvas)
-  })
+  }, { signal })
   let pending = null
   canvas.addEventListener("pointermove", e => {
     if (pending) { pending = e; return }
     pending = e
-    requestAnimationFrame(() => {
+    moveFrame = requestAnimationFrame(() => {
       const ev = pending
       pending = null
       hoverCheck(ev, canvas)
     })
-  })
-  canvas.addEventListener("pointerleave", () => clearHover(canvas))
+  }, { signal })
+  canvas.addEventListener("pointerleave", () => clearHover(canvas), { signal })
 }
 
 export function useContainer() {
   return { state: readonly(state), open, openCompare, openCompareEntity, setCompareSide, openEntity, openEntityMarker, openItem, itemBack, close, reroll, addRoll, setTab, ensureOdds, openFallbackPool, poolBack, initPicking, refreshHover, setComparePick }
 }
+
+onSession(() => {
+  Object.assign(state, defaults())
+  comparePair = null
+  openLids = []
+  pile = []
+  lootParts = []
+  fixedStacks = []
+  lastX = -1
+  lastY = -1
+  downX = downY = downT = 0
+  downId = null
+  return () => {
+    cancelAnimationFrame(refreshFrame)
+    cancelAnimationFrame(moveFrame)
+    refreshFrame = moveFrame = 0
+    openSeq++
+    poolSeq++
+    pickCanvas = null
+    hover?.hide()
+  }
+})

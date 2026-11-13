@@ -18,6 +18,7 @@ import { runJigsaw } from "../jigsaw.js"
 import { mineshaftPieceGens, rerollGen, runDesertPyramid, runDungeon, runEndCity, runEndSpikes, runEndSpikesActive, runFortress, runIgloo, runJungleTemple, runMansion, runMineshaft, runMineshaftMesa, runMonument, runStronghold } from "../generators/index.js"
 import { PROC } from "../proc.js"
 import { applyLegacyRenames } from "../legacyRenames.js"
+import { onSession } from "../session.js"
 
 // level is 0-based (the UI shows level + 1). the base is seedless; a seed rolls
 // on the first ascent off it and stays fixed until you return to the base
@@ -29,17 +30,21 @@ const sceneApi = useScene()
 const procs = useProcessors()
 const { lock, locked } = useLock()
 
-const state = reactive({
-  active: false,
-  kind: null,
-  label: "Structure Blocks",
-  steps: true,
-  reroll: false,
-  level: 0,
-  maxDepth: 7,
-  seed: null,
-  solving: false
-})
+function defaults() {
+  return {
+    active: false,
+    kind: null,
+    label: "Structure Blocks",
+    steps: true,
+    reroll: false,
+    level: 0,
+    maxDepth: 7,
+    seed: null,
+    solving: false
+  }
+}
+
+const state = reactive(defaults())
 
 let base = null, baseName = null
 let baseRadius = 96
@@ -53,15 +58,12 @@ let prevAnchorWorld = null
 let urlSeed = null, urlLevel = null
 const urlPending = () => urlSeed != null
 let firstBuild = false
+let epoch = 0
 function adoptUrlSession(hex, level) {
   if (!hex || !/^[0-9a-f]{1,8}$/i.test(hex)) return
   urlSeed = parseInt(hex, 16) >>> 0
   const lvl = parseInt(level)
   urlLevel = Number.isFinite(lvl) ? lvl : 2
-}
-{
-  const sp = new URLSearchParams(location.search)
-  adoptUrlSession(sp.get("seed"), sp.get("level"))
 }
 
 function nsSplit(ref) {
@@ -143,12 +145,14 @@ async function resolve(level) {
 }
 
 async function regenerate() {
+  const at = epoch
   state.solving = true
   procs.setSessionUse(false)
   try {
     let structure
     try {
       const res = await resolve(state.level)
+      if (at !== epoch) return
       structure = res.structure
       // a solve that stops short IS at max depth (deeper levels re-solve identically);
       // floor 1, not the deepest piece: even an empty round consumed the base's jigsaws
@@ -162,6 +166,7 @@ async function regenerate() {
         state.maxDepth = genCap + 1
       }
     } catch (err) {
+      if (at !== epoch) return
       buildApi.state.status = `couldn't assemble: ${err}`
       if (firstBuild) {
         firstBuild = false
@@ -185,9 +190,9 @@ async function regenerate() {
       prevAnchorWorld = aw
     })
   } finally {
-    state.solving = false
+    if (at === epoch) state.solving = false
   }
-  syncUrl()
+  if (at === epoch) syncUrl()
 }
 
 function syncUrl() {
@@ -270,6 +275,7 @@ async function jigsawsCanAct(structure) {
 }
 
 async function startSession(structure, name, unbuilt = false) {
+  const at = epoch
   base = structure
   baseName = name
   prevAnchorWorld = null
@@ -307,8 +313,10 @@ async function startSession(structure, name, unbuilt = false) {
     if (unbuilt) await baseBuild()
     return
   }
+  if (at !== epoch) return
   const restoring = urlSeed != null
   if (unbuilt && !restoring) await baseBuild()
+  if (at !== epoch) return
   state.level = 0
   state.seed = null
   state.active = true
@@ -360,3 +368,20 @@ export function useSession() {
     next, all, undo, reset, reloadAll, fullReload, generate
   }
 }
+
+onSession(() => {
+  epoch++
+  Object.assign(state, defaults())
+  base = null
+  baseName = null
+  baseRadius = 96
+  baseExpansion = false
+  genCap = Infinity
+  prevAnchorWorld = null
+  urlSeed = null
+  urlLevel = null
+  firstBuild = false
+  const sp = new URLSearchParams(location.search)
+  adoptUrlSession(sp.get("seed"), sp.get("level"))
+  return () => { epoch++ }
+})

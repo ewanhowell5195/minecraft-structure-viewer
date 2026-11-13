@@ -1,5 +1,5 @@
 <script setup>
-import { nextTick, ref, watch } from "vue"
+import { nextTick, onBeforeUnmount, ref, watch } from "vue"
 import { useContextMenu } from "../composables/useContextMenu.js"
 
 const { state, close } = useContextMenu()
@@ -18,14 +18,24 @@ watch(() => [state.open, state.x, state.y], async () => {
   }
 })
 
-addEventListener("pointerdown", e => {
+function onPointerDown(e) {
   if (state.open && !el.value?.contains(e.target)) close()
-}, true)
-addEventListener("keydown", e => {
+}
+function onKey(e) {
   if (e.key === "Escape" && state.open) close()
+}
+const closeIfOpen = () => { if (state.open) close() }
+
+addEventListener("pointerdown", onPointerDown, true)
+addEventListener("keydown", onKey)
+addEventListener("wheel", closeIfOpen, { capture: true, passive: true })
+addEventListener("blur", closeIfOpen)
+onBeforeUnmount(() => {
+  removeEventListener("pointerdown", onPointerDown, true)
+  removeEventListener("keydown", onKey)
+  removeEventListener("wheel", closeIfOpen, { capture: true })
+  removeEventListener("blur", closeIfOpen)
 })
-addEventListener("wheel", () => { if (state.open) close() }, { capture: true, passive: true })
-addEventListener("blur", () => { if (state.open) close() })
 
 function run(item) {
   if (item.disabled) return

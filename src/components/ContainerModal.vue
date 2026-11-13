@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, ref, watch } from "vue"
+import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue"
 import { loadLibrary } from "../lib.js"
 import { usePacks } from "../composables/usePacks.js"
 import { useComparePacks } from "../composables/useComparePacks.js"
@@ -103,13 +103,14 @@ const wides = computed(() => (state.dataRows ?? []).filter(r => r.wide))
 
 // close on keyup: acting on keydown lets the same held press repeat into the
 // walk handlers, and relocking mid-press reads to the browser as an exit gesture
-addEventListener("keyup", e => {
+function onKeyUp(e) {
   if (e.key === "Escape" && state.open) {
     if (state.item) return container.itemBack()
     container.close()
     walk.resume()
   }
-})
+}
+addEventListener("keyup", onKeyUp)
 
 function slotAt(ev) {
   const K = state.gui
@@ -207,7 +208,7 @@ async function updateTip(ev) {
   placeTip()
 }
 
-onTooltipFrame(async () => {
+const offTooltipFrame = onTooltipFrame(async () => {
   if (!tipShow.value || !tipStack || !tipEl.value) return
   try { await drawTooltip(tipEl.value, tipStack, S) } catch {}
 })
@@ -379,6 +380,18 @@ watch(() => [state.open, state.gui, state.guiTitle], () => {
 watch(() => [state.open, state.stacks, state.gui], () => {
   hideTip()
   if (state.open) nextTick(drawItems)
+})
+
+onBeforeUnmount(() => {
+  removeEventListener("keyup", onKeyUp)
+  offTooltipFrame()
+  bgSeq++
+  itemSeq++
+  clearAnimations()
+  hlImgs?.back?.stop?.()
+  hlImgs?.front?.stop?.()
+  hlImgs = null
+  hlAssets = null
 })
 </script>
 

@@ -1,3 +1,5 @@
+import { sessionSignal } from "./session.js"
+
 // an embed is cross-site, so its storage is partitioned away from the full
 // site's tab; the files it is showing travel over postMessage to the tab it opens
 const MARK = "structure-viewer-handoff"
@@ -14,12 +16,13 @@ export function offerHandoff(getFiles) {
       transfer.push(bytes)
     }
     e.source.postMessage({ [MARK]: "files", files }, e.origin, transfer)
-  })
+  }, { signal: sessionSignal() })
 }
 
 export function receiveHandoff(timeout = 3000) {
   return new Promise(resolve => {
     if (!opener) return resolve(null)
+    const signal = sessionSignal()
     const timer = setTimeout(done, timeout, null)
     function onMessage(e) {
       if (e.origin !== location.origin || e.data?.[MARK] !== "files") return
@@ -33,6 +36,7 @@ export function receiveHandoff(timeout = 3000) {
       resolve(v)
     }
     addEventListener("message", onMessage)
+    signal.addEventListener("abort", () => done(null), { once: true })
     opener.postMessage({ [MARK]: "ready" }, location.origin)
   })
 }

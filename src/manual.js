@@ -1,6 +1,11 @@
+import { onSession } from "./session.js"
+
 // ?manual hands control to the embedding page: no vanilla jar and no default
 // structure are loaded, and nothing renders until the parent drives it over the
 // embed API (src/embed.js)
-const value = new URLSearchParams(location.search).get("manual")
+export let manual = false
 
-export const manual = value !== null && value !== "false"
+onSession(() => {
+  const value = new URLSearchParams(location.search).get("manual")
+  manual = value !== null && value !== "false"
+})

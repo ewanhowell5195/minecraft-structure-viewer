@@ -7,14 +7,15 @@ import { numeric } from "../transforms.js"
 import { yieldTask } from "../yield.js"
 import { read } from "minecraft-block-reader"
 import { sameStructure } from "../structdiff.js"
-
+import { onSession } from "../session.js"
 
 const packs = usePacks()
 const comparePacks = useComparePacks()
 const structures = useStructures()
 
 // new and removed come from the names alone; ready means the changed sweep finished
-const state = reactive({ ready: false, progress: 0, counts: { new: 0, changed: 0, removed: 0 }, rev: 0 })
+const defaults = () => ({ ready: false, progress: 0, counts: { new: 0, changed: 0, removed: 0 }, rev: 0 })
+const state = reactive(defaults())
 
 let lists = { new: [], changed: [], removed: [] }
 let tok = 0
@@ -94,12 +95,20 @@ async function recompute() {
   publish()
 }
 
-watch([
-  () => packs.state.assetsVersion,
-  () => comparePacks.state.assetsVersion,
-  () => structures.state.names.length
-], recompute)
-
 export function useCompareDiff() {
   return { state: readonly(state), list, nothingDiffers }
 }
+
+onSession(() => {
+  Object.assign(state, defaults())
+  lists = { new: [], changed: [], removed: [] }
+  watch([
+    () => packs.state.assetsVersion,
+    () => comparePacks.state.assetsVersion,
+    () => structures.state.names.length
+  ], recompute)
+  return () => {
+    tok++
+    lists = { new: [], changed: [], removed: [] }
+  }
+})

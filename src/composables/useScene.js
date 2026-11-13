@@ -3,6 +3,7 @@ import * as THREE from "three"
 import { OrbitControls } from "three/addons/controls/OrbitControls.js"
 import { debounce } from "../yield.js"
 import { FXAA_FRAGMENT, FXAA_VERTEX } from "../fxaa.js"
+import { onSession, sessionSignal } from "../session.js"
 
 // owns the render loop; hot-updating this module would start a second one
 if (import.meta.hot) import.meta.hot.decline()
@@ -661,17 +662,45 @@ function releaseContext() {
 }
 
 const releaseSoon = debounce(releaseContext, 2000)
+let frameId = 0, resizeWatch = null, visibilityWatch = null
 
 function watchVisibility() {
   if (typeof IntersectionObserver === "undefined") return
-  new IntersectionObserver(([entry]) => {
+  visibilityWatch = new IntersectionObserver(([entry]) => {
     releaseSoon.cancel()
     if (!entry.isIntersecting) return releaseSoon()
     if (!released) return
     released = false
     loseExt.restoreContext()
-  }, { threshold: 0 }).observe(canvas)
+  }, { threshold: 0 })
+  visibilityWatch.observe(canvas)
 }
+
+function teardown() {
+  cancelAnimationFrame(frameId)
+  resizeWatch?.disconnect()
+  visibilityWatch?.disconnect()
+  releaseSoon.cancel()
+  controls.dispose()
+  smooth.dispose()
+  renderer.dispose()
+  renderer.forceContextLoss()
+  renderer = canvas = controls = smooth = touches = loseExt = resizeWatch = visibilityWatch = null
+  released = false
+  needResize = true
+  sizeW = sizeH = 0
+}
+
+onSession(() => {
+  Object.assign(view, { ortho: false, wireframe: "off", grid: true })
+  camera = perspCam
+  orthoManual = false
+  perspCam.position.set(-68, 50, -68)
+  watch(() => view.wireframe, () => {
+    if (gridGroup) gridGroup.visible = gridVisible()
+  })
+  watch(() => view.grid, () => { if (gridGroup) gridGroup.visible = gridVisible() })
+})
 
 const embedded = (() => {
   try {
@@ -693,6 +722,7 @@ function gateInput() {
 }
 
 function init(canvasEl) {
+  const signal = sessionSignal()
   canvas = canvasEl
   renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: false })
   renderer.debug.checkShaderErrors = false
@@ -715,27 +745,24 @@ function init(canvasEl) {
   canvas.addEventListener("pointerdown", e => {
     if (e.pointerType === "touch") downAt = [e.clientX, e.clientY]
     else canvas.focus({ preventScroll: true })
-  })
+  }, { signal })
   canvas.addEventListener("pointerup", e => {
     if (e.pointerType !== "touch" || !downAt) return
     if (Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) < 10) canvas.focus({ preventScroll: true })
     downAt = null
-  })
-  canvas.addEventListener("focus", gateInput)
-  canvas.addEventListener("blur", gateInput)
+  }, { signal })
+  canvas.addEventListener("focus", gateInput, { signal })
+  canvas.addEventListener("blur", gateInput, { signal })
   gateInput()
   setGrids([{ x: -128, z: -128, y: -8.01, w: 16, d: 16 }])
-  new ResizeObserver(() => { needResize = true }).observe(canvas)
+  resizeWatch = new ResizeObserver(() => { needResize = true })
+  resizeWatch.observe(canvas)
   watchVisibility()
-
-  watch(() => view.wireframe, () => {
-    if (gridGroup) gridGroup.visible = gridVisible()
-  })
-  watch(() => view.grid, () => { if (gridGroup) gridGroup.visible = gridVisible() })
+  signal.addEventListener("abort", teardown, { once: true })
 
   let lastT = performance.now()
-  requestAnimationFrame(function frame() {
-    requestAnimationFrame(frame)
+  frameId = requestAnimationFrame(function frame() {
+    frameId = requestAnimationFrame(frame)
     const now = performance.now()
     const dt = (now - lastT) / 1000
     lastT = now

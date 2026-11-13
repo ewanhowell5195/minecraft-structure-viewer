@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onMounted, provide, ref, watch } from "vue"
+import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, watch } from "vue"
 import { useWorld } from "../composables/useWorld.js"
 import { useStructures } from "../composables/useStructures.js"
 import { useStructure } from "../composables/useStructure.js"
@@ -234,15 +234,22 @@ watch(() => [state.rev, state.active, collapsed.value], () => nextTick(draw))
 watch(() => state.focusRev, () => nextTick(() => { if (bounds) { fitView(); draw() } }))
 onMounted(() => nextTick(draw))
 const ro = new ResizeObserver(() => draw())
+const onContextLost = e => e.preventDefault()
+const onContextRestored = () => { R = null; nextTick(draw) }
 watch(mapEl, (el, old) => {
-  if (old) ro.unobserve(old)
+  if (old) {
+    ro.unobserve(old)
+    old.removeEventListener("webglcontextlost", onContextLost)
+    old.removeEventListener("webglcontextrestored", onContextRestored)
+  }
   if (el) {
     ro.observe(el)
-    el.addEventListener("webglcontextlost", e => e.preventDefault())
-    el.addEventListener("webglcontextrestored", () => { R = null; nextTick(draw) })
+    el.addEventListener("webglcontextlost", onContextLost)
+    el.addEventListener("webglcontextrestored", onContextRestored)
   }
 })
-document.addEventListener("visibilitychange", () => { if (!document.hidden) nextTick(draw) })
+const onVisibility = () => { if (!document.hidden) nextTick(draw) }
+document.addEventListener("visibilitychange", onVisibility)
 
 const exploring = ref(false)
 const playerIconEl = ref(null)
@@ -290,10 +297,26 @@ watch(() => useStream().state.on, on => {
 })
 
 const hovering = ref(false)
-window.addEventListener("keydown", e => {
+function onKey(e) {
   if (e.key !== "Escape" || !hovering.value) return
   if (marquee) cancelMarquee()
   else world.clearSelection()
+}
+window.addEventListener("keydown", onKey)
+
+onBeforeUnmount(() => {
+  clearInterval(fakeTimer)
+  cancelAnimationFrame(followRaf)
+  ro.disconnect()
+  const el = mapEl.value
+  if (el) {
+    el.removeEventListener("webglcontextlost", onContextLost)
+    el.removeEventListener("webglcontextrestored", onContextRestored)
+  }
+  document.removeEventListener("visibilitychange", onVisibility)
+  window.removeEventListener("keydown", onKey)
+  R?.canvas.getContext("webgl2")?.getExtension("WEBGL_lose_context")?.loseContext()
+  R = null
 })
 
 function canvasPos(e) {

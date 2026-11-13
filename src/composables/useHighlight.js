@@ -2,6 +2,7 @@ import { watch } from "vue"
 import * as THREE from "three"
 import { useScene } from "./useScene.js"
 import { useBuild } from "./useBuild.js"
+import { onSession, sessionActive } from "../session.js"
 
 const PERIOD = 1200
 // how far a flashing shape dims at the bottom of its cycle
@@ -243,7 +244,7 @@ function draw(group, root, scene) {
 function build() {
   clear()
   const root = useBuild().getRoot()
-  if (!root) return
+  if (!root || !sessionActive()) return
   const scene = useScene().scene
   for (const groups of layers.values()) {
     // one shape per style, so touching blocks can merge and colours never mix
@@ -309,6 +310,12 @@ export function setOverlay(name, groups) {
   build()
 }
 
-// current changes as a build starts, when the root is about to be torn down;
-// info lands with the finished scene, which is the root these sit against
-watch(() => [useBuild().current.value, useBuild().state.info], build)
+onSession(() => {
+  // current changes as a build starts, when the root is about to be torn down;
+  // info lands with the finished scene, which is the root these sit against
+  watch(() => [useBuild().current.value, useBuild().state.info], build)
+  return () => {
+    layers.clear()
+    clear()
+  }
+})

@@ -1,4 +1,5 @@
 import { getFont, measure, drawText } from "./mcfont.js"
+import { onSession } from "./session.js"
 
 function hash(x, y) {
   let h = Math.imul(x | 0, 0x27d4eb2d) ^ Math.imul(y | 0, 0x9e3779b1)
@@ -1143,3 +1144,12 @@ export async function drawFakeMap(canvas, sample, id) {
   drawText(ctx, font, text, x + s, y + s, { scale: s, color: "#3f3f3f" })
   drawText(ctx, font, text, x, y, { scale: s, color: "#ffffff" })
 }
+
+onSession(() => () => {
+  R?.gl.getExtension("WEBGL_lose_context")?.loseContext()
+  R = null
+  glCanvas = null
+  lastRect = null
+  offX = 0
+  offY = 0
+})

@@ -8,6 +8,7 @@ import { useWorld } from "./useWorld.js"
 import { useStream } from "./useStream.js"
 import { useWalk } from "./useWalk.js"
 import { THREE } from "../lib.js"
+import { onSession } from "../session.js"
 
 const packs = usePacks()
 const build = useBuild()
@@ -21,18 +22,18 @@ const ALPHA = 0.8
 const FADE_FROM = 20
 const FADE_TO = 5
 
-const enabled = ref(sky.enabled.value)
+const enabled = ref(true)
 
 let handle = null
 let token = 0
 
-scene.animators.add({
+const fader = {
   update() {
     if (!handle) return
     const below = handle.height - handle.origin[1] - 0.5 - scene.camera.position.y / 16
     handle.alpha = ALPHA * Math.min(1, Math.max(0, (below - FADE_TO) / (FADE_FROM - FADE_TO)))
   }
-})
+}
 
 function worldOrigin() {
   const o = stream.state.session ? stream.origin() : null
@@ -76,15 +77,24 @@ async function apply() {
   scene.setClouds(handle.group)
 }
 
-watch(sky.enabled, on => {
-  if (!on) enabled.value = false
-})
-watch([enabled, () => packs.assets.value], apply, { immediate: true })
-watch(() => build.state.daytime, v => {
-  if (handle) handle.daytime.value = v
-})
-watch([() => build.state.landed, () => stream.state.session, () => stream.state.on, sky.skyDim, () => walk.state.on], place)
-
 export function useClouds() {
   return { enabled }
 }
+
+onSession(() => {
+  enabled.value = sky.enabled.value
+  scene.animators.add(fader)
+  watch(sky.enabled, on => {
+    if (!on) enabled.value = false
+  })
+  watch([enabled, () => packs.assets.value], apply, { immediate: true })
+  watch(() => build.state.daytime, v => {
+    if (handle) handle.daytime.value = v
+  })
+  watch([() => build.state.landed, () => stream.state.session, () => stream.state.on, sky.skyDim, () => walk.state.on], place)
+  return () => {
+    scene.animators.delete(fader)
+    token++
+    clear()
+  }
+})

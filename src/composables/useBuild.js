@@ -19,6 +19,7 @@ import { loadStateCache, saveStateCache } from "../stateCache.js"
 import { SOFT_BLOCKS, HARD_BLOCKS, bellRingDir } from "../streamShared.js"
 import { renderSpawnEgg } from "../iconRender.js"
 import { ensureRaw, derive, blockAt as blockObject, RawBuilder } from "../blocklist.js"
+import { onSession, sessionActive, sessionSignal } from "../session.js"
 
 // stateful singleton (live scene root, handles, watchers): hot updates must
 // full-reload, never re-execute alongside the old instance
@@ -196,23 +197,24 @@ async function remapLoaderStates(structure, lib, assets) {
 
 export const DEFAULT_DAYTIME = 1000
 
-const state = reactive({
-  lighting: "world",
-  fullbright: false,
-  daytime: DEFAULT_DAYTIME,
-  dimension: "overworld",
-  hideStructureBlocks: localStorage.getItem("hideStructureBlocks") !== "false",
-  structureVoids: localStorage.getItem("structureVoids") === "true",
-  technical: minimal ? true : localStorage.getItem("technicalBlocks") !== "false",
-  hasStructureBlocks: false,
-  manual: false,
-  building: false,
-  status: "",
-  progress: null,
-  info: null,
-  warn: null,
-  landed: 0
-})
+function settings() {
+  return {
+    lighting: "world",
+    fullbright: false,
+    daytime: DEFAULT_DAYTIME,
+    dimension: "overworld",
+    hideStructureBlocks: localStorage.getItem("hideStructureBlocks") !== "false",
+    structureVoids: localStorage.getItem("structureVoids") === "true",
+    technical: minimal ? true : localStorage.getItem("technicalBlocks") !== "false",
+    manual: false
+  }
+}
+
+function buildStatus() {
+  return { hasStructureBlocks: false, building: false, status: "", progress: null, info: null, warn: null, landed: 0 }
+}
+
+const state = reactive(Object.assign(settings(), buildStatus()))
 
 const WARN_MS = 10000
 const PERF_KEY = "buildPerf2" // v2: rates are per non-air block
@@ -231,7 +233,7 @@ function savePerf(b, o) {
 }
 
 // ?force skips every size and duration warning dialog
-const FORCE = typeof location !== "undefined" && new URLSearchParams(location.search).has("force")
+let FORCE = false
 
 let warnResolve = null
 function askWarn(ms) {
@@ -247,6 +249,7 @@ function setRestoreGate(on) {
   if (on) restoreGateAsked = false
 }
 async function restoreGateCheck(blocks, selection = false, approx = false) {
+  if (!sessionActive()) return false
   if (FORCE || !restoreGate || restoreGateAsked || blocks <= RESTORE_BLOCKS) return true
   restoreGateAsked = true
   state.warn = { blocks, selection, approx }
@@ -262,22 +265,8 @@ function answerWarn(ok) {
 // seeded into template userData so the library shares one live uniform: daytime changes re-light with no rebuild
 const daytimeUniform = { value: DEFAULT_DAYTIME }
 const clocksSoon = debounce(updateClocks, 150)
-// each build carries its own uniform, so the stashed half needs the time too
-watch(() => state.daytime, v => {
-  daytimeUniform.value = v
-  for (const g of sceneApi.contentRoots) if (g.userData.daytime) g.userData.daytime.value = v
-  clocksSoon()
-})
 
 let savedDaytime = DEFAULT_DAYTIME
-watch(() => state.fullbright, on => {
-  if (on) {
-    savedDaytime = state.daytime
-    state.daytime = DEFAULT_DAYTIME
-  } else {
-    state.daytime = savedDaytime
-  }
-})
 
 const OPENABLE = /(^|:)([a-z_]+_)?(door|trapdoor|fence_gate)$/
 const isDoorName = name => /(^|:)([a-z_]+_)?door$/.test(name) && !/trapdoor$/.test(name)
@@ -764,6 +753,7 @@ async function mapArtFor(bx, by, bz, facing, id) {
   const key = (id == null ? "p:" + bx + "," + by + "," + bz : id) + "|" + facing
   let canvas = mapArtCache.get(key)
   if (canvas) return canvas
+  if (draining) return null
   canvas = document.createElement("canvas")
   canvas.width = canvas.height = 128
   await drawFakeMap(canvas, (cx, cy) => MAP_SAMPLE[facing](bx, by, bz, cx, cy), id)
@@ -793,10 +783,11 @@ async function precomputeMapArt(structure, lib, assets) {
       mb.y0 = Math.min(mb.y0, v); mb.y1 = Math.max(mb.y1, v)
     }
   }
-  if (!jobs.length) return
+  if (!jobs.length || draining) return
   if (!useWorld().state.active && mb.x1 - mb.x0 <= 4096 && mb.y1 - mb.y0 <= 4096) prepareFakeMapArea(mb.x0, mb.y0, mb.x1, mb.y1)
   let done = 0
   for (const j of jobs) {
+    if (draining) return
     await mapArtFor(j.bx, j.by, j.bz, j.facing, j.id)
     done++
     if (jobs.length > 1) {
@@ -1386,8 +1377,6 @@ function updateOutline() {
   outline.show(parts.map(part => outlineBox(part.off, part.size)))
 }
 
-watch(() => sceneApi.view.wireframe, updateOutline)
-
 function boxForBlock(b) {
   if (!b || !root) return null
   const s = shapeFor(current.value?.palette[b.state])
@@ -1531,6 +1520,7 @@ function restoreFull() {
 }
 
 let cancelBuild = false
+let draining = null, drained = null
 function cancel() {
   if (!state.building) return
   cancelBuild = true
@@ -1585,9 +1575,12 @@ let compareSource = null
 const setCompareSource = fn => { compareSource = fn }
 
 async function build(structure = source, refit = true, slice = false, fresh = false, onPlace = null) {
+  if (draining) await draining
+  if (!sessionActive()) return false
   const assets = assetsOverride ?? packs.assets.value
   if (!assets || !structure || state.building) return
   ensureRaw(structure)
+  const signal = sessionSignal()
   state.building = true
   cancelBuild = false
   lock(true)
@@ -1855,12 +1848,12 @@ async function build(structure = source, refit = true, slice = false, fresh = fa
 
     const perfCal = loadPerf()
     let warnedOnce = false
-    if (!await restoreGateCheck(total)) return abort()
+    if (draining || !await restoreGateCheck(total)) return abort()
     if (perfCal) {
       const estMs = total * (perfCal.b + perfCal.o)
       if (estMs > WARN_MS) {
         warnedOnce = true
-        if (!await askWarn(estMs)) return abort()
+        if (draining || !await askWarn(estMs)) return abort()
       }
     }
     const tBuild = performance.now()
@@ -1907,7 +1900,7 @@ async function build(structure = source, refit = true, slice = false, fresh = fa
           if (elapsed > 1500 && overall > 0.02) {
             warnedOnce = true
             const projected = elapsed / overall
-            if (projected > WARN_MS) askWarn(projected).then(ok => { if (!ok) cancelBuild = true })
+            if (projected > WARN_MS && !draining) askWarn(projected).then(ok => { if (!ok) cancelBuild = true })
           }
         }
       },
@@ -2009,6 +2002,10 @@ async function build(structure = source, refit = true, slice = false, fresh = fa
       handle.group.add(inst)
       loaderCount++
     }
+    if (draining) {
+      handle.dispose()
+      return abort()
+    }
 
     // tiny builds are all fixed cost and would poison the per-block rates
     if (total >= 2000 && tOpt) savePerf((tOpt - tBuild) / total, (performance.now() - tOpt) / total)
@@ -2032,6 +2029,16 @@ async function build(structure = source, refit = true, slice = false, fresh = fa
       const signs = await makeSignTexts(structure)
       if (signs) root.add(signs)
     } catch {}
+    if (draining) {
+      if (old) {
+        sceneApi.contentRoots.delete(old)
+        disposeGroup(old)
+        oldHandle?.dispose()
+        for (const t of oldMarkerTex) t.dispose()
+        oldLight?.dispose()
+      }
+      return false
+    }
     sceneApi.scene.add(root)
     sceneApi.contentRoots.add(root)
     sceneApi.syncAspect()
@@ -2121,24 +2128,17 @@ async function build(structure = source, refit = true, slice = false, fresh = fa
   } finally {
     state.building = false
     state.progress = null
-    lock(false)
+    if (!signal.aborted) lock(false)
+    if (draining) {
+      loadLibrary().then(lib => lib.disposeMapArt?.(assets))
+      dropScene()
+      const done = drained
+      draining = drained = null
+      done()
+    }
   }
 }
 
-watch(() => [state.lighting, state.fullbright], async () => {
-  const stream = (await import("./useStream.js")).useStream()
-  if (stream.state.session) return stream.restyle()
-  build(undefined, false)
-})
-watch(() => state.hideStructureBlocks, v => {
-  localStorage.setItem("hideStructureBlocks", String(v))
-  build(undefined, false)
-})
-watch(() => state.structureVoids, v => {
-  localStorage.setItem("structureVoids", String(v))
-  applyTechnicalVisibility()
-  build(undefined, false)
-})
 // scenes always build the icons; the toggle only flips their visibility, so
 // no rebuild. icons are the billboard meshes, kept unmerged by the optimizer
 function applyTechnicalVisibility() {
@@ -2147,22 +2147,19 @@ function applyTechnicalVisibility() {
     if (o.isMesh && o.userData.billboard) o.visible = state.technical
   })
 }
-watch(() => state.technical, v => {
-  localStorage.setItem("technicalBlocks", String(v))
-  applyTechnicalVisibility()
-})
 
 async function exportCurrent(format, name) {
   if (!root || state.building) return
+  const signal = sessionSignal()
   lock(true)
   state.status = "exporting…"
   try {
     await exportScene({ format, name, root })
-    state.status = ""
+    if (!signal.aborted) state.status = ""
   } catch (err) {
-    state.status = `export failed: ${err}`
+    if (!signal.aborted) state.status = `export failed: ${err}`
   } finally {
-    lock(false)
+    if (!signal.aborted) lock(false)
   }
 }
 
@@ -2187,6 +2184,45 @@ function disposeStash(s) {
   s.light?.dispose()
 }
 
+function dropScene() {
+  discardFull()
+  disposeStash(stashed)
+  stashed = null
+  stashNext = false
+  if (animator) sceneApi.animators.delete(animator)
+  if (root) {
+    sceneApi.contentRoots.delete(root)
+    disposeGroup(root)
+  }
+  sceneHandle?.dispose()
+  for (const t of markerTextures) t.dispose()
+  sceneLight?.dispose()
+  outline?.hide()
+  root = sceneHandle = animator = sceneLight = null
+  markerTextures = []
+  current.value = null
+  source = null
+  inputIdxOf = null
+  templates = null
+  nonSolid = new Set()
+  nonSolidPalette = new Set()
+  entityMarkers = []
+  pendingMarkers = []
+  doorByCell = new Map()
+  doorSlots = new Map()
+  stateRender = new Map()
+  canonDoorTmpl = new Map()
+  blockMap = blockMapFor = null
+  rootSliced = false
+  clockFrames = []
+  frameCtx = null
+  buildDim = "overworld"
+  mapArtCache = new Map()
+  collBoxCache = new Map()
+  aimBoxCache = new Map()
+  Object.assign(state, buildStatus())
+}
+
 const getRoot = () => root
 const getTemplates = () => templates
 const getNonSolid = () => nonSolid
@@ -2202,3 +2238,55 @@ export function useBuild() {
     blockAt, blockEntryAt, boxForBlock, boxForEntity, boxForEntityData, markerUnderRay, rayHit, interact, aimDoor, blockBoxes, ringBell, exportCurrent, clearMapArt
   }
 }
+
+onSession(() => {
+  FORCE = new URLSearchParams(location.search).has("force")
+  Object.assign(state, settings())
+  savedDaytime = DEFAULT_DAYTIME
+  daytimeUniform.value = state.daytime
+  restoreGate = restoreGateAsked = false
+  assetsOverride = null
+
+  // each build carries its own uniform, so the stashed half needs the time too
+  watch(() => state.daytime, v => {
+    daytimeUniform.value = v
+    for (const g of sceneApi.contentRoots) if (g.userData.daytime) g.userData.daytime.value = v
+    clocksSoon()
+  })
+  watch(() => state.fullbright, on => {
+    if (on) {
+      savedDaytime = state.daytime
+      state.daytime = DEFAULT_DAYTIME
+    } else {
+      state.daytime = savedDaytime
+    }
+  })
+  watch(() => sceneApi.view.wireframe, updateOutline)
+  watch(() => [state.lighting, state.fullbright], async () => {
+    const stream = (await import("./useStream.js")).useStream()
+    if (stream.state.session) return stream.restyle()
+    build(undefined, false)
+  })
+  watch(() => state.hideStructureBlocks, v => {
+    localStorage.setItem("hideStructureBlocks", String(v))
+    build(undefined, false)
+  })
+  watch(() => state.structureVoids, v => {
+    localStorage.setItem("structureVoids", String(v))
+    applyTechnicalVisibility()
+    build(undefined, false)
+  })
+  watch(() => state.technical, v => {
+    localStorage.setItem("technicalBlocks", String(v))
+    applyTechnicalVisibility()
+  })
+
+  return () => {
+    clocksSoon.cancel()
+    answerWarn(false)
+    if (state.building) {
+      cancelBuild = true
+      draining ??= new Promise(r => { drained = r })
+    } else dropScene()
+  }
+})

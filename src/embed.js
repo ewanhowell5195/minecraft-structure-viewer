@@ -10,6 +10,7 @@ import { setHighlights } from "./composables/useHighlight.js"
 import { useSky } from "./composables/useSky.js"
 import { read } from "minecraft-block-reader"
 import { ensureRaw } from "./blocklist.js"
+import { onSession, sessionSignal, inSession } from "./session.js"
 
 const SOURCE = "structure-viewer"
 const AIR = /(^|:)(air|cave_air|void_air)$/
@@ -240,12 +241,14 @@ function compareIdle() {
   const build = useBuild()
   const idle = () => !compare.busy() && !build.state.building
   if (idle()) return Promise.resolve()
-  return new Promise(resolve => {
-    const stop = watch([() => compare.busy(), () => build.state.building], () => {
+  const signal = sessionSignal()
+  return new Promise((resolve, reject) => {
+    const stop = inSession(() => watch([() => compare.busy(), () => build.state.building], () => {
       if (!idle()) return
       stop()
       resolve()
-    })
+    }))
+    signal.addEventListener("abort", () => reject(new Error("the viewer was closed")), { once: true })
   })
 }
 
@@ -280,6 +283,7 @@ function worldBounds(world) {
 export function initEmbedApi() {
   usePacks().setHandlerFactory(makeHandler)
   useComparePacks().setHandlerFactory(makeHandler)
+  const signal = sessionSignal()
   addEventListener("message", async event => {
     const data = event.data
     if (data?.source !== SOURCE) return
@@ -303,6 +307,11 @@ export function initEmbedApi() {
     } catch (err) {
       reply(event, data.id, { ok: false, error: String(err?.message ?? err) })
     }
-  })
+  }, { signal })
   emit("ready")
 }
+
+onSession(() => () => {
+  for (const settle of Array.from(waiting.values())) settle(null)
+  waiting.clear()
+})

@@ -2,6 +2,7 @@ import { loadLibrary } from "./lib.js"
 import { usePacks } from "./composables/usePacks.js"
 import { getFont, measure, drawText } from "./mcfont.js"
 import { prettyName } from "./loot.js"
+import { onSession } from "./session.js"
 
 const strip = s => (s ?? "").replace(/^minecraft:/, "")
 
@@ -23,15 +24,19 @@ export function onTooltipFrame(cb) {
   return () => frameListeners.delete(cb)
 }
 
+function stopSprites() {
+  spritesPromise?.then(s => {
+    s.background?.anim.stop()
+    s.frame?.anim.stop()
+  }, () => {})
+}
+
 function loadSprites() {
   const packs = usePacks()
   const v = packs.state.assetsVersion
   if (spritesPromise && v === spritesVersion) return spritesPromise
   spritesVersion = v
-  spritesPromise?.then(s => {
-    s.background?.anim.stop()
-    s.frame?.anim.stop()
-  })
+  stopSprites()
   return spritesPromise = (async () => {
     const lib = await loadLibrary()
     const assets = packs.assets.value
@@ -180,3 +185,10 @@ export async function drawTooltip(canvas, stack, S) {
   }
   return true
 }
+
+onSession(() => () => {
+  stopSprites()
+  spritesPromise = null
+  spritesVersion = -1
+  frameListeners.clear()
+})

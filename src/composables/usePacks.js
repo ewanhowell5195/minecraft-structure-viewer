@@ -8,6 +8,7 @@ import { warmIcons } from "../icons.js"
 import { setParams } from "../params.js"
 import { mb } from "../format.js"
 import { useLock } from "./useLock.js"
+import { onSession, sessionSignal } from "../session.js"
 
 // index 0 = highest priority (prepareAssets first-wins order); pack bytes
 // stay outside the reactive state so large buffers aren't proxied
@@ -42,23 +43,28 @@ async function loadBuiltin() {
   }
 }
 
-const state = reactive({
-  channel: new URLSearchParams(location.search).get("channel") === "snapshot" ? "snapshot" : "release",
-  version: new URLSearchParams(location.search).get("version") || "",
-  baseId: "",
-  get baseRelease() { return releaseOf(this.baseId) },
-  baseType: "",
-  baseStatus: "loading…",
-  baseProgress: 0,
-  baseFailed: false,
-  packs: [],
-  busy: false,
-  assetsVersion: 0,
-  remoteStatus: "",
-  remoteError: ""
-})
+function defaults() {
+  const sp = new URLSearchParams(location.search)
+  return {
+    channel: sp.get("channel") === "snapshot" ? "snapshot" : "release",
+    version: sp.get("version") || "",
+    baseId: "",
+    baseType: "",
+    baseStatus: "loading…",
+    baseProgress: 0,
+    baseFailed: false,
+    packs: [],
+    busy: false,
+    remoteStatus: "",
+    remoteError: ""
+  }
+}
 
-if (state.version && new URLSearchParams(location.search).has("channel")) setParams({ channel: null })
+const state = reactive({
+  ...defaults(),
+  get baseRelease() { return releaseOf(this.baseId) },
+  assetsVersion: 0
+})
 
 const assets = shallowRef(null)
 const { locked, withBusy } = useLock()
@@ -75,36 +81,46 @@ const setChannelParam = ch => setParams({ channel: ch === "snapshot" ? "snapshot
 
 // dispose the previous bundle only after `swap` resolves, so the on-screen
 // scene keeps its cached textures until the rebuild lands
-async function rebuildAssets(swap) {
+async function rebuildAssets(swap, signal) {
   const lib = await loadLibrary()
+  if (signal.aborted) return
   let sources = state.packs.map(p => bytesById.get(p.id)).concat(baseBytes).filter(Boolean)
   if (sources.length) sources = sources.concat(builtinBytes ?? [], featureBytes ?? [], guiBytes ?? [])
   const prev = assets.value
-  assets.value = sources.length ? await lib.prepareAssets(sources, { cache: true, defaults: "game", ignoreAtlases: true, version: state.baseRelease || undefined }) : null
+  const next = sources.length ? await lib.prepareAssets(sources, { cache: true, defaults: "game", ignoreAtlases: true, version: state.baseRelease || undefined }) : null
+  if (signal.aborted) {
+    if (next) lib.disposeCache(next)
+    return
+  }
+  assets.value = next
   state.assetsVersion++
   try {
     await (swap ?? swapHandler)?.(assets.value)
   } finally {
     if (prev && prev !== assets.value) lib.disposeCache(prev)
   }
-  if (assets.value) warmIcons()
+  if (assets.value && !signal.aborted) warmIcons()
 }
 
 const loadBase = (swap, ready) => withBusy(state, async () => {
+  const signal = sessionSignal()
   state.baseFailed = false
   state.baseStatus = "loading…"
   state.baseProgress = 0
   try {
     await loadBuiltin()
     const r = await loadMojangJar(state.channel, (got, total, ver) => {
+      if (signal.aborted) return
       state.baseStatus = `downloading ${ver}… ${mb(got)}/${mb(total)}MB`
       state.baseProgress = total ? got / total : 0
     }, state.version)
+    if (signal.aborted) return
     baseBytes = r.bytes
     state.baseId = r.id
     state.baseType = r.type
     state.baseStatus = ""
   } catch (err) {
+    if (signal.aborted) return
     console.warn("couldn't load the vanilla jar:", err)
     baseBytes = null
     state.baseId = ""
@@ -113,19 +129,20 @@ const loadBase = (swap, ready) => withBusy(state, async () => {
   }
   state.baseProgress = 0
   await ready
-  await rebuildAssets(swap)
+  await rebuildAssets(swap, signal)
 })
 
 // the embed API's stack: no vanilla download, no pack cache writes, and one
 // rebuild however much the parent changes at once
 const initSources = (ready, swap) => withBusy(state, async () => {
+  const signal = sessionSignal()
   state.baseStatus = ""
   await loadBuiltin()
   await ready
-  await rebuildAssets(swap)
+  await rebuildAssets(swap, signal)
 })
 
-async function applyBase(base) {
+async function applyBase(base, signal) {
   baseVirtual = false
   if (base === null) {
     baseBytes = null
@@ -144,13 +161,16 @@ async function applyBase(base) {
     state.baseFailed = false
     try {
       const r = await loadMojangJar(state.channel, (got, total, ver) => {
+        if (signal.aborted) return
         state.baseStatus = `downloading ${ver}… ${mb(got)}/${mb(total)}MB`
       }, base)
+      if (signal.aborted) return
       baseBytes = r.bytes
       state.baseId = r.id
       state.baseType = r.type
       state.baseStatus = ""
     } catch (err) {
+      if (signal.aborted) throw err
       baseBytes = null
       state.baseId = ""
       state.baseStatus = ""
@@ -159,28 +179,31 @@ async function applyBase(base) {
     }
     return
   }
-  baseBytes = await toBytes(base)
+  const bytes = await toBytes(base, signal)
+  if (signal.aborted) return
+  baseBytes = bytes
   state.baseId = ""
   state.baseStatus = ""
 }
 
-async function toBytes(source) {
+async function toBytes(source, signal) {
   if (source instanceof Uint8Array) return source
   if (source instanceof ArrayBuffer) return new Uint8Array(source)
-  if (typeof source === "string") return proxyFetch(source)
+  if (typeof source === "string") return proxyFetch(source, undefined, signal)
   if (source?.arrayBuffer) return new Uint8Array(await source.arrayBuffer())
   throw new Error("unsupported pack source")
 }
 
-async function setPacks(packs) {
+async function setPacks(packs, signal) {
   const resolved = await Promise.all(packs.map(async entry => {
     if (entry?.handler) {
       return { name: entry.name ?? entry.handler, source: makeHandler(entry.handler), virtual: true }
     }
     const source = entry?.data ?? entry
     const name = entry?.name ?? (typeof source === "string" ? remoteName(source) : "pack")
-    return { name, source: await toBytes(source) }
+    return { name, source: await toBytes(source, signal) }
   }))
+  if (signal.aborted) return
   for (const pack of state.packs) bytesById.delete(pack.id)
   state.packs = resolved.map(({ name, source, virtual }) => {
     const id = nextId++
@@ -190,10 +213,11 @@ async function setPacks(packs) {
 }
 
 const loadPacks = ({ base, packs } = {}, swap) => withBusy(state, async () => {
+  const signal = sessionSignal()
   await loadBuiltin()
-  if (base !== undefined) await applyBase(base)
-  if (packs !== undefined) await setPacks(packs)
-  await rebuildAssets(swap)
+  if (base !== undefined) await applyBase(base, signal)
+  if (packs !== undefined) await setPacks(packs, signal)
+  await rebuildAssets(swap, signal)
 })
 
 async function setVersion(id, swap) {
@@ -214,9 +238,11 @@ async function setChannel(channel, swap) {
 async function addPacks(files, swap) {
   if (state.busy || locked.value || !files.length) return
   await withBusy(state, async () => {
+    const signal = sessionSignal()
     const added = []
     for (const file of files) {
       const bytes = new Uint8Array(await file.arrayBuffer())
+      if (signal.aborted) return
       const hash = fnvHash(bytes)
       if (state.packs.some(p => p.name === file.name && fnvHash(bytesById.get(p.id)) === hash)) continue
       const id = nextId++
@@ -227,7 +253,7 @@ async function addPacks(files, swap) {
     if (!added.length) return
     state.packs.unshift(...added)
     setPackOrder(state.packs.map(p => p.name))
-    await rebuildAssets(swap)
+    await rebuildAssets(swap, signal)
   })
 }
 
@@ -240,7 +266,7 @@ async function removePack(id, swap) {
     bytesById.delete(id)
     uncachePack(removed.name)
     setPackOrder(state.packs.map(p => p.name))
-    await rebuildAssets(swap)
+    await rebuildAssets(swap, sessionSignal())
   })
 }
 
@@ -253,7 +279,7 @@ async function movePack(id, delta, swap) {
     const [p] = state.packs.splice(i, 1)
     state.packs.splice(j, 0, p)
     setPackOrder(state.packs.map(p => p.name))
-    await rebuildAssets(swap)
+    await rebuildAssets(swap, sessionSignal())
   })
 }
 
@@ -261,6 +287,7 @@ async function movePack(id, delta, swap) {
 // loadBase's ready gate holds the rebuild until they land), added at the front
 // so the list order is the priority order, never written to the pack cache
 async function addUrlPacks(urls) {
+  const signal = sessionSignal()
   const prog = urls.map(() => ({ got: 0, total: 0 }))
   const label = urls.length === 1 ? remoteName(urls[0]) : `${urls.length} packs`
   const update = () => {
@@ -281,14 +308,16 @@ async function addUrlPacks(urls) {
         prog[i].got = got
         prog[i].total = total
         update()
-      })
+      }, signal)
       return { name, bytes }
     } catch (err) {
+      if (signal.aborted) return null
       console.warn(`couldn't fetch pack ${url}:`, err)
       state.remoteError = `couldn't fetch pack: ${name}`
       return null
     }
   }))
+  if (signal.aborted) return
   const added = []
   for (const r of results) {
     if (!r) continue
@@ -301,9 +330,12 @@ async function addUrlPacks(urls) {
 }
 
 async function restoreCachedPacks() {
+  const signal = sessionSignal()
   for (const file of await restorePacks()) {
+    const bytes = new Uint8Array(await file.arrayBuffer())
+    if (signal.aborted) return
     const id = nextId++
-    bytesById.set(id, new Uint8Array(await file.arrayBuffer()))
+    bytesById.set(id, bytes)
     state.packs.push({ id, name: file.name })
   }
 }
@@ -354,3 +386,16 @@ const featureSources = () => state.packs.map(p => bytesById.get(p.id)).concat(bu
 export function usePacks() {
   return { state: readonly(state), assets, loadBase, initSources, loadPacks, setChannel, setVersion, addPacks, addUrlPacks, removePack, movePack, restoreCachedPacks, allSources, featureSources, builtinSources, zipSources, featureZipSources, virtualSources, isFolderSource, sourcesIdentity, setSwapHandler, setHandlerFactory }
 }
+
+onSession(() => {
+  Object.assign(state, defaults())
+  if (state.version && new URLSearchParams(location.search).has("channel")) setParams({ channel: null })
+  return () => {
+    bytesById.clear()
+    baseBytes = null
+    baseVirtual = false
+    const prev = assets.value
+    assets.value = null
+    if (prev) loadLibrary().then(lib => lib.disposeCache(prev))
+  }
+})

@@ -70,6 +70,8 @@ const stateKeyOf = (id, props) => id + "|" + JSON.stringify(props ?? null)
 const stateInfo = new Map()
 const canonParts = new Map()
 const boxCache = new Map()
+const ownTextures = new Set()
+let epoch = 0
 
 const _dm = new THREE.Matrix4()
 const _cb = new THREE.Box3()
@@ -112,22 +114,24 @@ async function ensureState(lib, assets, id, props) {
   const sk = stateKeyOf(id, props)
   let info = stateInfo.get(sk)
   if (info) return info
+  const born = epoch
   let key = null
   let rot = new THREE.Matrix4()
   try {
     const canon = await canonOf(lib, assets, id, props)
     key = canon.key
     rot = canon.rot
-    if (!canonParts.has(key)) {
+    if (born === epoch && !canonParts.has(key)) {
       const tmplGroup = await buildCanonGroup(lib, assets, canon.build)
-      let parts = null
-      if (tmplGroup) {
-        parts = extractParts(tmplGroup)
+      const parts = tmplGroup && extractParts(tmplGroup)
+      if (born !== epoch) disposeParts(parts)
+      else {
         if (parts) boxCache.set(key, templateBoxes(tmplGroup))
+        canonParts.set(key, parts)
       }
-      canonParts.set(key, parts)
     }
   } catch { key = null }
+  if (born !== epoch) return { key: null, rot, sk }
   info = { key, rot, sk }
   stateInfo.set(sk, info)
   return info
@@ -229,6 +233,7 @@ export function importDoorTemplates(pack, baseMat) {
     tex.magFilter = tex.minFilter = THREE.NearestFilter
     tex.generateMipmaps = false
     tex.needsUpdate = true
+    ownTextures.add(tex)
     return textures[i] = tex
   }
   for (const t of pack.templates ?? []) {
@@ -271,6 +276,23 @@ export function importDoorTemplates(pack, baseMat) {
   }
 }
 
+function disposeParts(parts) {
+  for (const p of parts ?? []) {
+    p.geometry.dispose()
+    for (const m of [].concat(p.material)) m.dispose()
+  }
+}
+
+export function disposeDoorTemplates() {
+  epoch++
+  for (const parts of canonParts.values()) disposeParts(parts)
+  for (const tex of ownTextures) tex.dispose()
+  ownTextures.clear()
+  canonParts.clear()
+  stateInfo.clear()
+  boxCache.clear()
+}
+
 function cloneMaterialFor(lib, mat, lightMat) {
   const out = (Array.isArray(mat) ? mat : [mat]).map(m => {
     const c = cloneShaderShared(m)
@@ -298,6 +320,7 @@ export async function attachTileDoors({ lib, assets, doors, group, lightMat, onT
   // canonical template builds are the expensive part; time-slice them so a
   // tile full of new door types never blocks a frame
   let sliceT = performance.now()
+  const born = epoch
   for (const d of doors) {
     const props = d.properties ?? {}
     const openInfo = await ensureState(lib, assets, d.id, { ...props, open: "true" })
@@ -306,6 +329,7 @@ export async function attachTileDoors({ lib, assets, doors, group, lightMat, onT
       await new Promise(r => requestAnimationFrame(r))
       sliceT = performance.now()
     }
+    if (born !== epoch) return null
     if (!openInfo.key || !closedInfo.key) continue
     const slotFor = info => {
       let s = slots.get(info.key)

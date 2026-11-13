@@ -9,6 +9,7 @@ import { read } from "minecraft-block-reader"
 import { useStructures } from "./useStructures.js"
 import { yieldTask } from "../yield.js"
 import { before } from "../legacyRenames.js"
+import { onSession } from "../session.js"
 
 const FEATURE_RE = /^data\/([^/]+)\/worldgen\/feature\/(.+)\.json$/
 
@@ -16,15 +17,11 @@ const packs = usePacks()
 const structures = useStructures()
 const textDecoder = new TextDecoder()
 
-const state = reactive({
-  names: [],
-  filterText: "",
-  filterMode: "all",
-  advQuery: "",
-  selected: [],
-  indexing: false,
-  advReady: false
-})
+function defaults() {
+  return { names: [], filterText: "", filterMode: "all", advQuery: "", selected: [], indexing: false, advReady: false }
+}
+
+const state = reactive(defaults())
 
 let featurePath = new Map()
 let defaultSeeds = {}
@@ -134,7 +131,6 @@ async function refresh() {
   }
 }
 
-watch(() => packs.state.assetsVersion, refresh)
 
 async function readJson(zipPath) {
   const lib = await loadLibrary()
@@ -236,3 +232,14 @@ const advVocab = () => blockVocab
 export function useFeatures() {
   return { state: readonly(state), stateMut: state, refresh, computeAdvIndex, advVocab, readFeature, resolvePlaced, resolvePlacedRel, loadProcessors, ceilingOf, filteredNames, visibleNames, defaultSeed, isStatic, has, folderOf }
 }
+
+onSession(() => {
+  Object.assign(state, defaults())
+  featurePath = new Map()
+  defaultSeeds = {}
+  staticSet = new Set()
+  folders = {}
+  blockIndex = advPromise = null
+  blockVocab = []
+  watch(() => packs.state.assetsVersion, refresh)
+})

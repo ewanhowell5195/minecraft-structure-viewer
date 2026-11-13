@@ -23,6 +23,7 @@ import { useProcessors } from "./useProcessors.js"
 import { cacheFile, uncache } from "../userCache.js"
 import { applyLegacyRenames, applyPreFlattening } from "../legacyRenames.js"
 import { blockCount } from "../blocklist.js"
+import { onSession } from "../session.js"
 
 const COMBINE_AIR = /(^|:)(air|cave_air|void_air|structure_void)$/
 
@@ -34,9 +35,11 @@ const procs = useProcessors()
 const { locked, withLock } = useLock()
 
 const structure = buildApi.current
-const state = reactive({ name: "", error: "", reading: null, field: null, file: "", count: 0 })
+const defaults = () => ({ name: "", error: "", reading: null, field: null, file: "", count: 0 })
+const state = reactive(defaults())
 
 let loaded = []
+let epoch = 0
 
 let cancelRead = false
 function cancelReading() { cancelRead = true }
@@ -50,6 +53,7 @@ async function readMany(rels, reuse, mk, label) {
     const s = await readVanilla(rel)
     return s ? { structure: s, name: rel, rel } : null
   }
+  const at = epoch
   cancelRead = false
   state.reading = { done: 0, total: rels.length, label }
   try {
@@ -62,6 +66,7 @@ async function readMany(rels, reuse, mk, label) {
         blocks += e.structure ? blockCount(e.structure) : 0
         if (!await buildApi.restoreGateCheck(blocks)) return null
       }
+      if (at !== epoch) return null
       if (++state.reading.done % 25 === 0) {
         await yieldTask()
         if (cancelRead) return null
@@ -69,7 +74,7 @@ async function readMany(rels, reuse, mk, label) {
     }
     return entries
   } finally {
-    state.reading = null
+    if (at === epoch) state.reading = null
   }
 }
 
@@ -149,7 +154,7 @@ function setStructureParam(rel, featureRel, featureSeed, featureField, keepWorld
   history[changed && !initializing && !quietLoad ? "pushState" : "replaceState"](null, "", u)
 }
 
-addEventListener("popstate", async () => {
+async function onPopState() {
   const params = new URLSearchParams(location.search)
   navigatingHistory = true
   try {
@@ -191,7 +196,7 @@ addEventListener("popstate", async () => {
   } finally {
     navigatingHistory = false
   }
-})
+}
 
 async function packLoaded() {
   const GAP = 3
@@ -882,6 +887,24 @@ procs.setReloadHandler(onAssetsSwapped)
 export function useStructure() {
   return { state: readonly(state), structure, apply, loadVanilla, loadDefault, loadMany, loadFile, loadFiles, closeFile, loadObject, loadDebug, loadFeature, loadFeatures, loadFeatureField, clickFeature, cancelReading, setReading, readCancelled, setQuietLoads, processVanilla, canDownload, downloadStructures, downloadLoaded, structureFolder, structureLink, featureLink, currentFile: () => loaded.some(e => e.file) ? fileObj : null, currentOrigin }
 }
+
+onSession(signal => {
+  epoch++
+  Object.assign(state, defaults())
+  loaded = []
+  cancelRead = false
+  navigatingHistory = false
+  implicitLoad = false
+  initializing = false
+  quietLoad = false
+  anchor = null
+  fileObj = null
+  addEventListener("popstate", onPopState, { signal })
+  return () => {
+    epoch++
+    cancelReading()
+  }
+})
 
 
 

@@ -5,6 +5,7 @@ import { useBuild } from "./useBuild.js"
 import { useScene } from "./useScene.js"
 import { useWalk } from "./useWalk.js"
 import { useStream } from "./useStream.js"
+import { onSession } from "../session.js"
 
 const packs = usePacks()
 const build = useBuild()
@@ -12,7 +13,7 @@ const scene = useScene()
 const walk = useWalk()
 const stream = useStream()
 
-const enabled = ref(!new URLSearchParams(location.search).has("nosky"))
+const enabled = ref(true)
 const active = computed(() => walk.state.on || enabled.value)
 
 // "auto" follows the structure's own dimension; the sky toggle off pins the
@@ -56,21 +57,29 @@ async function apply() {
   scene.setSky(next.group)
 }
 
-watch([active, () => packs.assets.value, skyDim, stream.fog], apply, { immediate: true })
-watch(() => build.state.daytime, v => {
-  if (handle) handle.daytime.value = v
-})
-
-// a lightmap change rebuilds like the lighting toggles do; a build in flight is
-// the one that moved state.dimension, so it already carries the new value
-watch(lightDim, async () => {
-  if (!build.getRoot() || build.state.building) return
-  const { useCompare } = await import("./useCompare.js")
-  if (useCompare().state.on) return
-  if (stream.state.session) return stream.restyle()
-  build.build(undefined, false)
-})
-
 export function useSky() {
   return { enabled, active, dimension, skyDim, lightDim }
 }
+
+onSession(() => {
+  enabled.value = !new URLSearchParams(location.search).has("nosky")
+  dimension.value = "auto"
+  watch([active, () => packs.assets.value, skyDim, stream.fog], apply, { immediate: true })
+  watch(() => build.state.daytime, v => {
+    if (handle) handle.daytime.value = v
+  })
+
+  // a lightmap change rebuilds like the lighting toggles do; a build in flight is
+  // the one that moved state.dimension, so it already carries the new value
+  watch(lightDim, async () => {
+    if (!build.getRoot() || build.state.building) return
+    const { useCompare } = await import("./useCompare.js")
+    if (useCompare().state.on) return
+    if (stream.state.session) return stream.restyle()
+    build.build(undefined, false)
+  })
+  return () => {
+    token++
+    clear()
+  }
+})

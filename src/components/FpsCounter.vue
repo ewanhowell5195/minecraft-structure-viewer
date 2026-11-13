@@ -1,10 +1,10 @@
 <script setup>
-import { ref } from "vue"
+import { onBeforeUnmount, ref } from "vue"
 
 const fps = ref("")
 let frames = 0, last = performance.now()
-requestAnimationFrame(function tick() {
-  requestAnimationFrame(tick)
+let raf = requestAnimationFrame(function tick() {
+  raf = requestAnimationFrame(tick)
   frames++
   const now = performance.now()
   if (now - last >= 500) {
@@ -13,6 +13,7 @@ requestAnimationFrame(function tick() {
     last = now
   }
 })
+onBeforeUnmount(() => cancelAnimationFrame(raf))
 </script>
 
 <template>

@@ -8,10 +8,11 @@ import { useLock } from "./useLock.js"
 import { loadLibrary } from "../lib.js"
 import { chunkGrid, mergeTilePalettes, assembleTile, biomeIds } from "../world.js"
 import { biomeTints, colormapTypes } from "../biomes.js"
-import { attachTileDoors, importDoorTemplates, doorShape, rayBoxT, OPENABLE } from "./useStreamDoors.js"
+import { attachTileDoors, importDoorTemplates, disposeDoorTemplates, doorShape, rayBoxT, OPENABLE } from "./useStreamDoors.js"
 import { softFor, solidFor, templateBoxes, bellRingDir, DYNAMIC_BLOCKS } from "../streamShared.js"
 import { attachTileDynamics } from "./useStreamDynamics.js"
 import { isInspectable } from "../loot.js"
+import { onSession } from "../session.js"
 
 // stateful singleton (workers, shared atlas, tile registry): hot updates must
 // full-reload, never re-execute alongside the old instance
@@ -30,7 +31,8 @@ const sceneApi2 = () => _scene ??= useScene()
 const buildApi2 = () => _build ??= useBuild()
 const packs2 = () => _packs ??= usePacks()
 
-const state = reactive({ on: false, session: false, tiles: 0, pending: 0, preparing: false, prepMsg: "" })
+const defaults = () => ({ on: false, session: false, tiles: 0, pending: 0, preparing: false, prepMsg: "" })
+const state = reactive(defaults())
 
 let root = null
 let lib = null
@@ -76,6 +78,9 @@ let playerTile = null
 let playerPos = null
 let pumpedAt = null
 let onTilesChanged = null
+let epoch = 0
+let repumpTimer = null
+const reveals = new Set()
 
 const EMPTY = { size: [1, 1, 1], palette: [], blocks: [], entities: [] }
 
@@ -212,18 +217,32 @@ async function buildTile(tx, tz, gen) {
 // out to one per frame
 const integrateQueue = []
 let integrateArmed = false
+let cancelIntegrate = null
 function pumpIntegrate() {
   if (integrateArmed || !integrateQueue.length) return
   integrateArmed = true
   const fire = () => {
     integrateArmed = false
+    cancelIntegrate = null
     integrateQueue.shift()?.()
     pumpIntegrate()
   }
-  if (typeof document !== "undefined" && document.hidden) setTimeout(fire, 30)
-  else requestAnimationFrame(fire)
+  if (typeof document !== "undefined" && document.hidden) {
+    const timer = setTimeout(fire, 30)
+    cancelIntegrate = () => clearTimeout(timer)
+  } else {
+    const frame = requestAnimationFrame(fire)
+    cancelIntegrate = () => cancelAnimationFrame(frame)
+  }
 }
 const integrateSlot = () => new Promise(res => { integrateQueue.push(res); pumpIntegrate() })
+
+function drainIntegrate() {
+  cancelIntegrate?.()
+  cancelIntegrate = null
+  integrateArmed = false
+  for (const res of integrateQueue.splice(0)) res()
+}
 
 function bindDaytime(group) {
   group.traverse(o => {
@@ -306,12 +325,15 @@ async function buildTileWorker(tx, tz, gen) {
 function revealProgressively(group) {
   const meshes = []
   group.traverse(o => { if (o.isMesh) { meshes.push(o); o.visible = false } })
+  const job = { frame: 0 }
   const reveal = () => {
     let budget = 2
     while (budget-- > 0 && meshes.length) meshes.shift().visible = true
-    if (meshes.length) requestAnimationFrame(reveal)
+    if (meshes.length) job.frame = requestAnimationFrame(reveal)
+    else reveals.delete(job)
   }
-  requestAnimationFrame(reveal)
+  job.frame = requestAnimationFrame(reveal)
+  reveals.add(job)
 }
 
 async function buildTileMain(tx, tz, gen) {
@@ -386,6 +408,7 @@ async function buildTileMain(tx, tz, gen) {
     if (softs[ti] === undefined) softs[ti] = softFor(lib, assets, handle.palette[pi])
   }
   for (const ti of Object.keys(softs)) softs[ti] = await softs[ti]
+  if (gen !== queueGen) { try { handle.dispose?.() } catch {} return }
   const cd = cellData.slice(0, cn)
   const grid = new Int32Array(gw * gw * gh)
   for (let i = 0; i < cd.length; i += 5) {
@@ -413,6 +436,7 @@ async function buildTileMain(tx, tz, gen) {
   }
   if (doors.length) {
     tile.doors = await attachTileDoors({ lib, assets, doors, group: handle.group, lightMat, onToggle: () => onTilesChanged?.() })
+    if (gen !== queueGen) { tile.doors?.dispose(); try { handle.dispose?.() } catch {} return }
   }
   if (at.dynamics.length) {
     tile.dyn = await attachTileDynamics({ lib, assets, blocks: at.dynamics, light: handle.light, sharedAtlas, lighting: lightingSpec(), origin })
@@ -505,6 +529,7 @@ async function pump() {
   if (building || !live()) return
   building = true
   const gen = queueGen
+  const born = epoch
   const inflight = new Map()
   try {
     while (live() && gen === queueGen) {
@@ -538,9 +563,11 @@ async function pump() {
       await new Promise(r => setTimeout(r))
     }
   } finally {
-    state.pending = 0
-    building = false
-    rebuilding = false
+    if (born === epoch) {
+      state.pending = 0
+      building = false
+      rebuilding = false
+    }
   }
 }
 
@@ -771,7 +798,12 @@ function applyLighting() {
 }
 
 function repump() {
-  if (building) return setTimeout(repump, 50)
+  clearTimeout(repumpTimer)
+  repumpTimer = null
+  if (building) {
+    repumpTimer = setTimeout(repump, 50)
+    return
+  }
   rebuilding = true
   pump()
 }
@@ -805,7 +837,10 @@ async function enter(spawn) {
   const w = useWorld()
   world = w.getWorld()
   if (!world || state.on || !spawn) return false
+  const born = epoch
+  const stale = () => born !== epoch
   lib = await loadLibrary()
+  if (stale()) return false
   assets = packs2().assets.value
   if (!assets) return false
 
@@ -841,6 +876,7 @@ async function enter(spawn) {
     // fresh build drops the old orbit scene immediately so it isn't eating
     // frame time while the world spins up
     await buildApi2().build({ ...EMPTY, dimension: worldDim }, false, false, true)
+    if (stale()) return false
     applyLighting()
     makeFog()
     sceneApi2().setGrids([])
@@ -857,11 +893,13 @@ async function enter(spawn) {
     await sharedAtlas.stitch(assets, {
       onProgress: (n, total) => { state.prepMsg = `Building texture atlas… ${Math.round(n / total * 100)}%` }
     })
+    if (stale()) return false
     atlasLayout = sharedAtlas.exportLayout()
     warming = lib.warmShaders(assets, sceneApi2().renderer, { scene: sceneApi2().scene, camera: sceneApi2().perspCam, sharedAtlas, lighting: lightingSpec() }).catch(() => null)
 
     state.prepMsg = "Building spawn area…"
     occlSeed = await lib.exportCache(assets).then(cache => cache.occlusion, () => null)
+    if (stale()) return false
     const wfile = w.getWorldFile()
     if (wfile) startBuildWorkers(wfile, ws.dimension)
     root = new THREE.Group()
@@ -871,21 +909,26 @@ async function enter(spawn) {
 
     playerTile = [Math.floor(scx / TILE), Math.floor(scz / TILE)]
     await buildTile(playerTile[0], playerTile[1], queueGen)
+    if (stale()) return false
     const sgx = Math.min(scx * 16 + 15, Math.max(scx * 16, Math.floor(wxb))) - origin[0]
     const sgz = Math.min(scz * 16 + 15, Math.max(scz * 16, Math.floor(wzb))) - origin[2]
     const top = await surfaceAt(sgx, sgz) ?? await surfaceAt(8, 8)
+    if (stale()) return false
     const spawnY = top !== null ? top * 16 + 8 : (yRange.yMax - origin[1]) * 16
     const cam = sceneApi2().perspCam
     cam.position.set(sgx * 16 + 8, spawnY + 28, sgz * 16 + 8)
     cam.rotation.set(0, 0, 0)
     cam.updateMatrixWorld(true)
   } catch (e) {
+    if (stale()) return false
     shutdown()
     throw e
   } finally {
-    state.preparing = false
-    state.prepMsg = ""
-    useLock().lock(false)
+    if (!stale()) {
+      state.preparing = false
+      state.prepMsg = ""
+      useLock().lock(false)
+    }
   }
   pump()
   return true
@@ -923,6 +966,11 @@ function shutdown() {
   playerTile = null
   playerPos = null
   pumpedAt = null
+  clearTimeout(repumpTimer)
+  repumpTimer = null
+  for (const job of reveals) cancelAnimationFrame(job.frame)
+  reveals.clear()
+  drainIntegrate()
   stopWorkers()
   warming?.then(warmed => warmed?.dispose())
   warming = null
@@ -951,3 +999,28 @@ export function useStream() {
     setTilesChanged: fn => { onTilesChanged = fn }
   }
 }
+
+onSession(() => {
+  Object.assign(state, defaults())
+  return () => {
+    epoch++
+    shutdown()
+    disposeDoorTemplates()
+    lib = null
+    assets = null
+    world = null
+    origin = null
+    yRange = null
+    chunkMap = null
+    tileSet = null
+    dimension = "overworld"
+    daytime = DEFAULT_DAYTIME
+    dayU = null
+    lightOff = false
+    lightMode = "world"
+    building = false
+    rebuilding = false
+    buildSeq = 0
+    Object.assign(state, defaults())
+  }
+})

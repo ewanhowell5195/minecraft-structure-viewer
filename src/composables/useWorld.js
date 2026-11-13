@@ -12,6 +12,7 @@ import { debounce } from "../yield.js"
 import { loadLibrary } from "../lib.js"
 import { usePacks } from "./usePacks.js"
 import { biomeTints, colormapTypes } from "../biomes.js"
+import { onSession } from "../session.js"
 
 async function biomeOptions() {
   const assets = usePacks().assets.value
@@ -22,30 +23,34 @@ async function biomeOptions() {
 
 let lastSelection = null
 let worldFile = null
-const state = reactive({
-  active: false,
-  name: "",
-  chunkCount: 0,
-  selCount: 0,
-  error: "",
-  busy: false,
-  loading: null,
-  memWarn: false,
-  stopped: null,
-  oldWorld: false,
-  dimensions: [],
-  dimension: "",
-  structs: [],
-  rangeWarn: false,
-  regionFile: false,
-  rev: 0,
-  focusRev: 0,
-  yMin: 48,
-  yMax: 200
-})
+function defaults() {
+  return {
+    active: false,
+    name: "",
+    chunkCount: 0,
+    selCount: 0,
+    error: "",
+    busy: false,
+    loading: null,
+    memWarn: false,
+    stopped: null,
+    oldWorld: false,
+    dimensions: [],
+    dimension: "",
+    structs: [],
+    rangeWarn: false,
+    regionFile: false,
+    rev: 0,
+    focusRev: 0,
+    yMin: 48,
+    yMax: 200
+  }
+}
+const state = reactive(defaults())
 
 let world = null
 let worldGen = 0
+let epoch = 0
 const worldRels = new Map()
 const selected = new Set()
 
@@ -145,7 +150,7 @@ async function applySuggestedRange() {
     if (r.top > top) top = r.top
     if (r.bottom < bottom) bottom = r.bottom
   }
-  if (top === -Infinity) return
+  if (top === -Infinity || world !== w || g !== worldGen) return
   state.rangeWarn = false
   setYRange(Math.max(-64, Math.max(bottom, top - 40)), Math.min(320, top))
 }
@@ -174,6 +179,7 @@ function fillGridWindow(d, w0x, w0z, size, tpc, hideSel = false) {
 
 async function openWorld(file, cacheIt = true) {
   if (world && worldFile?.name === file.name && worldFile.size === file.size) return
+  const e = epoch
   state.error = ""
   state.busy = true
   state.active = true
@@ -189,7 +195,9 @@ async function openWorld(file, cacheIt = true) {
   autoRange = true
   try {
     state.regionFile = /\.mca$/i.test(file.name)
-    world = await read(file, { region: regionCoords(file.name), onProgress: (done, total) => { state.loading = { done, total } } })
+    const opened = await read(file, { region: regionCoords(file.name), onProgress: (done, total) => { if (e === epoch) state.loading = { done, total } } })
+    if (e !== epoch) return
+    world = opened
     worldGen++
     selected.clear()
     state.name = world.name || file.name.replace(/\.(zip|mca)$/i, "")
@@ -207,6 +215,7 @@ async function openWorld(file, cacheIt = true) {
         }
       } catch {}
     }
+    if (e !== epoch) return
     worldRels.clear()
     for (const libRel of world.structures) {
       const slash = libRel.indexOf("/")
@@ -218,10 +227,12 @@ async function openWorld(file, cacheIt = true) {
       addWorldRel("generated", sns, path, { libRel, key })
     }
     await addDatapackStructures()
+    if (e !== epoch) return
     useStructures().setWorldStructures(Array.from(worldRels.keys()))
     state.structs = Array.from(worldRels, ([rel, v]) => ({ rel, ns: v.ns, path: v.path }))
     if (cacheIt) cacheFile("world", file)
   } catch (err) {
+    if (e !== epoch) return
     world = null
     useStructures().setWorldStructures([])
     state.name = file.name.replace(/\.(zip|mca)$/i, "")
@@ -232,14 +243,18 @@ async function openWorld(file, cacheIt = true) {
     state.structs = []
     state.error = String(err.message ?? err)
   } finally {
-    state.busy = false
-    state.loading = null
-    state.rev++
+    if (e === epoch) {
+      state.busy = false
+      state.loading = null
+      state.rev++
+    }
   }
 }
 
 async function applyDimension(id) {
-  await world.setDimension(id, (done, total) => { state.loading = { done, total } })
+  const e = epoch
+  await world.setDimension(id, (done, total) => { if (e === epoch) state.loading = { done, total } })
+  if (e !== epoch) throw new Error("the viewer closed")
   worldGen++
   state.dimension = id
   state.chunkCount = world.chunks.length
@@ -256,6 +271,7 @@ async function applyDimension(id) {
 
 async function setDimension(id) {
   if (!world || state.busy || id === state.dimension) return
+  const e = epoch
   state.error = ""
   state.busy = true
   state.loading = { done: 0, total: 0 }
@@ -263,11 +279,13 @@ async function setDimension(id) {
     await applyDimension(id)
     setWorldParams(false)
   } catch (err) {
-    state.error = String(err.message ?? err)
+    if (e === epoch) state.error = String(err.message ?? err)
   } finally {
-    state.busy = false
-    state.loading = null
-    state.rev++
+    if (e === epoch) {
+      state.busy = false
+      state.loading = null
+      state.rev++
+    }
   }
 }
 
@@ -354,30 +372,36 @@ async function setWorldParams(on) {
 
 async function restoreLoad(wy, wsel, wdim) {
   if (!world) return
+  const e = epoch
   if (wdim && wdim !== state.dimension && world.dims?.some(d => d.id === wdim)) {
     try { await applyDimension(wdim) } catch { return } finally {
-      state.loading = null
-      state.rev++
+      if (e === epoch) {
+        state.loading = null
+        state.rev++
+      }
     }
   }
   const [lo, hi] = (wy ?? "").split(",").map(Number)
   if (Number.isFinite(lo) && Number.isFinite(hi)) setYRange(lo, hi)
   selected.clear()
-  for (const key of await unpackSel(wsel)) if (key) selected.add(key)
+  const keys = await unpackSel(wsel)
+  if (e !== epoch) return
+  for (const key of keys) if (key) selected.add(key)
   state.selCount = selected.size
   state.rev++
   if (!selected.size) return
   state.focusRev++
   let probe
   try { probe = await buildSelection(world, selected, { yMin: state.yMin, yMax: state.yMax, cap: 24000, ...await biomeOptions() }) } catch (err) {
-    if (err?.oldChunks) state.oldWorld = true
+    if (err?.oldChunks && e === epoch) state.oldWorld = true
     return
   }
+  if (e !== epoch) return
   const n = blockCount(probe)
   const est = probe.capped
     ? Math.round(n * probe.chunksTotal / probe.chunksLoaded / 1000) * 1000
     : n
-  if (!await useBuild().restoreGateCheck(est, true, probe.capped)) return
+  if (!await useBuild().restoreGateCheck(est, true, probe.capped) || e !== epoch) return
   await loadSelected()
 }
 
@@ -390,6 +414,7 @@ function answerMemWarn(ok) {
 
 async function loadSelected(force = false) {
   if (!world || !selected.size) return
+  const e = epoch
   state.error = ""
   // the embed API answers the forecast itself: there is no modal to reach
   if (!force && loadForecast()) {
@@ -404,22 +429,28 @@ async function loadSelected(force = false) {
     lastSelection = null
     const s = await buildSelection(world, selected, { yMin: state.yMin, yMax: state.yMax, budget: ios ? 0.6e9 : 1.6e9, ...await biomeOptions() },
       (done, total) => {
+        if (e !== epoch) return false
         sApi.setReading({ done, total, label: "reading chunks" })
         return !sApi.readCancelled()
       })
+    if (e !== epoch) return
     sApi.setReading(null)
     s.dimension = state.dimension
     lastSelection = { worldOrigin: s.worldOrigin, parts: s.__parts ?? null }
     const n = s.truncated ? s.chunksLoaded : selected.size
     await sApi.loadObject(s, `${state.name} · ${n} chunk${n === 1 ? "" : "s"}`, true)
+    if (e !== epoch) return
     if (s.truncated) state.stopped = { loaded: s.chunksLoaded, total: s.chunksTotal }
     setWorldParams(true)
   } catch (err) {
+    if (e !== epoch) return
     if (err?.oldChunks) state.oldWorld = true
     else if (err?.message !== "cancelled") state.error = String(err.message ?? err)
   } finally {
-    state.busy = false
-    sApi.setReading(null)
+    if (e === epoch) {
+      state.busy = false
+      sApi.setReading(null)
+    }
   }
 }
 
@@ -444,7 +475,7 @@ function closeWorld() {
   setWorldParams(false)
 }
 
-const FORCE = typeof location !== "undefined" && new URLSearchParams(location.search).has("force")
+let FORCE = false
 
 function loadForecast() {
   if (FORCE || !selected.size) return false
@@ -547,3 +578,28 @@ export function useWorld() {
     dismissOldWorld: () => { state.oldWorld = false }
   }
 }
+
+onSession(() => {
+  Object.assign(state, defaults())
+  FORCE = new URLSearchParams(location.search).has("force")
+  pumping = false
+  return () => {
+    epoch++
+    answerMemWarn(false)
+    scanFocus.cancel()
+    rescan.cancel()
+    world = null
+    worldGen++
+    worldFile = null
+    lastSelection = null
+    worldRels.clear()
+    selected.clear()
+    surface.clear()
+    queue = []
+    qi = 0
+    lastFocus = ""
+    focus = null
+    autoRange = false
+    useStructures().setWorldStructures([])
+  }
+})

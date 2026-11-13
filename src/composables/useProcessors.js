@@ -2,15 +2,20 @@ import { reactive, readonly } from "vue"
 import { setParams } from "../params.js"
 import { mix, rand32 } from "../transforms.js"
 import { seedFor } from "../processors.js"
+import { onSession } from "../session.js"
 
-const sp = new URLSearchParams(location.search)
 const parseSeed = v => /^[0-9a-f]{1,8}$/i.test(v ?? "") ? parseInt(v, 16) >>> 0 : null
 
-const state = reactive({
-  on: sp.get("proc") !== "0",
-  seed: parseSeed(sp.get("pseed")),
-  session: false
-})
+function defaults() {
+  const sp = new URLSearchParams(location.search)
+  return {
+    on: sp.get("proc") !== "0",
+    seed: parseSeed(sp.get("pseed")),
+    session: false
+  }
+}
+
+const state = reactive(defaults())
 
 // pieces pulled into an assembly are not in the loaded list, so the session
 // reports whether any of them carry processors
@@ -48,3 +53,7 @@ async function shuffle() {
 export function useProcessors() {
   return { state: readonly(state), seedOf, setOn, shuffle, setSessionUse, setReloadHandler }
 }
+
+onSession(() => {
+  Object.assign(state, defaults())
+})

@@ -1,6 +1,7 @@
 import { loadLibrary } from "./lib.js"
 import { renderIcon } from "./iconRender.js"
 import { usePacks } from "./composables/usePacks.js"
+import { onSession } from "./session.js"
 
 let _packs = null
 const packs = () => _packs ??= usePacks()
@@ -13,7 +14,8 @@ const MAX = 1024
 
 let worker = null
 let ready = null
-let dead = new URLSearchParams(location.search).has("mainbuild")
+let dead = false
+let epoch = 0
 let seq = 0
 const waiters = new Map()
 
@@ -112,9 +114,12 @@ const plainSpec = spec => ({ ...spec, components: plain(spec.components), blocks
 
 async function produce(spec, key) {
   spec = plainSpec(spec)
+  const born = epoch
   const ok = await start()
+  if (born !== epoch) return null
   if (ok && worker) {
     const m = await call({ type: "icon", spec, key })
+    if (born !== epoch) return null
     if (m) {
       if (m.error || !m.bitmap) return null
       return { bitmap: m.bitmap, animates: !!m.animates }
@@ -149,9 +154,13 @@ export function iconBitmap(spec) {
 }
 
 const idle = globalThis.requestIdleCallback ?? (fn => setTimeout(fn, 200))
+const cancelIdle = globalThis.cancelIdleCallback ?? clearTimeout
+let warming = null
 
 export function warmIcons() {
-  idle(() => {
+  cancelIdle(warming)
+  warming = idle(() => {
+    warming = null
     checkVersion()
     start()
   })
@@ -204,8 +213,9 @@ async function sync(key) {
 }
 
 export async function acquireIcon(spec, token, size) {
+  const born = epoch
   const info = await iconInfo(spec)
-  if (!info) return null
+  if (!info || born !== epoch) return null
   const canvas = document.createElement("canvas")
   canvas.width = canvas.height = size
   if (!info.animates) {
@@ -255,3 +265,16 @@ export function offVisible(target) {
   observer?.unobserve(target)
   pending.delete(target)
 }
+
+onSession(() => {
+  dead = new URLSearchParams(location.search).has("mainbuild")
+  return () => {
+    epoch++
+    cancelIdle(warming)
+    warming = null
+    stop()
+    anim.clear()
+    observer?.disconnect()
+    observer = null
+  }
+})

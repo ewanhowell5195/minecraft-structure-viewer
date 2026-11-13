@@ -16,6 +16,7 @@ import { setParams } from "../params.js"
 import { leafName as leaf, pathDimension, structureName } from "../transforms.js"
 import { read } from "minecraft-block-reader"
 import { cellItems } from "../structdiff.js"
+import { onSession, sessionActive, sessionSignal, inSession } from "../session.js"
 
 const build = useBuild()
 const scene = useScene()
@@ -27,24 +28,23 @@ const { locked } = useLock()
 
 // mode "structures" is the right-click structure-vs-structure split, "versions"
 // the panel's version-vs-version one; they share all the machinery
-const state = reactive({
-  on: false,
-  mode: "",
-  view: "slide",
-  split: 0.5,
-  left: "",
-  right: "",
-  leftInfo: null,
-  show: { added: false, changed: false, removed: false },
-  counts: { added: 0, changed: 0, removed: 0 },
-  files: { main: "", panel: "" }
-})
+function defaults() {
+  return {
+    on: false,
+    mode: "",
+    view: "slide",
+    split: 0.5,
+    left: "",
+    right: "",
+    leftInfo: null,
+    show: { added: false, changed: false, removed: false },
+    counts: { added: 0, changed: 0, removed: 0 },
+    files: { main: "", panel: "" }
+  }
+}
+const state = reactive(defaults())
 
 const HL = { added: "new", changed: "changed", removed: "removed" }
-{
-  const on = new Set((new URLSearchParams(location.search).get("hl") ?? "").split(",").filter(Boolean))
-  for (const kind of Object.keys(HL)) state.show[kind] = on.has(HL[kind])
-}
 
 function syncHlUrl() {
   const on = Object.keys(HL).filter(kind => state.show[kind]).map(kind => HL[kind])
@@ -70,13 +70,20 @@ const writeUrl = (left, right) => setParams({ structure: left || null, compare: 
 const quiet = () => !build.state.building && !comparePacks.state.busy && !locked.value
 
 function settled() {
-  if (quiet()) return Promise.resolve()
+  if (!sessionActive()) return Promise.resolve(false)
+  if (quiet()) return Promise.resolve(true)
+  const signal = sessionSignal()
   return new Promise(resolve => {
-    const stop = watch([() => build.state.building, () => comparePacks.state.busy, locked], () => {
-      if (!quiet()) return
+    function done(ok) {
       stop()
-      resolve()
-    })
+      signal.removeEventListener("abort", cancel)
+      resolve(ok)
+    }
+    const cancel = () => done(false)
+    const stop = inSession(() => watch([() => build.state.building, () => comparePacks.state.busy, locked], () => {
+      if (quiet()) done(true)
+    }))
+    signal.addEventListener("abort", cancel)
   })
 }
 
@@ -337,7 +344,7 @@ async function enterVersion(rel) {
     const cut = snapCut()
     exit()
     dropOverride()
-    await settled()
+    if (!await settled()) return
     const { useStructure } = await import("./useStructure.js")
     await useStructure().loadVanilla(rel)
     if (!build.getRoot() || !comparePacks.has(rel)) return
@@ -363,7 +370,7 @@ async function enterOnly(rel) {
     setFile("main", null)
     setFile("panel", null)
     exit()
-    await settled()
+    if (!await settled()) return
     const bytes = await comparePacks.readStructureBytes(rel)
     if (!bytes) return
     const structure = await read(bytes)
@@ -404,7 +411,7 @@ async function enterFiles() {
     const cut = snapCut()
     exit()
     dropOverride()
-    await settled()
+    if (!await settled()) return
     const { useStructure } = await import("./useStructure.js")
     await useStructure().loadFile(leftFile, !!files.main && !minimal)
     if (!build.getRoot()) return
@@ -533,7 +540,7 @@ async function refresh() {
     } else {
       const a = leftRel, b = rightRel, cut = snapCut()
       exit()
-      await settled()
+      if (!await settled()) return
       await useStructure().loadVanilla(a)
       applyCut(cut)
       await enter(b)
@@ -556,34 +563,56 @@ function tryAutoEnter() {
   if (sel.length === 1 && pairable(sel[0])) return enterVersion(sel[0])
 }
 
-watch(() => [build.state.lighting, build.state.fullbright, build.state.hideStructureBlocks, useSky().lightDim.value], refresh)
-watch(() => packs.state.assetsVersion, () => {
-  if (!state.on) return
-  state.mode === "versions" ? refresh() : exit()
-})
-watch(() => comparePacks.state.assetsVersion, async () => {
-  if (!comparePacks.state.armed) return
-  await settled()
-  if (!comparePacks.state.armed) return
-  if (state.on && state.mode === "versions") refresh()
-  else if (onlyRel) enterOnly(onlyRel)
-  else tryAutoEnter()
-})
-watch(() => build.state.info, () => {
-  align()
-  if (state.on) drawDiff()
-})
-watch(() => ({ ...state.show }), () => {
-  drawDiff()
-  syncHlUrl()
-}, { deep: true })
-
-import("./useWorld.js").then(({ useWorld }) => {
-  watch(() => useWorld().state.active, on => { if (on) worldOpened() })
-})
-
 const versionArmed = () => comparePacks.state.armed
 
 export function useCompare() {
   return { state: readonly(state), stateMut: state, enter, enterVersion, openVersion, setMainFile, setPanelFile, setFiles, clearFile, fileName, exit, leave, stop, versionArmed, busy: entering, leftRayHit, getFiles: () => ({ ...files }), leftStructure: () => stash?.structure ?? null }
 }
+
+onSession(signal => {
+  Object.assign(state, defaults())
+  const on = new Set((new URLSearchParams(location.search).get("hl") ?? "").split(",").filter(Boolean))
+  for (const kind of Object.keys(HL)) state.show[kind] = on.has(HL[kind])
+  stash = null
+  leftGrid = null
+  leftRel = rightRel = ""
+  flags.entering = false
+  compareHold = 0
+  onlyRel = ""
+  files.main = files.panel = null
+  diffCells = { added: [], changed: [], removed: [] }
+  leftIdx = null
+
+  watch(() => [build.state.lighting, build.state.fullbright, build.state.hideStructureBlocks, useSky().lightDim.value], refresh)
+  watch(() => packs.state.assetsVersion, () => {
+    if (!state.on) return
+    state.mode === "versions" ? refresh() : exit()
+  })
+  watch(() => comparePacks.state.assetsVersion, async () => {
+    if (!comparePacks.state.armed) return
+    if (!await settled()) return
+    if (!comparePacks.state.armed) return
+    if (state.on && state.mode === "versions") refresh()
+    else if (onlyRel) enterOnly(onlyRel)
+    else tryAutoEnter()
+  })
+  watch(() => build.state.info, () => {
+    align()
+    if (state.on) drawDiff()
+  })
+  watch(() => ({ ...state.show }), () => {
+    drawDiff()
+    syncHlUrl()
+  }, { deep: true })
+
+  import("./useWorld.js").then(({ useWorld }) => {
+    if (signal.aborted) return
+    inSession(() => watch(() => useWorld().state.active, on => { if (on) worldOpened() }))
+  })
+
+  return () => {
+    exit()
+    dropOverride()
+    files.main = files.panel = null
+  }
+})

@@ -1,6 +1,8 @@
 import { reactive, readonly } from "vue"
+import { onSession } from "../session.js"
 
-const state = reactive({ open: false, x: 0, y: 0, items: [] })
+const defaults = () => ({ open: false, x: 0, y: 0, items: [] })
+const state = reactive(defaults())
 
 // the row that opened the menu holds its hover styling until the menu closes
 let anchor = null
@@ -26,3 +28,8 @@ function close() {
 export function useContextMenu() {
   return { state: readonly(state), open, close }
 }
+
+onSession(() => {
+  Object.assign(state, defaults())
+  return close
+})

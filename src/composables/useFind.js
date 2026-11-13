@@ -7,8 +7,10 @@ import { setOverlay } from "./useHighlight.js"
 import { useContainer } from "./useContainer.js"
 import { usePacks } from "./usePacks.js"
 import { useWalk } from "./useWalk.js"
+import { onSession } from "../session.js"
 
-const state = reactive({ on: false, index: 0, total: 0, label: "" })
+const defaults = () => ({ on: false, index: 0, total: 0, label: "" })
+const state = reactive(defaults())
 
 const SHOWN = "rgba(255, 255, 255, 0.34)"
 const CULLED = "rgba(255, 77, 77, 0.34)"
@@ -170,10 +172,22 @@ function stop() {
   setOverlay("find", [])
 }
 
-watch(() => useContainer().state.hovering, on => setShown(!on))
-watch(() => useBuild().current.value, stop)
-watch(() => useWalk().state.on, on => { if (on) stop() })
-
 export function useFind() {
   return { state: readonly(state), start, go, stop }
 }
+
+onSession(() => {
+  Object.assign(state, defaults())
+  list = []
+  boxOf = null
+  cullCache.clear()
+  watch(() => useContainer().state.hovering, on => setShown(!on))
+  watch(() => useBuild().current.value, stop)
+  watch(() => useWalk().state.on, on => { if (on) stop() })
+  return () => {
+    stop()
+    tintToken++
+    cancelAnimationFrame(moveRaf)
+    boxOf = null
+  }
+})

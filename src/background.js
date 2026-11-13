@@ -1,9 +1,9 @@
-// a bare hex is accepted because a literal # in the url would start the fragment
-const raw = new URLSearchParams(location.search).get("background")
-const value = raw && /^[0-9a-f]{3,8}$/i.test(raw) ? "#" + raw : raw
+import { onSession } from "./session.js"
+
 const fetches = /\b(url|image-set|image|cross-fade|element)\s*\(/i
 
-export const customBackground = value && !fetches.test(value) && CSS.supports("background", value) ? value : ""
+export let customBackground = ""
+export let lightBackground = false
 
 // a probe's computed style resolves any colour syntax (and gradient stops) to rgb()
 function luminance(background) {
@@ -23,7 +23,15 @@ function luminance(background) {
   return lums.length ? lums.reduce((s, v) => s + v) / lums.length : 0
 }
 
-// 0.179 is where black text starts beating white on contrast ratio
-export const lightBackground = !!customBackground && luminance(customBackground) > 0.179
-
-if (customBackground) document.body.style.background = customBackground
+onSession(() => {
+  // a bare hex is accepted because a literal # in the url would start the fragment
+  const raw = new URLSearchParams(location.search).get("background")
+  const value = raw && /^[0-9a-f]{3,8}$/i.test(raw) ? "#" + raw : raw
+  customBackground = value && !fetches.test(value) && CSS.supports("background", value) ? value : ""
+  // 0.179 is where black text starts beating white on contrast ratio
+  lightBackground = !!customBackground && luminance(customBackground) > 0.179
+  if (!customBackground) return
+  const previous = document.body.style.background
+  document.body.style.background = customBackground
+  return () => { document.body.style.background = previous }
+})

@@ -1,6 +1,7 @@
 import * as THREE from "three"
 import { useScene } from "./useScene.js"
 import { useBuild } from "./useBuild.js"
+import { onSession } from "../session.js"
 
 const sceneApi = useScene()
 
@@ -55,3 +56,9 @@ function refresh() {
 export function useBooks() {
   return { refresh, setLid, setRange, wobble, ring }
 }
+
+onSession(() => {
+  lids = new Map()
+  rangeDefault = 16
+  return () => { lids = new Map() }
+})

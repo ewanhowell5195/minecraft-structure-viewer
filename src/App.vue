@@ -1,5 +1,6 @@
 <script setup>
-import { computed, onMounted, ref, watch } from "vue"
+import { computed, onBeforeUnmount, onMounted, onUnmounted, ref, watch } from "vue"
+import { startSession, stopSession, sessionSignal, inSession } from "./session.js"
 import { loadLibrary } from "./lib.js"
 import { usePacks } from "./composables/usePacks.js"
 import { useStructures } from "./composables/useStructures.js"
@@ -51,6 +52,9 @@ import SplashScreen from "./components/SplashScreen.vue"
 import BuildWarning from "./components/BuildWarning.vue"
 import Modal from "./components/Modal.vue"
 
+startSession()
+onBeforeUnmount(stopSession)
+
 const libError = ref("")
 const canvasEl = ref(null)
 const usedModal = ref(null)
@@ -81,19 +85,20 @@ let dragDepth = 0
 const dragHasFiles = e => Array.from(e.dataTransfer?.types ?? []).includes("Files")
 
 if (!minimal) onMounted(() => {
+  const signal = sessionSignal()
   addEventListener("dragenter", e => {
     if (!dragHasFiles(e)) return
     e.preventDefault()
     if (++dragDepth === 1) dropping.value = !locked.value && !reading.value
-  })
+  }, { signal })
   addEventListener("dragover", e => {
     if (dragHasFiles(e)) e.preventDefault()
-  })
+  }, { signal })
   addEventListener("dragleave", e => {
     if (!dragHasFiles(e) || --dragDepth > 0) return
     dragDepth = 0
     dropping.value = false
-  })
+  }, { signal })
   addEventListener("drop", async e => {
     if (!dragHasFiles(e)) return
     e.preventDefault()
@@ -107,7 +112,7 @@ if (!minimal) onMounted(() => {
       reading.value = null
     }
     if (files.length) routeFiles(files)
-  })
+  }, { signal })
 })
 
 // entry handles must be taken before awaiting
@@ -331,13 +336,21 @@ const aim = computed(() => {
   return props ? `${a.name} · ${props}` : a.name
 })
 
+onUnmounted(() => {
+  clearTimeout(cancelTimer)
+  clearTimeout(idleTimer)
+  loadLibrary().then(lib => lib.setAnimationRenderer?.(null), () => {})
+})
+
 onMounted(async () => {
+  const signal = sessionSignal()
   try {
     await loadLibrary()
   } catch (err) {
     libError.value = String(err)
     return
   }
+  if (signal.aborted) return
   sceneApi.init(canvasEl.value)
   useSlicers().init()
   useContainer().initPicking(canvasEl.value)
@@ -346,13 +359,15 @@ onMounted(async () => {
   const debug = params.get("debug")
   const feature = params.get("feature")
   const requested = await decodeStructureParam(structureParam)
+  if (signal.aborted) return
   prefetchRemote(requested.filter(isRemote))
-  const stop = watch(() => structures.state.names.length, async n => {
+  const stop = inSession(() => watch(() => structures.state.names.length, async n => {
     if (!n || manual) return
     stop()
     if (locked.value) await new Promise(resolve => {
-      const unwatch = watch(locked, v => { if (!v) { unwatch(); resolve() } })
+      const unwatch = inSession(() => watch(locked, v => { if (!v) { unwatch(); resolve() } }))
     })
+    if (signal.aborted) return
     beginInit()
     try {
       if (params.has("handoff") && !minimal) {
@@ -414,15 +429,18 @@ onMounted(async () => {
     } finally {
       endInit()
     }
+    if (signal.aborted) return
     useSlicers().restoreUrlSlice()
-  })
+  }))
   const packUrls = (params.get("packs") ?? "").split(",").filter(Boolean)
   const urlPacks = packUrls.length ? addUrlPacks(packUrls) : undefined
   if (manual) await initSources(urlPacks)
   else {
     if (!minimal) await restoreCachedPacks()
+    if (signal.aborted) return
     await loadBase(undefined, urlPacks)
   }
+  if (signal.aborted) return
   initEmbedApi()
 })
 </script>

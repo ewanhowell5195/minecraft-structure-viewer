@@ -1,3 +1,5 @@
+import { onSession } from "./session.js"
+
 export const CORS_PROXY = "https://cors.ewanhowell.com/"
 
 export const isRemote = s => /^https?:\/\//i.test(s)
@@ -14,11 +16,12 @@ export function remoteName(url) {
 // starts downloads without a consumer yet (structure bytes don't need the
 // assets, so they can race the jar); fetchRemote picks them up, consume-once
 const prefetched = new Map()
+let prefetchSignal = null
 
 export function prefetchRemote(urls) {
   for (const url of urls) {
     if (prefetched.has(url)) continue
-    const p = proxyFetch(url)
+    const p = proxyFetch(url, undefined, prefetchSignal)
     p.catch(() => {})
     prefetched.set(url, p)
   }
@@ -43,21 +46,21 @@ function originOf(url) {
   }
 }
 
-async function openRemote(url) {
+async function openRemote(url, signal) {
   const origin = originOf(url)
   if (origin && !needsProxy.has(origin)) {
     try {
-      return await fetch(url)
+      return await fetch(url, { signal })
     } catch (err) {
       if (err.name !== "TypeError") throw err
       needsProxy.add(origin)
     }
   }
-  return fetch(CORS_PROXY + url)
+  return fetch(CORS_PROXY + url, { signal })
 }
 
-export async function proxyFetch(url, onProgress) {
-  const res = await openRemote(url)
+export async function proxyFetch(url, onProgress, signal) {
+  const res = await openRemote(url, signal)
   if (!res.ok) throw new Error(`${res.status} fetching ${url}`)
   if (!onProgress || !res.body) return new Uint8Array(await res.arrayBuffer())
   const total = Number(res.headers.get("Content-Length")) || 0
@@ -79,3 +82,8 @@ export async function proxyFetch(url, onProgress) {
   }
   return out
 }
+
+onSession(signal => {
+  prefetched.clear()
+  prefetchSignal = signal
+})

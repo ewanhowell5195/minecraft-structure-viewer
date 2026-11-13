@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch } from "vue"
+import { onBeforeUnmount, ref, watch } from "vue"
 import * as THREE from "three"
 import { useScene } from "../composables/useScene.js"
 import { useWalk } from "../composables/useWalk.js"
@@ -22,7 +22,8 @@ function place() {
 }
 watch(() => state.on, on => { if (on) place() })
 watch(() => state.suspended, s => { if (s) place() })
-addEventListener("resize", () => { if (state.on) place() })
+const onResize = () => { if (state.on) place() }
+addEventListener("resize", onResize)
 
 const _frustum = new THREE.Frustum(), _m = new THREE.Matrix4(), _v = new THREE.Vector3(), _look = new THREE.Vector3()
 const wrapPi = a => ((a + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI
@@ -33,9 +34,10 @@ const asin1 = v => Math.asin(Math.max(-1, Math.min(1, v)))
 let hmrDead = false
 import.meta.hot?.dispose(() => { hmrDead = true })
 
+let raf = 0
 function tick() {
   if (hmrDead) return
-  requestAnimationFrame(tick)
+  raf = requestAnimationFrame(tick)
   const cam = sceneApi.camera, canvas = sceneApi.canvas
   if (!canvas || !sceneApi.contentRoots.size) {
     arrow.value = null
@@ -78,7 +80,11 @@ function tick() {
     deg: Math.atan2(dy, dx) * 180 / Math.PI + 90 // glyph points up at 0
   }
 }
-requestAnimationFrame(tick)
+raf = requestAnimationFrame(tick)
+onBeforeUnmount(() => {
+  cancelAnimationFrame(raf)
+  removeEventListener("resize", onResize)
+})
 </script>
 
 <template>

@@ -7,6 +7,7 @@ import { useLock } from "./useLock.js"
 import { setParams } from "../params.js"
 import { debounce } from "../yield.js"
 import { derive, RawBuilder } from "../blocklist.js"
+import { onSession, sessionSignal, inSession } from "../session.js"
 
 const AXES = ["x", "y", "z"]
 const DIRS = { x: new THREE.Vector3(1, 0, 0), y: new THREE.Vector3(0, 1, 0), z: new THREE.Vector3(0, 0, 1) }
@@ -24,12 +25,14 @@ const state = reactive({
 })
 
 let urlSlice = null
-{
+function readUrlSlice() {
+  let out = null
   const raw = new URLSearchParams(location.search).get("slice")
   if (raw) for (const part of raw.split(",")) {
     const m = /^([xyz])(-?\d+)(f)?$/.exec(part)
-    if (m) (urlSlice ??= {})[m[1]] = { on: true, i: +m[2], flip: !!m[3] }
+    if (m) (out ??= {})[m[1]] = { on: true, i: +m[2], flip: !!m[3] }
   }
+  return out
 }
 
 function restoreUrlSlice() {
@@ -221,7 +224,7 @@ const rebuildSoon = debounce(() => {
   buildApi.build(undefined, false, true)
 }, 1000)
 
-watch(state, () => {
+function onStateChange() {
   if (box) {
     AXES.forEach((a, k) => {
       const s = state[a]
@@ -232,7 +235,7 @@ watch(state, () => {
   if (!previewOnly) useBuild().showFull(sliceKey() !== appliedKey)
   syncSliceUrl()
   if (!dragA) scheduleRebuild()
-}, { deep: true })
+}
 
 function onBuild(root, position, size, sliced) {
   appliedKey = sliced ? pendingKey : ""
@@ -363,64 +366,61 @@ function handleScale(h) {
   return Math.min(s, 16 / 6)
 }
 
-function init() {
-  const canvas = sceneApi.canvas
-  sceneApi.animators.add({
-    update() {
-      const vis = []
-      for (const a of AXES) {
-        for (const h of handles[a]) {
-          if (!h.visible || !h.userData.base) continue
-          h.userData.s = handleScale(h)
-          h.userData.tight = false
-          h.position.copy(h.userData.base)
-          vis.push(h)
-        }
-      }
-      // coincident corner gizmos fan inward along their own rails
-      const used = new Array(vis.length).fill(false)
-      for (let m = 0; m < vis.length; m++) {
-        if (used[m]) continue
-        const cluster = [vis[m]]
-        for (let n = m + 1; n < vis.length; n++) {
-          if (used[n]) continue
-          if (vis[m].position.distanceTo(vis[n].position) < (vis[m].userData.s + vis[n].userData.s) * 4) {
-            cluster.push(vis[n])
-            used[n] = true
-          }
-        }
-        if (cluster.length < 2) continue
-        for (const h of cluster) {
-          const k = AXES.indexOf(h.userData.axis)
-          const centre = box.min.getComponent(k) + (box.lo[k] + box.hi[k]) * 8
-          const dir = Math.sign(centre - h.position.getComponent(k)) || 1
-          h.position.setComponent(k, h.position.getComponent(k) + dir * h.userData.s * 8)
-          h.userData.tight = true
-        }
-      }
-      // fanned hitboxes shrink; the child inverts the scale so the visible cube never changes size
-      for (const h of vis) {
-        const f = h.userData.tight ? 0.5 : 1
-        h.scale.setScalar(h.userData.s * f)
-        h.children[0].scale.setScalar(1 / f)
+const handleAnimator = {
+  update() {
+    const vis = []
+    for (const a of AXES) {
+      for (const h of handles[a]) {
+        if (!h.visible || !h.userData.base) continue
+        h.userData.s = handleScale(h)
+        h.userData.tight = false
+        h.position.copy(h.userData.base)
+        vis.push(h)
       }
     }
-  })
-  // sync flush, so the reset lands before the new load's build slices
-  const reset = () => {
-    rebuildSoon.cancel()
-    for (const a of AXES) {
-      state[a].on = false
-      state[a].i = null
-      state[a].flip = false
+    // coincident corner gizmos fan inward along their own rails
+    const used = new Array(vis.length).fill(false)
+    for (let m = 0; m < vis.length; m++) {
+      if (used[m]) continue
+      const cluster = [vis[m]]
+      for (let n = m + 1; n < vis.length; n++) {
+        if (used[n]) continue
+        if (vis[m].position.distanceTo(vis[n].position) < (vis[m].userData.s + vis[n].userData.s) * 4) {
+          cluster.push(vis[n])
+          used[n] = true
+        }
+      }
+      if (cluster.length < 2) continue
+      for (const h of cluster) {
+        const k = AXES.indexOf(h.userData.axis)
+        const centre = box.min.getComponent(k) + (box.lo[k] + box.hi[k]) * 8
+        const dir = Math.sign(centre - h.position.getComponent(k)) || 1
+        h.position.setComponent(k, h.position.getComponent(k) + dir * h.userData.s * 8)
+        h.userData.tight = true
+      }
+    }
+    // fanned hitboxes shrink; the child inverts the scale so the visible cube never changes size
+    for (const h of vis) {
+      const f = h.userData.tight ? 0.5 : 1
+      h.scale.setScalar(h.userData.s * f)
+      h.children[0].scale.setScalar(1 / f)
     }
   }
-  watch(() => useStructure().state.name, reset, { flush: "sync" })
-  // a static import would evaluate useSession mid useBuild module eval
-  // (build -> slicers -> session -> build) and trip its top-level useBuild()
-  import("./useSession.js").then(({ useSession }) => {
-    watch(() => [useSession().state.level, useSession().state.seed], reset, { flush: "sync" })
-  })
+}
+
+function clearSlices() {
+  rebuildSoon.cancel()
+  for (const a of AXES) {
+    state[a].on = false
+    state[a].i = null
+    state[a].flip = false
+  }
+}
+
+function init() {
+  const canvas = sceneApi.canvas
+  const signal = sessionSignal()
+  sceneApi.animators.add(handleAnimator)
   canvas.addEventListener("pointerdown", e => {
     if (e.button !== 0 || document.pointerLockElement || locked.value || !hoverA) return
     dragA = hoverA
@@ -430,7 +430,7 @@ function init() {
     canvas.setPointerCapture(e.pointerId)
     canvas.style.cursor = "grabbing"
     refresh()
-  })
+  }, { signal })
   canvas.addEventListener("pointermove", e => {
     if (document.pointerLockElement) return
     if (dragA) {
@@ -439,7 +439,7 @@ function init() {
     }
     hoverH = e.buttons || locked.value ? null : pick(e)
     setHover(hoverH?.userData.axis ?? null)
-  })
+  }, { signal })
   const end = e => {
     if (!dragA) return
     dragA = null
@@ -451,9 +451,9 @@ function init() {
     if (!previewOnly) useBuild().showFull(sliceKey() !== appliedKey)
     scheduleRebuild()
   }
-  canvas.addEventListener("pointerup", end)
-  canvas.addEventListener("pointercancel", end)
-  canvas.addEventListener("pointerleave", () => { if (!dragA) setHover(null) })
+  canvas.addEventListener("pointerup", end, { signal })
+  canvas.addEventListener("pointercancel", end, { signal })
+  canvas.addEventListener("pointerleave", () => { if (!dragA) setHover(null) }, { signal })
 }
 
 const busy = () => !!(hoverA || dragA)
@@ -461,3 +461,31 @@ const busy = () => !!(hoverA || dragA)
 export function useSlicers() {
   return { state, init, onBuild, setSpan, setPreviewOnly, busy, sliceStructure, restoreUrlSlice }
 }
+
+onSession(signal => {
+  clearSlices()
+  urlSlice = readUrlSlice()
+  box = null
+  railBox = null
+  appliedKey = ""
+  pendingKey = ""
+  previewOnly = false
+  hoverA = hoverH = dragA = savedLeft = null
+  dragCorner = 0
+  refresh()
+  watch(state, onStateChange, { deep: true })
+  // sync flush, so the reset lands before the new load's build slices
+  watch(() => useStructure().state.name, clearSlices, { flush: "sync" })
+  // a static import would evaluate useSession mid useBuild module eval
+  // (build -> slicers -> session -> build) and trip its top-level useBuild()
+  import("./useSession.js").then(({ useSession }) => {
+    if (signal.aborted) return
+    inSession(() => watch(() => [useSession().state.level, useSession().state.seed], clearSlices, { flush: "sync" }))
+  })
+  return () => {
+    rebuildSoon.cancel()
+    sceneApi.animators.delete(handleAnimator)
+    group.removeFromParent()
+    added = false
+  }
+})
