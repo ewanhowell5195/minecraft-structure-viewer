@@ -69,7 +69,7 @@ const featureJson = rel => normStatesDeep(JSON.parse(fs.readFileSync(path.join(r
 log("generating village…")
 const start = await loadStruct(START)
 const { structure: village, pieces } = await runJigsaw(start, {
-  loadStruct, loadPool, maxDepth: 6, maxPieces: 48, maxRadius: 80,
+  loadStruct, loadPool, maxDepth: 6, maxPieces: 48, maxRadius: 80, expansionHack: true,
   levelSeed: l => mix(SEED, l), keepJigsaws: false
 })
 log(`${pieces} pieces, ${village.size.join("x")}`)

@@ -1,4 +1,4 @@
-import { DIR, EMPTY, OPP, boxHit, inBox, jigsawsOf, pieceBox, poolTemplates, rnd, rotDir, rotPos, shuffle, worldJigsaw } from "./transforms.js"
+import { DIR, EMPTY, OPP, boxHit, inBox, jigsawsOf, pieceBox, poolMembers, poolTemplates, rnd, rotDir, rotPos, shuffle, worldJigsaw } from "./transforms.js"
 import { combine } from "./combine.js"
 
 // level d rolls its own rng seeded levelSeed(d + 1), so re-running with a deeper maxDepth reproduces every earlier level exactly
@@ -7,8 +7,8 @@ const nsName = s => s.includes(":") ? s : "minecraft:" + s
 
 const inRegion = (b, r) => b.x0 >= r.x0 && b.x1 <= r.x1 && b.y0 >= r.y0 && b.y1 <= r.y1 && b.z0 >= r.z0 && b.z1 <= r.z1
 
-export async function runJigsaw(start, { loadStruct, loadPool, loadFeature, maxDepth = 6, maxPieces = 48, maxRadius = 96, levelSeed, onProgress, keepJigsaws = true }) {
-  const structs = new Map(), pools = new Map()
+export async function runJigsaw(start, { loadStruct, loadPool, loadFeature, maxDepth = 6, maxPieces = 48, maxRadius = 96, expansionHack = false, levelSeed, onProgress, keepJigsaws = true }) {
+  const structs = new Map(), pools = new Map(), heights = new Map(), expansions = new Map()
   async function getStruct(ref) {
     if (!structs.has(ref)) structs.set(ref, await Promise.resolve(loadStruct(ref)).catch(() => null))
     return structs.get(ref)
@@ -16,6 +16,27 @@ export async function runJigsaw(start, { loadStruct, loadPool, loadFeature, maxD
   async function getPool(ref) {
     if (!pools.has(ref)) pools.set(ref, await Promise.resolve(loadPool(ref)).catch(() => null))
     return pools.get(ref)
+  }
+  async function poolHeight(ref) {
+    if (heights.has(ref)) return heights.get(ref)
+    let max = 0
+    for (const loc of poolMembers(await getPool(ref))) max = Math.max(max, typeof loc === "string" ? (await getStruct(loc))?.size[1] ?? 0 : 1)
+    heights.set(ref, max)
+    return max
+  }
+  async function expansion(struct, jigs) {
+    if (!expansionHack || struct.size[1] > 16) return 0
+    if (expansions.has(struct)) return expansions.get(struct)
+    const box = pieceBox(struct, 0, [0, 0, 0])
+    let max = 0
+    for (const j of jigs) {
+      const dir = DIR[j.front]
+      if (!j.pool || !inBox([j.pos[0] + dir[0], j.pos[1] + dir[1], j.pos[2] + dir[2]], box)) continue
+      const pool = await getPool(j.pool)
+      max = Math.max(max, await poolHeight(j.pool), typeof pool?.fallback === "string" ? await poolHeight(pool.fallback) : 0)
+    }
+    expansions.set(struct, max)
+    return max
   }
 
   const startPiece = { struct: start, rot: 0, off: [0, 0, 0], depth: 0, box: pieceBox(start, 0, [0, 0, 0]) }
@@ -84,6 +105,7 @@ export async function runJigsaw(start, { loadStruct, loadPool, loadFeature, maxD
           const child = await getStruct(loc)
           if (!child) continue
           const childJigs = jigsawsOf(child)
+          const expandTo = await expansion(child, childJigs)
           for (const k of shuffle([0, 1, 2, 3], rand)) {
             for (const cj of childJigs) {
               if (wj.front !== OPP[rotDir(cj.front, k)]) continue
@@ -91,7 +113,9 @@ export async function runJigsaw(start, { loadStruct, loadPool, loadFeature, maxD
               if (nsName(wj.target) !== nsName(cj.name)) continue
               const cp = rotPos(cj.pos, k)
               const off = [targetPos[0] - cp[0], targetPos[1] - cp[1], targetPos[2] - cp[2]]
-              if (place(child, k, off)) break jig
+              const box = pieceBox(child, k, off)
+              if (expandTo > 0) box.y1 = box.y0 + Math.max(expandTo + 1, box.y1 - box.y0 - 1) + 1
+              if (place(child, k, off, false, box)) break jig
             }
           }
         }

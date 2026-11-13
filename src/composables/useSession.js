@@ -43,6 +43,7 @@ const state = reactive({
 
 let base = null, baseName = null
 let baseRadius = 96
+let baseExpansion = false
 // the generator's own depth cap; data markers add one processing level past it
 let genCap = Infinity
 let prevAnchorWorld = null
@@ -124,7 +125,7 @@ async function resolve(level) {
     // maxRadius mirrors the game's max_distance_from_center; the piece cap is a runaway backstop vanilla lacks
     res = await runJigsaw(base, {
       loadStruct, loadPool, loadFeature,
-      maxDepth: gl, maxPieces: 1024, maxRadius: baseRadius,
+      maxDepth: gl, maxPieces: 1024, maxRadius: baseRadius, expansionHack: baseExpansion,
       levelSeed: l => mix(state.seed, l),
       onProgress: n => { buildApi.state.status = `loading… ${n} pieces` },
       // at the depth cap the frontier's jigsaws are consumed, like vanilla's finished generation
@@ -206,6 +207,7 @@ async function capForSeed() {
     genCap = structures.getStructDepth(baseName) ?? genCap
     state.maxDepth = genCap
     baseRadius = structures.getStructRadius(baseName) ?? baseRadius
+    baseExpansion = structures.getStructExpansion(baseName) ?? baseExpansion
   } else if (state.steps) await probeDepth()
 }
 
@@ -292,6 +294,7 @@ async function startSession(structure, name, unbuilt = false) {
     genCap = structures.getStructDepth(name) ?? 20
     state.maxDepth = genCap
     baseRadius = structures.getStructRadius(name) ?? 128
+    baseExpansion = structures.getStructExpansion(name) ?? false
   } else if (hasDataMarkers(structure, name)) {
     state.kind = "markers"
     state.label = "Structure Blocks"

@@ -263,3 +263,17 @@ export function poolTemplates(pool) {
   }
   return out
 }
+
+function elementMembers(el, out) {
+  const type = (el?.element_type ?? "").replace("minecraft:", "")
+  if (type === "empty_pool_element") return
+  if (type === "list_pool_element") for (const e of el.elements ?? []) elementMembers(e, out)
+  else if (type === "feature_pool_element") out.push({ feature: el.feature })
+  else if (typeof el?.location === "string") out.push(strip(el.location))
+}
+
+export function poolMembers(pool) {
+  const out = []
+  for (const e of pool?.elements ?? []) elementMembers(e.element, out)
+  return out
+}
