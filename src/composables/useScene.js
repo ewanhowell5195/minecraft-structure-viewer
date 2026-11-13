@@ -86,40 +86,85 @@ let gridGroup = null
 const gridVisible = () => view.grid && view.wireframe !== "wire"
 const GRID_LINE = 0x333336
 
+const GRID_VERTEX = `
+  uniform vec2 corner;
+  varying vec2 vCell;
+  void main() {
+    vCell = (position.xz - corner) / 16.0;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`
+
+const GRID_FRAGMENT = `
+  uniform vec2 size;
+  uniform vec2 crossAt;
+  uniform vec3 lineColor;
+  uniform vec3 crossColor;
+  uniform sampler2D cave;
+  varying vec2 vCell;
+  float open(vec2 cell) {
+    #ifdef CAVE
+      return 1.0 - texture2D(cave, (clamp(cell, vec2(-1.0), size) + 1.5) / (size + 2.0)).r;
+    #else
+      return 1.0;
+    #endif
+  }
+  const float thickness = 0.5;
+  const float haze = 0.3;
+  void main() {
+    vec2 width = sqrt(dFdx(vCell) * dFdx(vCell) + dFdy(vCell) * dFdy(vCell));
+    vec2 nearest = floor(vCell + 0.5);
+    vec2 away = abs(vCell - nearest) / width;
+    vec2 cover = clamp(min(away + 0.5, vec2(thickness * 0.5)) - max(away - 0.5, vec2(-thickness * 0.5)), 0.0, 1.0);
+    vec2 inside = step(-width * 0.5, vCell) * step(vCell, size + width * 0.5);
+    vec2 cell = clamp(floor(vCell), vec2(0.0), size - 1.0);
+    cover.x *= inside.y * step(0.0, nearest.x) * step(nearest.x, size.x) * open(vec2(nearest.x - 1.0, cell.y)) * open(vec2(nearest.x, cell.y));
+    cover.y *= inside.x * step(0.0, nearest.y) * step(nearest.y, size.y) * open(vec2(cell.x, nearest.y - 1.0)) * open(vec2(cell.x, nearest.y));
+    float line = max(cover.x, cover.y);
+    float crossing = max(cover.x * step(abs(nearest.x - crossAt.x), 0.5), cover.y * step(abs(nearest.y - crossAt.y), 0.5));
+    float density = max(width.x, width.y);
+    float share = min(thickness * density, 1.0);
+    float mean = min(2.0 * share - share * share, haze) * inside.x * inside.y * open(cell);
+    gl_FragColor = vec4(mix(lineColor, crossColor, crossing / max(line, 0.0001)), mix(line, mean, smoothstep(0.2, 0.4, density)));
+    #include <colorspace_fragment>
+  }
+`
+
 function makeRectGrid({ x, z, w, d, y }, inCave) {
-  const P = [], C = []
-  const cross = new THREE.Color(GRID_COLOR), line = new THREE.Color(GRID_LINE)
-  const push = c => C.push(c.r, c.g, c.b, c.r, c.g, c.b)
-  const runs = (span, hidden) => {
-    if (!inCave) return [[0, span]]
-    const out = []
-    let start = null
-    for (let i = 0; i < span; i++) {
-      if (!hidden(i)) { if (start === null) start = i }
-      else if (start !== null) { out.push([start, i]); start = null }
-    }
-    if (start !== null) out.push([start, span])
-    return out
-  }
-  const crossX = Math.floor(w / 2), crossZ = Math.floor(d / 2)
-  for (let i = 0; i <= w; i++) {
-    const lx = x + i * 16
-    for (const [a, b] of runs(d, j => inCave(lx - 8, z + j * 16 + 8) || inCave(lx + 8, z + j * 16 + 8))) {
-      P.push(lx, y, z + a * 16, lx, y, z + b * 16)
-      push(i === crossX ? cross : line)
-    }
-  }
-  for (let j = 0; j <= d; j++) {
-    const lz = z + j * 16
-    for (const [a, b] of runs(w, i => inCave(x + i * 16 + 8, lz - 8) || inCave(x + i * 16 + 8, lz + 8))) {
-      P.push(x + a * 16, y, lz, x + b * 16, y, lz)
-      push(j === crossZ ? cross : line)
-    }
-  }
+  const x0 = x - 16, x1 = x + w * 16 + 16, z0 = z - 16, z1 = z + d * 16 + 16
   const geo = new THREE.BufferGeometry()
-  geo.setAttribute("position", new THREE.Float32BufferAttribute(P, 3))
-  geo.setAttribute("color", new THREE.Float32BufferAttribute(C, 3))
-  return new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ vertexColors: true }))
+  geo.setAttribute("position", new THREE.Float32BufferAttribute([x0, y, z0, x1, y, z0, x0, y, z1, x1, y, z1], 3))
+  geo.setIndex([0, 2, 1, 1, 2, 3])
+  let mask = null
+  if (inCave) {
+    const cells = new Uint8Array((w + 2) * (d + 2) * 4)
+    for (let j = -1; j <= d; j++) for (let i = -1; i <= w; i++) {
+      if (inCave(x + i * 16 + 8, z + j * 16 + 8)) cells[((j + 1) * (w + 2) + i + 1) * 4] = 255
+    }
+    mask = new THREE.DataTexture(cells, w + 2, d + 2)
+    mask.needsUpdate = true
+  }
+  const material = new THREE.ShaderMaterial({
+    vertexShader: GRID_VERTEX,
+    fragmentShader: GRID_FRAGMENT,
+    defines: mask ? { CAVE: "" } : {},
+    uniforms: {
+      corner: { value: new THREE.Vector2(x, z) },
+      size: { value: new THREE.Vector2(w, d) },
+      crossAt: { value: new THREE.Vector2(Math.floor(w / 2), Math.floor(d / 2)) },
+      lineColor: { value: new THREE.Color(GRID_LINE) },
+      crossColor: { value: new THREE.Color(GRID_COLOR) },
+      cave: { value: mask }
+    },
+    extensions: { derivatives: true },
+    side: THREE.DoubleSide,
+    transparent: true,
+    depthWrite: false
+  })
+  if (mask) material.addEventListener("dispose", () => mask.dispose())
+  const plane = new THREE.Mesh(geo, material)
+  plane.renderOrder = -1
+  return plane
 }
 
 const CAVE_LINE = 0x3d5464
