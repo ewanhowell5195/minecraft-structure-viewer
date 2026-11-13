@@ -1,6 +1,9 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, onUnmounted, ref, watch } from "vue"
+import { useStylesheet } from "./stylesheet.js"
+import styles from "./styles.css?inline"
 import { startSession, stopSession, sessionSignal, inSession } from "./session.js"
+import "./background.js"
 import { loadLibrary } from "./lib.js"
 import { usePacks } from "./composables/usePacks.js"
 import { useStructures } from "./composables/useStructures.js"
@@ -54,6 +57,11 @@ import Modal from "./components/Modal.vue"
 
 startSession()
 onBeforeUnmount(stopSession)
+useStylesheet(styles)
+if (import.meta.env.DEV) {
+  onMounted(() => import("./devHooks.js").then(hooks => hooks.exposeViewer()))
+  onUnmounted(() => { delete window.__sv })
+}
 
 const libError = ref("")
 const canvasEl = ref(null)
@@ -457,8 +465,10 @@ onMounted(async () => {
     </div>
     <aside v-if="!minimal" class="sidebar" @click="closeOnPick">
       <header class="app-head">
-        <span class="material-symbols-outlined">deployed_code</span>
-        <h1>Structure Viewer</h1>
+        <RouterLink class="home" to="/">
+          <span class="material-symbols-outlined">deployed_code</span>
+          <h1>Structure Viewer</h1>
+        </RouterLink>
       </header>
       <div v-if="libError" class="lib-error">Renderer failed: {{ libError }}</div>
       <template v-else>
@@ -639,6 +649,19 @@ onMounted(async () => {
   padding: 12px 14px;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
+}
+
+.app-head .home {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: inherit;
+  text-decoration: none;
+  user-select: none;
+}
+
+.app-head .home:hover {
+  color: #fff;
 }
 
 .app-head h1 {

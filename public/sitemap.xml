@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
-    <loc>https://structure-viewer.ewanhowell.com/</loc>
+    <loc>https://structureviewer.com/</loc>
+  </url>
+  <url>
+    <loc>https://structureviewer.com/app/</loc>
   </url>
 </urlset>

@@ -1,3 +1,6 @@
+import { routerHistory, pathOf } from "./history.js"
+import { sessionActive } from "./session.js"
+
 // null, undefined and false drop the param; true writes "1"
 export function paramUrl(changes) {
   const u = new URL(location)
@@ -8,5 +11,11 @@ export function paramUrl(changes) {
   return u
 }
 
-export const setParams = changes => history.replaceState(null, "", paramUrl(changes))
-export const pushParams = changes => history.pushState(null, "", paramUrl(changes))
+export const setParams = changes => writeUrl(paramUrl(changes))
+export const pushParams = changes => writeUrl(paramUrl(changes), true)
+
+export function writeUrl(url, push = false) {
+  if (!sessionActive()) return
+  if (push) routerHistory.push(pathOf(url))
+  else routerHistory.replace(pathOf(url))
+}

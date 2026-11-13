@@ -1,0 +1,1 @@
+{"version":4,"size":[15,21,15],"scale":256,"atlas":"outpost.png","atlasSize":[256,112],"quads":4033,"chunks":[{"bin":"outpost.bin","quads":4033,"layers":[{"start":0,"count":3649,"blend":false},{"start":3649,"count":384,"blend":true}]}],"animations":[]}

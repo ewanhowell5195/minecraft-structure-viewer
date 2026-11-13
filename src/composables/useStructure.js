@@ -16,7 +16,8 @@ import { fileBase, mix, pathDimension, rand32, rnd, structureName } from "../tra
 import { saveBlob } from "../download.js"
 import { writeZip } from "minecraft-asset-loader"
 import { gzip, writeStructure } from "../nbtwrite.js"
-import { paramUrl, setParams } from "../params.js"
+import { paramUrl, setParams, writeUrl } from "../params.js"
+import { VIEWER_PATH } from "../history.js"
 import { isRemote, prefetchRemote, fetchRemote, remoteName } from "../remote.js"
 import { applyProcessors } from "../processors.js"
 import { useProcessors } from "./useProcessors.js"
@@ -151,10 +152,11 @@ function setStructureParam(rel, featureRel, featureSeed, featureField, keepWorld
     ...!keepWorldParams && { wy: null, wsel: null, wloaded: null }
   })
   const changed = key(u.searchParams) !== before
-  history[changed && !initializing && !quietLoad ? "pushState" : "replaceState"](null, "", u)
+  writeUrl(u, changed && !initializing && !quietLoad)
 }
 
 async function onPopState() {
+  if (location.pathname !== VIEWER_PATH) return
   const params = new URLSearchParams(location.search)
   navigatingHistory = true
   try {
@@ -337,7 +339,7 @@ function restore(snap) {
   state.field = snap.field
   structures.stateMut.selected = snap.selected
   useFeatures().stateMut.selected = snap.fselected
-  history.replaceState(null, "", snap.url)
+  writeUrl(snap.url)
 }
 
 async function apply(refit = true) {

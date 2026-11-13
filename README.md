@@ -119,7 +119,7 @@ There is no origin check, so anyone can embed it. Every message must be marked
 
 ```js
 const frame = document.querySelector("iframe")
-frame.src = "https://structure-viewer.ewanhowell.com/?minimal&manual"
+frame.src = "https://structureviewer.com/app/?minimal&manual"
 
 let id = 0
 const pending = new Map()

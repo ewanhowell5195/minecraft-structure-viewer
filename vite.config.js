@@ -4,5 +4,6 @@ import vue from "@vitejs/plugin-vue"
 export default defineConfig({
   plugins: [vue()],
   optimizeDeps: { exclude: ["minecraft-block-reader"] },
-  worker: { format: "es" }
+  worker: { format: "es" },
+  build: { rollupOptions: { input: { home: "index.html", app: "app/index.html" } } }
 })

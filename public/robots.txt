@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://structure-viewer.ewanhowell.com/sitemap.xml
+Sitemap: https://structureviewer.com/sitemap.xml
