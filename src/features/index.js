@@ -7,6 +7,7 @@ import { DIR, HORIZ, OPP, shuffle, statePicker } from "../transforms.js"
 import { applyProcessors } from "../processors.js"
 
 const strip = t => (t ?? "").replace("minecraft:", "")
+const CEILING_REACH = 16
 
 function makeWorld() {
   const cells = new Map()
@@ -19,7 +20,8 @@ function makeWorld() {
   }
 }
 
-const DOUBLE_PLANTS = /^(tall_grass|large_fern|tall_seagrass|sunflower|lilac|rose_bush|peony|pitcher_plant|small_dripleaf)$/
+const SELECTORS = new Set(["random_selector", "weighted_random_selector", "simple_random_selector", "random_boolean_selector"])
+const DOUBLE_PLANTS =/^(tall_grass|large_fern|tall_seagrass|sunflower|lilac|rose_bush|peony|pitcher_plant|small_dripleaf)$/
 const GROUND_PLANTS = /^(short_grass|fern|dead_bush|bush|firefly_bush|sweet_berry_bush|short_dry_grass|tall_dry_grass|dandelion|poppy|blue_orchid|allium|azure_bluet|oxeye_daisy|cornflower|lily_of_the_valley|wither_rose|torchflower|open_eyeblossom|closed_eyeblossom|wildflowers|pink_petals|leaf_litter|cactus_flower|[a-z_]+_tulip|[a-z_]+_sapling)$/
 
 // the grid is the ground: a plant survives on it or on a block the feature placed, never in mid-air
@@ -1459,7 +1461,9 @@ async function generatePlaced(world, ref, rand, resolvePlaced, x, y, z) {
     return
   }
   const inner = await resolvePlaced(ref)
-  if (inner) await generate(world, inner, rand, resolvePlaced, x, y, z)
+  if (!inner) return
+  if (!world.rootType && !SELECTORS.has(strip(inner.type))) world.rootType = strip(inner.type)
+  await generate(world, inner, rand, resolvePlaced, x, y, z)
 }
 
 // world-reading filters assume real terrain around the feature; when the empty
@@ -1575,6 +1579,18 @@ function mushroomCap(provider, rand, faces) {
 
 export const SUPPORTED = new Set(Object.keys(TYPES))
 
+function blockAbove(pred) {
+  const type = strip(pred?.type ?? "")
+  if (type === "all_of" || type === "any_of") return pred.predicates?.map(blockAbove).find(Boolean) ?? null
+  const [dx, dy, dz] = pred?.offset ?? [0, 0, 0]
+  return type === "matching_blocks" && dx === 0 && dy === 1 && dz === 0 ? [pred.blocks].flat()[0] ?? null : null
+}
+
+export function placedCeiling(placed) {
+  const id = (placed?.placement ?? []).filter(mod => strip(mod.type) === "block_predicate_filter").map(mod => blockAbove(mod.predicate)).find(Boolean)
+  return id ? { id } : null
+}
+
 export async function generateFeature(name, json, rand, resolvePlaced, loadStruct, pad, loadProcessors) {
   const world = makeWorld()
   world.loadStruct = loadStruct
@@ -1586,16 +1602,28 @@ export async function generateFeature(name, json, rand, resolvePlaced, loadStruc
       world.set(x, -1, z, { id: x < 0 ? "minecraft:crimson_nylium" : "minecraft:warped_nylium" })
     }
   }
+  const ceiling = pad?.ceiling
+  if (ceiling) {
+    for (let x = -CEILING_REACH; x <= CEILING_REACH; x++) for (let z = -CEILING_REACH; z <= CEILING_REACH; z++) world.set(x, 1, z, ceiling)
+  }
+  const type = strip(json.type ?? "")
+  if (!SELECTORS.has(type)) world.rootType = type
   await generate(world, json, rand, resolvePlaced)
 
-  // display-only (consumes no rand): trees get a grass layer one below origin,
-  // icebergs get ocean from their keel up to sea level (the origin line), each
-  // filling the air across the feature bounds and the 3-block tile border; the
-  // border blocks sit outside the declared size so the tile lays out like any
-  // other structure
-  const type = strip(json.type ?? "")
+  // display-only (consumes no rand): icebergs get ocean from their keel up to
+  // sea level (the origin line), filling the air across the feature bounds and
+  // the 3-block tile border; the border blocks sit outside the declared size so
+  // the tile lays out like any other structure
+  const rootType = world.rootType
+  if (ceiling) {
+    for (const [k, state] of world.cells) if (state === ceiling) world.cells.delete(k)
+  }
+  if (pad && ["tree", "fallen_tree"].includes(rootType)) {
+    const groundChanged = Array.from(world.cells).some(([k, state]) => Number(k.split(",")[1]) === -1 && !state.belowTrunk)
+    for (const k of world.cells.keys()) if (Number(k.split(",")[1]) < (groundChanged ? -1 : 0)) world.cells.delete(k)
+  }
   let padded = null
-  if (pad && ["tree", "fallen_tree", "iceberg"].includes(type) && world.cells.size) {
+  if (pad && rootType === "iceberg" && world.cells.size) {
     let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity, y0 = Infinity
     for (const k of world.cells.keys()) {
       const [x, y, z] = k.split(",").map(Number)
@@ -1607,12 +1635,8 @@ export async function generateFeature(name, json, rand, resolvePlaced, loadStruc
     }
     padded = { x0, x1, z0, z1 }
     for (let x = x0 - 3; x <= x1 + 3; x++) for (let z = z0 - 3; z <= z1 + 3; z++) {
-      if (type === "iceberg") {
-        for (let y = Math.min(y0, -1); y <= -1; y++) {
-          if (!world.get(x, y, z)) world.set(x, y, z, { id: "minecraft:water", properties: { level: "0" } })
-        }
-      } else if (!world.get(x, -1, z)) {
-        world.set(x, -1, z, { id: "minecraft:grass_block", properties: { snowy: "false" } })
+      for (let y = Math.min(y0, -1); y <= -1; y++) {
+        if (!world.get(x, y, z)) world.set(x, y, z, { id: "minecraft:water", properties: { level: "0" } })
       }
     }
   }
@@ -1647,11 +1671,6 @@ export async function generateFeature(name, json, rand, resolvePlaced, loadStruc
     palette, blocks, entities: [],
     anchor: [-minX, 0, -minZ],
     origin: [-minX, -minY, -minZ]
-  }
-  if (padded && pad.grass) {
-    for (const e of palette) {
-      if (e.id === "minecraft:grass_block") e.__biome = pad.grass
-    }
   }
   return structure
 }

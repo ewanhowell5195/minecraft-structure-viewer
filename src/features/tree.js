@@ -39,7 +39,7 @@ export function makeTreeCtx(world, config, rand) {
     },
     placeBelowTrunk(x, y, z) {
       const state = sampleState(config.below_trunk_provider, rand)
-      if (state) world.set(x, y, z, state)
+      if (state) world.set(x, y, z, Object.assign({ belowTrunk: true }, state))
     },
     tryPlaceLeaf(x, y, z) {
       if (!validTreePos(x, y, z)) return false

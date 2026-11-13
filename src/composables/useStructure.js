@@ -618,7 +618,7 @@ async function featureEntry(rel, seed) {
     const lib = await loadLibrary()
     return read(await lib.readFile(packs.assets.value, zp))
   }
-  const s = await generateFeature(rel, json, rnd(useSeed), features.resolvePlaced, loadStruct, { grass: features.grassBiome(rel) }, features.loadProcessors)
+  const s = await generateFeature(rel, json, rnd(useSeed), features.resolvePlaced, loadStruct, { ceiling: await features.ceilingOf(rel) }, features.loadProcessors)
   applyLegacyRenames(s, packs.state.baseId)
   return s.blocks.length ? { structure: s, name: rel, rel, feature: true, seed: useSeed } : null
 }

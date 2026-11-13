@@ -3,7 +3,7 @@ import { loadLibrary } from "../lib.js"
 import { usePacks } from "./usePacks.js"
 import { numeric, strip, rnd, normStatesDeep } from "../transforms.js"
 import { matchIndex } from "../advfilter.js"
-import { generateFeature } from "../features/index.js"
+import { generateFeature, placedCeiling } from "../features/index.js"
 import { inlineProviders } from "../features/providers.js"
 import { read } from "minecraft-block-reader"
 import { useStructures } from "./useStructures.js"
@@ -30,7 +30,6 @@ let featurePath = new Map()
 let defaultSeeds = {}
 let staticSet = new Set()
 let folders = {}
-let biomes = {}
 let blockIndex = null, blockVocab = [], advPromise = null
 
 async function populate() {
@@ -54,9 +53,6 @@ async function populate() {
   // curated display folders (tools/features/folders.json); unmapped rels list at the root
   const fbuf = await lib.readFile(packs.assets.value, "viewer/feature_folders.json")
   folders = fbuf ? JSON.parse(textDecoder.decode(fbuf)) : {}
-  // per-tree home biome for the grass pad, in the lib's biome-arg shape
-  const bbuf = await lib.readFile(packs.assets.value, "viewer/feature_biomes.json")
-  biomes = bbuf ? JSON.parse(textDecoder.decode(bbuf)) : {}
   // these names stay in the zip so references resolve; the list keeps them
   // out of the tree (fully removed features never index: no jar source)
   const delisted = new Set()
@@ -94,7 +90,7 @@ async function loadStruct(ref) {
 // change. the config walk covers every provider possibility; the default-seed
 // roll (the same roll a click renders) adds what generation places beyond the
 // config: hardcoded blocks, referenced features, stamped structures, and the
-// grass/water pads trees and icebergs get
+// water pad icebergs get
 async function computeAdvIndex() {
   advPromise ??= (async () => {
     const idx = new Map()
@@ -107,7 +103,7 @@ async function computeAdvIndex() {
       const names = new Set()
       collectBlockNames(j, names)
       try {
-        const s = await generateFeature(rel, j, rnd(defaultSeed(rel)), resolvePlaced, loadStruct, {}, loadProcessors)
+        const s = await generateFeature(rel, j, rnd(defaultSeed(rel)), resolvePlaced, loadStruct, { ceiling: await ceilingOf(rel) }, loadProcessors)
         for (const e of s.palette) if (typeof e?.id === "string") names.add(strip(e.id))
       } catch {}
       for (const b of names) {
@@ -208,6 +204,10 @@ async function resolvePlacedRel(ref) {
   return placed ? null : rel
 }
 
+async function ceilingOf(rel) {
+  return placedCeiling(await readJson(`data/${rel.replace("/", "/worldgen/placed_feature/")}.json`))
+}
+
 async function resolveFeatureRef(ref) {
   if (ref == null) return null
   if (typeof ref === "object") return ref.type === undefined && ref.feature !== undefined ? resolveFeatureRef(ref.feature) : flatConfig(ref)
@@ -230,10 +230,9 @@ const defaultSeed = rel => defaultSeeds[rel] ?? 0
 const isStatic = rel => staticSet.has(rel)
 const has = rel => featurePath.has(rel)
 const folderOf = rel => folders[rel] ?? ""
-const grassBiome = rel => biomes[rel] ?? null
 
 const advVocab = () => blockVocab
 
 export function useFeatures() {
-  return { state: readonly(state), stateMut: state, refresh, computeAdvIndex, advVocab, readFeature, resolvePlaced, resolvePlacedRel, loadProcessors, filteredNames, visibleNames, defaultSeed, isStatic, has, folderOf, grassBiome }
+  return { state: readonly(state), stateMut: state, refresh, computeAdvIndex, advVocab, readFeature, resolvePlaced, resolvePlacedRel, loadProcessors, ceilingOf, filteredNames, visibleNames, defaultSeed, isStatic, has, folderOf }
 }

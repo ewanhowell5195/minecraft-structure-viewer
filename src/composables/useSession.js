@@ -97,7 +97,7 @@ async function loadPool(ref) {
 }
 
 // feature_pool_element: rolled fresh per placement, and unpadded so village trees
-// skip the grass pad the Features tab draws
+// keep the ground the Features tab strips
 async function loadFeature(ref, seed) {
   const [ns, path] = nsSplit(ref)
   const rel = ns + "/" + path

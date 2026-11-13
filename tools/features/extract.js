@@ -6,9 +6,8 @@ import path from "node:path"
 import { execFileSync } from "node:child_process"
 import { fileURLToPath } from "node:url"
 import { javaBin, packBundle, prepareClient, prepareVersion, walk, writeBundle } from "../builtin/common.js"
-import { readZip } from "minecraft-asset-loader"
 import { buildGenCtx } from "./lib.js"
-import { generateFeature } from "../../src/features/index.js"
+import { generateFeature, placedCeiling } from "../../src/features/index.js"
 import { rnd } from "../../src/transforms.js"
 
 const here = path.dirname(fileURLToPath(import.meta.url))
@@ -116,10 +115,6 @@ async function main() {
   }
   files.set("viewer/feature_folders.json", Buffer.from(JSON.stringify(folderOf, null, 2)))
 
-  log("computing tree grass biomes")
-  const treeBiomes = await computeTreeBiomes(ctx, clientJarPath)
-  if (Object.keys(treeBiomes).length) files.set("viewer/feature_biomes.json", Buffer.from(JSON.stringify(treeBiomes, null, 2)))
-
   writeBundle(path.join(root, "bundled/features"), files)
   await packBundle(path.join(root, "bundled/features"), path.join(root, "public/features.zip"))
   log(`wrote bundled/features + public/features.zip: ${ctx.featureByRel.size} features, ${singles.length} single-block + ${selectors.length} ref-only selectors delisted (${removed.length} unreferenced, removed), ${templateBased.length} template stampers excluded, ${statics.length} static`)
@@ -198,11 +193,12 @@ async function sampleRolls(ctx) {
     else log(`note: handpicked seed for "${rel}" points at a feature that no longer exists`)
   }
   for (const [rel, json] of ctx.featureByRel) {
+    const ceiling = placedCeiling(ctx.placedByRel.get(rel))
     try {
       const rolls = []
       let firstKey = null, allSame = true, allSingle = true
       for (let seed = 0; seed < DEFAULT_SAMPLES; seed++) {
-        const s = await generateFeature(rel, json, rnd(seed), ctx.resolvePlaced, ctx.loadStruct, null, ctx.loadProcessors)
+        const s = await generateFeature(rel, json, rnd(seed), ctx.resolvePlaced, ctx.loadStruct, ceiling && { ceiling }, ctx.loadProcessors)
         rolls.push({ seed, n: s.blocks.length })
         if (allSingle && s.blocks.length > 1 && !isDoublePlant(s)) allSingle = false
         if (allSame) {
@@ -223,7 +219,6 @@ async function sampleRolls(ctx) {
 }
 
 const nsPath = ref => ref.includes(":") ? ref.replace(":", "/") : "minecraft/" + ref
-const strip = t => (t ?? "").replace("minecraft:", "")
 
 // every string anywhere in a config that resolves as a feature (directly or
 // through the placed registry) counts as a reference: over-detection only
@@ -249,98 +244,6 @@ function collectRefs(ctx, json, out, seenPlaced) {
   }
 }
 
-// each tree's grass pad gets its home biome as a lib biome arg: climate to
-// sample, a fixed tint, or climate + combined tint (the dark forest modifier)
-const OCEANISH = /ocean|river|beach|shore/
-
-async function computeTreeBiomes(ctx, clientJarPath) {
-  const td = new TextDecoder()
-  const jarFeatures = new Map(), placed = new Map(), biomes = new Map()
-  for (const e of readZip(fs.readFileSync(clientJarPath))) {
-    let m
-    if ((m = e.path.match(/^data\/minecraft\/worldgen\/feature\/(.+)\.json$/))) jarFeatures.set("minecraft/" + m[1], JSON.parse(td.decode(await e.read())))
-    else if ((m = e.path.match(/^data\/minecraft\/worldgen\/placed_feature\/(.+)\.json$/))) placed.set("minecraft/" + m[1], JSON.parse(td.decode(await e.read())))
-    else if ((m = e.path.match(/^data\/minecraft\/worldgen\/biome\/(.+)\.json$/))) biomes.set(m[1], JSON.parse(td.decode(await e.read())))
-  }
-  function reach(j, out, seen) {
-    if (typeof j === "string") {
-      const rel = nsPath(j)
-      if (jarFeatures.has(rel) && !seen.has("f:" + rel)) {
-        seen.add("f:" + rel)
-        out.add(rel)
-        reach(jarFeatures.get(rel), out, seen)
-      }
-      const p = placed.get(rel)
-      if (p && !seen.has("p:" + rel)) {
-        seen.add("p:" + rel)
-        reach(p.feature, out, seen)
-      }
-      return
-    }
-    if (Array.isArray(j)) {
-      for (const v of j) reach(v, out, seen)
-      return
-    }
-    if (j !== null && typeof j === "object") for (const v of Object.values(j)) reach(v, out, seen)
-  }
-  const biomesOf = new Map()
-  for (const [biome, bj] of biomes) {
-    for (const stepList of bj.features ?? []) {
-      for (const pid of [stepList].flat()) {
-        if (typeof pid !== "string") continue
-        const out = new Set()
-        reach(pid, out, new Set())
-        for (const rel of out) {
-          let s = biomesOf.get(rel)
-          if (!s) biomesOf.set(rel, s = new Set())
-          s.add(biome)
-        }
-      }
-    }
-  }
-  const hexOf = v => typeof v === "number" ? "#" + v.toString(16).padStart(6, "0") : v.toLowerCase()
-  const tintInfo = biome => {
-    const bj = biomes.get(biome)
-    const mod = strip(bj.effects?.grass_color_modifier ?? "")
-    if (bj.effects?.grass_color !== undefined) return { tint: hexOf(bj.effects.grass_color) }
-    if (mod === "swamp") return { tint: "#6a7039" }
-    if (mod === "dark_forest") return { temperature: bj.temperature, downfall: bj.downfall, tint: "#28340a", combine: true }
-    return { temperature: bj.temperature, downfall: bj.downfall }
-  }
-  const treeRels = Array.from(ctx.featureByRel)
-    .filter(([, j]) => ["tree", "fallen_tree"].includes(strip(j.type ?? "")))
-    .map(([rel]) => rel)
-  const out = {}
-  for (const rel of treeRels) {
-    // unplaced base trees (dark_oak, red_poplar) borrow their variants' biomes
-    let set = biomesOf.get(rel)
-    if (!set?.size) {
-      set = new Set()
-      const base = rel.replace("minecraft/", "")
-      for (const other of treeRels) {
-        if (other === rel) continue
-        const ob = other.replace("minecraft/", "")
-        if (!ob.startsWith(base) && !base.startsWith(ob)) continue
-        for (const b of biomesOf.get(other) ?? []) set.add(b)
-      }
-    }
-    const all = Array.from(set)
-    const land = all.filter(b => !OCEANISH.test(b))
-    const cands = (land.length ? land : all).sort()
-    if (!cands.length) continue
-    // the most common tint among its biomes wins, so one odd biome can't skew it
-    const groups = new Map()
-    for (const b of cands) {
-      const info = tintInfo(b)
-      const k = JSON.stringify(info)
-      let g = groups.get(k)
-      if (!g) groups.set(k, g = { info, n: 0 })
-      g.n++
-    }
-    out[rel] = Array.from(groups.values()).sort((a, b) => b.n - a.n)[0].info
-  }
-  return out
-}
 
 // delist candidates nothing resolves through, transitively from the features
 // that stay listed (a chain of candidates only referencing each other drops whole)
