@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Baked model test</title>
+  <style>
+    html, body {
+      height: 100%;
+      margin: 0;
+      background: #bcd3ff;
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      cursor: grab;
+      touch-action: none;
+      user-select: none;
+    }
+  </style>
+</head>
+<body>
+  <canvas></canvas>
+  <script type="module">
+    import { createStage } from "/src/home/stage.js"
+
+    const canvas = document.querySelector("canvas")
+    const stage = createStage(canvas)
+    let dragging = false
+
+    stage.onFrame = (time, delta) => {
+      if (!dragging) stage.setCamera({ yaw: stage.camera.yaw + delta * 0.0002 })
+    }
+
+    canvas.addEventListener("pointerdown", event => {
+      dragging = true
+      canvas.setPointerCapture(event.pointerId)
+    })
+    canvas.addEventListener("pointermove", event => {
+      if (dragging) stage.setCamera({ yaw: stage.camera.yaw - event.movementX * 0.008, pitch: Math.min(Math.max(stage.camera.pitch + event.movementY * 0.008, -1.5), 1.5) })
+    })
+    for (const type of ["pointerup", "pointercancel"]) canvas.addEventListener(type, () => { dragging = false })
+    canvas.addEventListener("wheel", event => {
+      event.preventDefault()
+      stage.setCamera({ distance: stage.camera.distance * 1.001 ** event.deltaY })
+    }, { passive: false })
+
+    window.stage = stage
+    const model = await stage.show(new URLSearchParams(location.search).get("model") ?? "outpost")
+    stage.setCamera({ target: [0, model.header.size[1] / 2, 0], distance: model.fit })
+  </script>
+</body>
+</html>
